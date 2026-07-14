@@ -4,6 +4,7 @@ dist/
 .env.*
 !.env.example
 .netlify/
+.railway/
 .supabase/
 supabase/.temp/
 coverage/
