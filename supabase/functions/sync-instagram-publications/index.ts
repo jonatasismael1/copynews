@@ -1,5 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { decryptToken } from "../_shared/token-crypto.ts";
+import { decryptToken, encryptToken } from "../_shared/token-crypto.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -18,6 +18,23 @@ function env(name: string) {
   return value;
 }
 const version = () => Deno.env.get("META_GRAPH_API_VERSION") || "v25.0";
+
+async function refreshInstagramToken(token: string) {
+  const url = new URL("https://graph.instagram.com/refresh_access_token");
+  url.searchParams.set("grant_type", "ig_refresh_token");
+  url.searchParams.set("access_token", token);
+  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) {
+    throw new Error(
+      payload.error?.message || "Não foi possível renovar o acesso do Instagram",
+    );
+  }
+  return {
+    accessToken: String(payload.access_token),
+    expiresIn: Number(payload.expires_in || 0),
+  };
+}
 
 async function graph(
   path: string,
@@ -118,13 +135,37 @@ Deno.serve(async (req) => {
           account.user_id !== identity.userId && body.sync_all !== true) {
         throw new Error("Forbidden");
       }
-      const token = await decryptToken(
+      let token = await decryptToken(
         account.encrypted_access_token,
         env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
       );
       const instagramLogin = (account.scopes || []).includes(
         "instagram_business_basic",
       );
+      const expiresAt = account.token_expires_at
+        ? Date.parse(account.token_expires_at)
+        : null;
+      if (
+        instagramLogin && expiresAt &&
+        expiresAt - Date.now() < 7 * 86400000
+      ) {
+        try {
+          const refreshed = await refreshInstagramToken(token);
+          token = refreshed.accessToken;
+          const encrypted = await encryptToken(
+            token,
+            env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
+          );
+          await admin.from("connected_accounts").update({
+            encrypted_access_token: encrypted,
+            token_expires_at: refreshed.expiresIn > 0
+              ? new Date(Date.now() + refreshed.expiresIn * 1000).toISOString()
+              : account.token_expires_at,
+          }).eq("id", account.id);
+        } catch (error) {
+          if (expiresAt <= Date.now()) throw error;
+        }
+      }
       const initialFrom = account.last_sync_at
         ? new Date(Date.parse(account.last_sync_at) - 24 * 60 * 60 * 1000)
         : new Date(account.sync_from || Date.now() - 90 * 86400000);

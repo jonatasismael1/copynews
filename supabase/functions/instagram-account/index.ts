@@ -112,12 +112,16 @@ async function exchangeInstagramCode(code: string, redirectUri: string) {
     signal: AbortSignal.timeout(20_000),
   });
   const longPayload = await longResponse.json();
-  return longResponse.ok && longPayload.access_token
-    ? {
-      accessToken: String(longPayload.access_token),
-      expiresIn: Number(longPayload.expires_in || 0),
-    }
-    : { accessToken: String(payload.access_token), expiresIn: 0 };
+  if (!longResponse.ok || !longPayload.access_token) {
+    throw new Error(
+      longPayload.error?.message ||
+        "Não foi possível criar o acesso duradouro do Instagram",
+    );
+  }
+  return {
+    accessToken: String(longPayload.access_token),
+    expiresIn: Number(longPayload.expires_in || 0),
+  };
 }
 
 async function connectInstagramLoginAccount(
