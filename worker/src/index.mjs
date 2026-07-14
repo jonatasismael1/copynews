@@ -187,73 +187,141 @@ async function processJob(job) {
         step_results: results,
       });
     }
-    if (!results.media_path) {
-      const acquired = await acquireMedia(job.news_items.source_url, {
-        cobaltUrl: process.env.COBALT_API_URL,
-        cobaltKey: process.env.COBALT_API_KEY,
-      });
-      for (const [index, item] of acquired.mediaItems.entries()) {
-        const localPath = join(dir, `source-${index}${extname(item.filename)}`);
-        const downloaded = await download(item.url, localPath);
-        const kind = mediaKind(item.type, downloaded.contentType);
-        const extension = mediaExtension(
-          item.filename,
-          kind,
-          downloaded.contentType,
-        );
-        const correctedPath = `${localPath}${extname(localPath) ? "" : extension}`;
-        if (correctedPath !== localPath) await fs.rename(localPath, correctedPath);
-        const contentType =
-          downloaded.contentType.startsWith("image/") ||
-          downloaded.contentType.startsWith("video/")
-            ? downloaded.contentType
-            : kind === "image"
-              ? "image/jpeg"
-              : "video/mp4";
-        mediaFiles.push({
-          path: correctedPath,
-          kind,
-          contentType,
-          bytes: downloaded.bytes,
-          source: item,
-        });
+    if (!results.media_path && !results.media_unavailable) {
+      let acquired = null;
+      if (results.metadata.provider === "web-article") {
+        acquired = results.metadata.mediaItems?.length
+          ? {
+              mediaItems: results.metadata.mediaItems,
+              filename: results.metadata.mediaItems[0].filename,
+            }
+          : null;
+      } else {
+        try {
+          acquired = await acquireMedia(job.news_items.source_url, {
+            cobaltUrl: process.env.COBALT_API_URL,
+            cobaltKey: process.env.COBALT_API_KEY,
+          });
+        } catch (error) {
+          log("media.provider_unavailable", {
+            jobId: job.id,
+            code: error.code,
+            message: error.message,
+          });
+          if (!results.metadata.mediaItems?.length) {
+            const refreshed = await extractMetadata(job.news_items.source_url);
+            if (refreshed.caption || refreshed.mediaItems?.length) {
+              results.metadata = refreshed;
+              await updateNews(job.news_items.id, {
+                source_caption: refreshed.caption,
+                source_author: refreshed.author,
+              });
+            }
+          }
+          if (results.metadata.mediaItems?.length) {
+            acquired = {
+              mediaItems: results.metadata.mediaItems,
+              filename: results.metadata.mediaItems[0].filename,
+            };
+          } else if (!results.metadata.caption) {
+            throw error;
+          }
+        }
+      }
+      for (const [index, item] of (acquired?.mediaItems || []).entries()) {
+        try {
+          const localPath = join(dir, `source-${index}${extname(item.filename)}`);
+          const downloaded = await download(item.url, localPath);
+          const kind = mediaKind(item.type, downloaded.contentType);
+          const extension = mediaExtension(
+            item.filename,
+            kind,
+            downloaded.contentType,
+          );
+          const correctedPath = `${localPath}${extname(localPath) ? "" : extension}`;
+          if (correctedPath !== localPath)
+            await fs.rename(localPath, correctedPath);
+          const contentType =
+            downloaded.contentType.startsWith("image/") ||
+            downloaded.contentType.startsWith("video/")
+              ? downloaded.contentType
+              : kind === "image"
+                ? "image/jpeg"
+                : "video/mp4";
+          mediaFiles.push({
+            path: correctedPath,
+            kind,
+            contentType,
+            bytes: downloaded.bytes,
+            source: item,
+          });
+        } catch (error) {
+          log("media.item_unavailable", {
+            jobId: job.id,
+            mediaIndex: index,
+            message: error.message,
+          });
+        }
       }
       const primary = mediaFiles[0];
-      const extension = mediaExtension(
-        acquired.filename || primary.source.filename,
-        primary.kind,
-        primary.contentType,
-      );
-      const path = `${job.news_items.created_by}/${job.news_items.id}/${randomUUID()}${extension}`;
-      const buffer = await fs.readFile(primary.path);
-      const { error } = await db.storage
-        .from(bucket)
-        .upload(path, buffer, { contentType: primary.contentType, upsert: false });
-      if (error) throw error;
-      results.media_path = path;
-      results.media_bytes = mediaFiles.reduce((total, item) => total + item.bytes, 0);
-      results.media_kind = mediaFiles.length > 1 ? "carousel" : primary.kind;
-      results.media_items = mediaFiles.map((item) => ({
-        source: item.source,
-        kind: item.kind,
-        contentType: item.contentType,
-      }));
-      await updateNews(job.news_items.id, {
-        temporary_media_path: path,
-        temporary_media_expires_at: new Date(
-          Date.now() + ttl * 60_000,
-        ).toISOString(),
-        source_caption: results.metadata.caption,
-        source_author: results.metadata.author,
-      });
-      await update(job.id, {
-        current_step: shouldTranscribe(job.news_items)
-          ? "extract_audio"
-          : "extract_ocr",
-        progress: 30,
-        step_results: results,
-      });
-    } else {
+      if (!primary) {
+        if (!results.metadata.caption) {
+          throw Object.assign(
+            new Error("A origem não forneceu mídia nem conteúdo textual utilizável"),
+            { code: "INSUFFICIENT_SOURCE" },
+          );
+        }
+        results.media_unavailable = true;
+        results.media_kind = "text";
+        results.media_items = [];
+        await update(job.id, {
+          current_step: "extract_ocr",
+          progress: 30,
+          step_results: results,
+        });
+      } else {
+        const extension = mediaExtension(
+          acquired?.filename || primary.source.filename,
+          primary.kind,
+          primary.contentType,
+        );
+        const path = `${job.news_items.created_by}/${job.news_items.id}/${randomUUID()}${extension}`;
+        const buffer = await fs.readFile(primary.path);
+        const { error } = await db.storage
+          .from(bucket)
+          .upload(path, buffer, {
+            contentType: primary.contentType,
+            upsert: false,
+          });
+        if (error) throw error;
+        results.media_path = path;
+        results.media_bytes = mediaFiles.reduce(
+          (total, item) => total + item.bytes,
+          0,
+        );
+        results.media_kind = mediaFiles.length > 1 ? "carousel" : primary.kind;
+        results.media_items = mediaFiles.map((item) => ({
+          source: item.source,
+          kind: item.kind,
+          contentType: item.contentType,
+        }));
+        await updateNews(job.news_items.id, {
+          temporary_media_path: path,
+          temporary_media_expires_at: new Date(
+            Date.now() + ttl * 60_000,
+          ).toISOString(),
+          source_caption: results.metadata.caption,
+          source_author: results.metadata.author,
+        });
+        await update(job.id, {
+          current_step: shouldTranscribe(job.news_items)
+            ? "extract_audio"
+            : "extract_ocr",
+          progress: 30,
+          step_results: results,
+        });
+      }
+    } else if (results.media_path) {
       const { data, error } = await db.storage
         .from(bucket)
         .download(results.media_path);
@@ -365,9 +433,12 @@ async function processJob(job) {
       });
     }
     if (!results.ocr) {
-      await fs.mkdir(framesDir, { recursive: true });
-      const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
-      for (const [index, item] of mediaFiles.entries()) {
+      if (!mediaFiles.length) {
+        results.ocr = { text: "", confidence: null };
+      } else {
+        await fs.mkdir(framesDir, { recursive: true });
+        const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
+        for (const [index, item] of mediaFiles.entries()) {
         const output = join(framesDir, `frame-${index}-%02d.jpg`);
         const args =
           item.kind === "image"
@@ -395,23 +466,24 @@ async function processJob(job) {
                 "4",
                 output,
               ];
-        await run("ffmpeg", args);
+          await run("ffmpeg", args);
+        }
+        const names = await fs.readdir(framesDir);
+        const frames = await Promise.all(
+          names
+            .slice(0, 8)
+            .map(async (n) =>
+              (await fs.readFile(join(framesDir, n))).toString("base64"),
+            ),
+        );
+        results.ocr = frames.length
+          ? await readFrames(
+              frames,
+              process.env.OPENROUTER_API_KEY,
+              process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini",
+            )
+          : { text: "", confidence: 0 };
       }
-      const names = await fs.readdir(framesDir);
-      const frames = await Promise.all(
-        names
-          .slice(0, 8)
-          .map(async (n) =>
-            (await fs.readFile(join(framesDir, n))).toString("base64"),
-          ),
-      );
-      results.ocr = frames.length
-        ? await readFrames(
-            frames,
-            process.env.OPENROUTER_API_KEY,
-            process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini",
-          )
-        : { text: "", confidence: 0 };
       await updateNews(job.news_items.id, {
         ocr_text: results.ocr.text || "",
         ocr_confidence: results.ocr.confidence,
@@ -431,7 +503,9 @@ async function processJob(job) {
       if (results.transcription_empty) {
         const sourceKind = results.media_kind || "video";
         results.copy.warnings = [
-          results.transcription_skipped
+          sourceKind === "text"
+            ? "A mídia não estava disponível; o texto foi produzido a partir do conteúdo original recuperado da página."
+          : results.transcription_skipped
             ? "A transcrição foi desativada; o texto foi produzido a partir da legenda original e do conteúdo visual."
             : sourceKind === "image"
             ? "A origem é uma imagem estática; o texto foi produzido a partir da legenda e do conteúdo visual."

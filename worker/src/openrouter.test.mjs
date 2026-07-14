@@ -122,6 +122,8 @@ test("orienta a IA a preservar os fatos de legendas extensas", async () => {
     );
     assert.match(request.messages[0].content, /2 a 4 parágrafos/);
     assert.match(request.messages[0].content, /todos os fatos relevantes/);
+    assert.match(request.messages[0].content, /aspecto mais relevante e polêmico/);
+    assert.match(request.messages[0].content, /nunca distorcer/);
     assert.ok(
       request.response_format.json_schema.schema.properties.caption.minLength >
         200,

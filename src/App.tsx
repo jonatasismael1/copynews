@@ -37,6 +37,11 @@ const SettingsPage = lazy(() =>
     default: module.SettingsPage,
   })),
 );
+const SharedNewsPage = lazy(() =>
+  import("@/pages/shared-news").then((module) => ({
+    default: module.SharedNewsPage,
+  })),
+);
 
 function Loading() {
   return (
@@ -90,6 +95,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/:shareSlug" element={page(<SharedNewsPage />)} />
       <Route element={<Guard />}>
         <Route index element={page(<DashboardPage />)} />
         <Route path="noticias" element={page(<NewsPage />)} />

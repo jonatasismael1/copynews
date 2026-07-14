@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Archive,
+  ClipboardPaste,
   ExternalLink,
   History,
   Link2,
@@ -439,6 +440,17 @@ function PublicationModal({ close }: { close: () => void }) {
     setMetadata(data);
   }
 
+  async function pastePublicationUrl() {
+    try {
+      const value = (await navigator.clipboard.readText()).trim();
+      if (!value) return toast.error("A área de transferência está vazia");
+      setPublishedUrl(value);
+      setMetadata(null);
+    } catch {
+      toast.error("Permita o acesso à área de transferência ou cole manualmente");
+    }
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const values: PublicationInput = {
@@ -481,6 +493,15 @@ function PublicationModal({ close }: { close: () => void }) {
             <span className="hidden sm:inline">Ler publicação</span>
           </Button>
         </div>
+        <Button
+          className="w-full sm:w-auto"
+          type="button"
+          variant="outline"
+          onClick={pastePublicationUrl}
+        >
+          <ClipboardPaste />
+          Colar texto copiado
+        </Button>
         {metadata && (
           <div className="rounded-2xl border bg-muted/40 p-4">
             <div className="flex flex-wrap gap-2 text-xs font-semibold text-primary">

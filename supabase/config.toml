@@ -36,3 +36,7 @@ verify_jwt = true
 verify_jwt = true
 [functions.refresh-publication-metrics]
 verify_jwt = true
+[functions.sync-instagram-publications]
+verify_jwt = false
+[functions.share-news]
+verify_jwt = false

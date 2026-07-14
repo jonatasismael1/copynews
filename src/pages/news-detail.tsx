@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Palette,
   RefreshCw,
+  Share2,
   Sparkles,
   Trash2,
   TriangleAlert,
@@ -214,6 +215,29 @@ export function NewsDetailPage() {
     window.open(result.url, "_blank");
   }
 
+  async function shareNews() {
+    await persist(false);
+    const { data: result, error } = await supabase.functions.invoke(
+      "share-news",
+      { body: { action: "enable", news_id: data.id } },
+    );
+    if (error || !result?.public_slug)
+      return toast.error("Não foi possível criar o link compartilhável");
+    const url = `${window.location.origin}/${result.public_slug}`;
+    await refetch();
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: title || "Copy News", url });
+        return;
+      } catch (shareError) {
+        if (shareError instanceof DOMException && shareError.name === "AbortError")
+          return;
+      }
+    }
+    await navigator.clipboard.writeText(url);
+    toast.success("Link público copiado");
+  }
+
   async function revise() {
     if (!revision) return;
     const { data: result, error } = await supabase.functions.invoke(
@@ -341,7 +365,7 @@ export function NewsDetailPage() {
             disabled={!data.temporary_media_path}
           >
             <Download />
-            Baixar vídeo
+            Baixar mídia
           </Button>
           <Button onClick={() => persist(true)} disabled={saving}>
             <Check />
@@ -353,6 +377,12 @@ export function NewsDetailPage() {
                 <Palette />
                 Abrir editor
               </a>
+            </Button>
+          )}
+          {editorReady && canManageRecord && (
+            <Button variant="outline" onClick={shareNews} disabled={saving}>
+              <Share2 />
+              Compartilhar
             </Button>
           )}
           {editorReady && !editorUrl && (

@@ -102,6 +102,31 @@ function metaContent(html, key, value) {
   return content ? decodeHtml(content).trim() : null;
 }
 
+function tagText(html, expression) {
+  const match = html.match(expression);
+  if (!match?.[1]) return null;
+  return decodeHtml(
+    match[1]
+      .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p\s*>/gi, "\n\n")
+      .replace(/<[^>]+>/g, " "),
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function safeFilename(url, fallback) {
+  try {
+    return new URL(url).pathname.split("/").pop() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function parseInstagramMetadata(html) {
   const ogTitle = metaContent(html, "property", "og:title");
   const description = metaContent(html, "name", "description");
@@ -127,7 +152,75 @@ export function parseInstagramMetadata(html) {
     twitterTitle?.match(/\(@([^)]+)\)/)?.[1] ||
     description?.match(/-\s+([^\s]+)\s+no\s+/)?.[1] ||
     null;
-  return { caption, author, provider: caption ? "instagram-meta" : "none" };
+  const image =
+    metaContent(html, "property", "og:image") ||
+    metaContent(html, "name", "twitter:image");
+  return {
+    caption,
+    author,
+    provider: caption || image ? "instagram-meta" : "none",
+    ...(image
+      ? {
+          mediaItems: [
+            {
+              url: image,
+              type: "image",
+              filename: safeFilename(image, "instagram-preview.jpg"),
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
+export function parseArticleMetadata(html, sourceUrl) {
+  const title =
+    metaContent(html, "property", "og:title") ||
+    tagText(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/i) ||
+    tagText(html, /<title\b[^>]*>([\s\S]*?)<\/title>/i);
+  const description =
+    metaContent(html, "property", "og:description") ||
+    metaContent(html, "name", "description");
+  const article =
+    tagText(
+      html,
+      /<main\b[^>]*class=["'][^"']*(?:article|post|news)[^"']*["'][^>]*>([\s\S]*?)<\/main>/i,
+    ) ||
+    tagText(html, /<article\b[^>]*>([\s\S]*?)<\/article>/i);
+  const image =
+    metaContent(html, "property", "og:image") ||
+    metaContent(html, "name", "twitter:image");
+  const author =
+    tagText(
+      html,
+      /<[^>]+class=["'][^"']*(?:author|source-date)[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i,
+    ) || metaContent(html, "name", "author");
+  const publishedAt =
+    metaContent(html, "property", "article:published_time") ||
+    html.match(/<time\b[^>]*datetime=["']([^"']+)["']/i)?.[1] ||
+    null;
+  const parts = [description, article]
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  const caption = parts.join("\n\n").slice(0, 24_000) || title;
+  return {
+    caption: caption || null,
+    title: title || null,
+    author: author || new URL(sourceUrl).hostname,
+    publishedAt,
+    provider: caption || image ? "web-article" : "none",
+    ...(image
+      ? {
+          mediaItems: [
+            {
+              url: image,
+              type: "image",
+              filename: safeFilename(image, "article-image.jpg"),
+            },
+          ],
+        }
+      : {}),
+  };
 }
 
 async function instagramMetadata(sourceUrl) {
@@ -165,6 +258,19 @@ export async function extractMetadata(sourceUrl) {
     }
     if (url.hostname.includes("instagram"))
       return await instagramMetadata(sourceUrl);
+    if (["http:", "https:"].includes(url.protocol)) {
+      const response = await fetch(sourceUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; CopyNewsBot/1.0; +https://copynews.netlify.app)",
+          "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.6",
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (response.ok)
+        return parseArticleMetadata(await response.text(), response.url || sourceUrl);
+    }
   } catch (error) {
     console.warn(
       JSON.stringify({ event: "metadata.failed", message: error.message }),

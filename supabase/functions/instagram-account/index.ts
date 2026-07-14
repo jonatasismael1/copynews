@@ -169,6 +169,8 @@ Deno.serve(async (req) => {
     let accessToken = "";
     if (body.action === "oauth_callback") {
       accessToken = await exchangeCode(String(body.code || ""), String(body.redirect_uri || ""));
+    } else if (body.action === "connect_saved_token" && profile.role === "admin") {
+      accessToken = env("META_ACCESS_TOKEN");
     } else if (body.action === "connect" && profile.role === "admin") {
       accessToken = String(body.access_token || "").trim();
     } else {

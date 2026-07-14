@@ -11,6 +11,7 @@ import {
   Link2,
   Palette,
   Plus,
+  RefreshCw,
   Save,
   Server,
   ShieldCheck,
@@ -48,6 +49,7 @@ export function SettingsPage() {
   const [savingEditorLinks, setSavingEditorLinks] = useState(false);
   const [instagramPageId, setInstagramPageId] = useState("");
   const [connectingInstagram, setConnectingInstagram] = useState(false);
+  const [syncingInstagram, setSyncingInstagram] = useState<string | null>(null);
   const canManageLookups =
     profile?.role === "admin" || profile?.role === "editor";
   const { data: connectedAccounts = [], refetch: refetchAccounts } =
@@ -100,7 +102,19 @@ export function SettingsPage() {
       })
       .then(async ({ data, error }) => {
         if (error) throw error;
+        const accountIds = (data?.accounts || []).map(
+          (account: { id: string }) => account.id,
+        );
+        for (const accountId of accountIds) {
+          const { error: syncError } = await supabase.functions.invoke(
+            "sync-instagram-publications",
+            { body: { account_id: accountId } },
+          );
+          if (syncError) throw syncError;
+        }
         await refetchAccounts();
+        queryClient.invalidateQueries({ queryKey: ["publications"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
         toast.success(
           `${Number(data?.count || 1)} conta(s) profissional(is) conectada(s)`,
         );
@@ -111,7 +125,7 @@ export function SettingsPage() {
         ),
       )
       .finally(() => setConnectingInstagram(false));
-  }, [refetchAccounts, searchParams, setSearchParams]);
+  }, [queryClient, refetchAccounts, searchParams, setSearchParams]);
 
   async function updatePassword(event: FormEvent) {
     event.preventDefault();
@@ -194,6 +208,22 @@ export function SettingsPage() {
     if (error) return toast.error("Não foi possível desconectar a conta");
     await refetchAccounts();
     toast.success("Conta desconectada");
+  }
+
+  async function syncInstagram(accountId: string) {
+    setSyncingInstagram(accountId);
+    const { data, error } = await supabase.functions.invoke(
+      "sync-instagram-publications",
+      { body: { account_id: accountId } },
+    );
+    setSyncingInstagram(null);
+    if (error) return toast.error("Não foi possível sincronizar o Instagram");
+    await refetchAccounts();
+    queryClient.invalidateQueries({ queryKey: ["publications"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    toast.success(
+      `${Number(data?.imported || 0)} publicação(ões) e métricas atualizadas`,
+    );
   }
 
   async function createPage(event: FormEvent) {
@@ -411,9 +441,21 @@ export function SettingsPage() {
                     {account.status === "connected" ? "Conectada" : "Desconectada"}
                   </Badge>
                   {account.status === "connected" && (
-                    <Button type="button" size="sm" variant="ghost" onClick={() => disconnectInstagram(account.id)}>
-                      <Unplug /> Desconectar
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={syncingInstagram === account.id}
+                        onClick={() => syncInstagram(account.id)}
+                      >
+                        <RefreshCw className={syncingInstagram === account.id ? "animate-spin" : ""} />
+                        Atualizar agora
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => disconnectInstagram(account.id)}>
+                        <Unplug /> Desconectar
+                      </Button>
+                    </>
                   )}
                 </div>
               )) : (

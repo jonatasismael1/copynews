@@ -1,0 +1,83 @@
+import { useEffect, useState } from "react";
+import { Clipboard, Download, ExternalLink, LoaderCircle } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
+
+type SharedNews = {
+  generated_title: string | null;
+  generated_caption: string | null;
+  summary: string | null;
+  source_url: string;
+  source_author: string | null;
+  source_caption: string | null;
+  transcript: string | null;
+  ocr_text: string | null;
+  ai_confidence: string | null;
+  ai_warnings: string[];
+  detected_facts: string[];
+  download_url: string | null;
+  publications: { platform: string; published_url: string; published_at: string }[];
+};
+
+export function SharedNewsPage() {
+  const { shareSlug } = useParams();
+  const [data, setData] = useState<SharedNews | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    supabase.functions
+      .invoke("share-news", { body: { action: "read", slug: shareSlug } })
+      .then(({ data: result, error: requestError }) => {
+        if (requestError) throw requestError;
+        setData(result as SharedNews);
+      })
+      .catch(() => setError("Este link não existe ou deixou de ser compartilhado."));
+  }, [shareSlug]);
+
+  async function copy(value: string, label: string) {
+    await navigator.clipboard.writeText(value);
+    toast.success(`${label} copiado`);
+  }
+
+  if (error)
+    return <main className="grid min-h-dvh place-items-center p-6 text-center"><div><h1 className="font-display text-2xl font-bold">Link indisponível</h1><p className="mt-2 text-muted-foreground">{error}</p></div></main>;
+  if (!data)
+    return <main className="grid min-h-dvh place-items-center"><LoaderCircle className="animate-spin text-primary" /></main>;
+  return (
+    <main className="min-h-dvh bg-muted/30 px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-4xl space-y-5">
+        <div className="rounded-3xl bg-sidebar p-6 text-sidebar-foreground shadow-sm sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Copy News</p>
+          <h1 className="mt-3 font-display text-2xl font-bold sm:text-4xl">{data.generated_title || "Notícia compartilhada"}</h1>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {data.generated_title && <Button onClick={() => copy(data.generated_title!, "Título")}><Clipboard /> Copiar título</Button>}
+            {data.generated_caption && <Button variant="secondary" onClick={() => copy(data.generated_caption!, "Legenda")}><Clipboard /> Copiar legenda</Button>}
+            {data.download_url && <Button variant="outline" asChild><a href={data.download_url}><Download /> Baixar mídia</a></Button>}
+          </div>
+        </div>
+        <SharedField title="Legenda gerada" value={data.generated_caption} onCopy={copy} />
+        <div className="grid gap-5 md:grid-cols-2">
+          <SharedField title="Resumo" value={data.summary} onCopy={copy} />
+          <SharedField title="Legenda original" value={data.source_caption} onCopy={copy} />
+          <SharedField title="Transcrição" value={data.transcript} onCopy={copy} />
+          <SharedField title="Texto identificado na imagem" value={data.ocr_text} onCopy={copy} />
+        </div>
+        <Card>
+          <CardHeader><CardTitle>Fonte</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {data.source_author && <p className="text-sm text-muted-foreground">Crédito: {data.source_author}</p>}
+            <a className="inline-flex max-w-full items-center gap-2 break-all text-sm text-primary hover:underline" href={data.source_url} target="_blank" rel="noreferrer">Abrir conteúdo original <ExternalLink size={16} /></a>
+            {data.publications?.map((publication) => <a key={publication.published_url} className="flex items-center gap-2 text-sm text-primary hover:underline" href={publication.published_url} target="_blank" rel="noreferrer">Ver no {publication.platform} <ExternalLink size={16} /></a>)}
+          </CardContent>
+        </Card>
+      </div>
+    </main>
+  );
+}
+
+function SharedField({ title, value, onCopy }: { title: string; value: string | null; onCopy: (value: string, label: string) => void }) {
+  if (!value) return null;
+  return <Card><CardHeader className="flex-row items-center justify-between gap-3"><CardTitle>{title}</CardTitle><Button size="icon" variant="ghost" aria-label={`Copiar ${title}`} onClick={() => onCopy(value, title)}><Clipboard size={17} /></Button></CardHeader><CardContent><p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{value}</p></CardContent></Card>;
+}

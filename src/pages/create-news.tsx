@@ -1,7 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, AudioLines, Link2, Sparkles } from "lucide-react";
+import { ArrowLeft, AudioLines, ClipboardPaste, Link2, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
@@ -25,6 +26,7 @@ export function CreateNewsPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<CreateNewsInput>({
     resolver: zodResolver(createNewsSchema),
@@ -34,6 +36,17 @@ export function CreateNewsPage() {
   async function submit(values: CreateNewsInput) {
     const result = await mutation.mutateAsync(values);
     navigate(`/noticias/${result.news_item_id}`);
+  }
+
+  async function pasteSourceUrl() {
+    try {
+      const value = (await navigator.clipboard.readText()).trim();
+      if (!value) return toast.error("A área de transferência está vazia");
+      setValue("source_url", value, { shouldDirty: true, shouldValidate: true });
+      toast.success("Link colado");
+    } catch {
+      toast.error("Permita o acesso à área de transferência ou cole manualmente");
+    }
   }
 
   return (
@@ -70,6 +83,15 @@ export function CreateNewsPage() {
                 inputMode="url"
                 {...register("source_url")}
               />
+              <Button
+                className="mt-2 w-full sm:w-auto"
+                type="button"
+                variant="outline"
+                onClick={pasteSourceUrl}
+              >
+                <ClipboardPaste />
+                Colar texto copiado
+              </Button>
               {errors.source_url && (
                 <p className="mt-1 text-xs text-destructive">
                   {errors.source_url.message}
