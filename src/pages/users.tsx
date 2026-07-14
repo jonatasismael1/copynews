@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Plus, ShieldCheck, UserRound } from "lucide-react";
+import { MoreHorizontal, Plus, Save, ShieldCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +13,8 @@ export function UsersPage() {
   const { profile } = useAuth();
   const { data = [], refetch } = useProfiles();
   const [open, setOpen] = useState(false);
+  const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>({});
+  const [savingGoal, setSavingGoal] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -56,6 +58,28 @@ export function UsersPage() {
       refetch();
     }
   }
+  async function saveGoal(id: string) {
+    const dailyGoal = Number(goalDrafts[id]);
+    if (!Number.isInteger(dailyGoal) || dailyGoal < 0) {
+      toast.error("Informe uma meta diária inteira e maior ou igual a zero");
+      return;
+    }
+    setSavingGoal(id);
+    const { error } = await supabase.functions.invoke("admin-users", {
+      body: { action: "update", id, daily_goal: dailyGoal },
+    });
+    setSavingGoal(null);
+    if (error) toast.error(error.message);
+    else {
+      toast.success("Meta diária atualizada");
+      setGoalDrafts((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      refetch();
+    }
+  }
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex items-end justify-between">
@@ -92,9 +116,37 @@ export function UsersPage() {
                   {roleLabels[user.role]}
                 </p>
               </div>
-              <div className="hidden text-right md:block">
-                <p className="text-xs text-muted-foreground">Meta diária</p>
-                <p className="font-semibold">{user.daily_goal ?? "—"}</p>
+              <div className="flex items-end gap-2">
+                <label>
+                  <span className="mb-1 block text-xs text-muted-foreground">
+                    Meta diária
+                  </span>
+                  <Input
+                    className="w-24"
+                    type="number"
+                    min="0"
+                    step="1"
+                    aria-label={`Meta diária de ${user.name}`}
+                    value={
+                      goalDrafts[user.id] ?? String(user.daily_goal ?? 0)
+                    }
+                    onChange={(e) =>
+                      setGoalDrafts((current) => ({
+                        ...current,
+                        [user.id]: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => saveGoal(user.id)}
+                  disabled={savingGoal === user.id}
+                  title={`Salvar meta de ${user.name}`}
+                >
+                  <Save />
+                </Button>
               </div>
               <Button
                 variant="ghost"

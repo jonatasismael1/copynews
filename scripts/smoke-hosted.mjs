@@ -4,15 +4,17 @@ const {
   SUPABASE_SECRET_KEY: secret,
   SUPABASE_PUBLISHABLE_KEY: publishable,
   INITIAL_ADMIN_PASSWORD: password,
+  INITIAL_ADMIN_EMAIL: initialEmail = "admin@copynews.local",
 } = process.env;
 const admin = createClient(url, secret, { auth: { persistSession: false } }),
   client = createClient(url, publishable, { auth: { persistSession: false } });
 const login = await client.auth.signInWithPassword({
-  email: "admin@copynews.local",
+  email: initialEmail,
   password,
 });
 if (login.error) throw login.error;
 const created = [];
+let originalAdminGoal;
 try {
   const tempEmail = `edge-${Date.now()}@copynews.local`;
   const userResult = await client.functions.invoke("admin-users", {
@@ -27,6 +29,33 @@ try {
   });
   if (userResult.error) throw userResult.error;
   created.push(["user", userResult.data.id]);
+  const profiles = await admin
+    .from("profiles")
+    .select("id,daily_goal")
+    .in("id", [login.data.user.id, userResult.data.id]);
+  if (profiles.error) throw profiles.error;
+  originalAdminGoal = profiles.data.find(
+    (item) => item.id === login.data.user.id,
+  )?.daily_goal;
+  const ownGoal = await client.functions.invoke("admin-users", {
+    body: { action: "update", id: login.data.user.id, daily_goal: 17 },
+  });
+  const otherGoal = await client.functions.invoke("admin-users", {
+    body: { action: "update", id: userResult.data.id, daily_goal: 9 },
+  });
+  if (ownGoal.error || otherGoal.error)
+    throw ownGoal.error || otherGoal.error;
+  const goalCheck = await admin
+    .from("profiles")
+    .select("id,daily_goal")
+    .in("id", [login.data.user.id, userResult.data.id]);
+  if (
+    goalCheck.error ||
+    goalCheck.data.find((item) => item.id === login.data.user.id)?.daily_goal !==
+      17 ||
+    goalCheck.data.find((item) => item.id === userResult.data.id)?.daily_goal !== 9
+  )
+    throw goalCheck.error || new Error("Admin goal management failed");
   const queued = await client.functions.invoke("process-source-url", {
     body: {
       source_url: "https://www.instagram.com/reel/DYvbjoLAeBx/",
@@ -171,6 +200,7 @@ try {
       ok: true,
       checks: [
         "admin Edge Function",
+        "admin own and other user goals",
         "authenticated enqueue",
         "OpenRouter preview and confirmed AI version",
         "linked publication",
@@ -182,6 +212,11 @@ try {
     }),
   );
 } finally {
+  if (originalAdminGoal !== undefined)
+    await admin
+      .from("profiles")
+      .update({ daily_goal: originalAdminGoal })
+      .eq("id", login.data.user.id);
   for (const [type, id] of created.reverse()) {
     if (type === "user") await admin.auth.admin.deleteUser(id);
     if (type === "news") await admin.from("news_items").delete().eq("id", id);

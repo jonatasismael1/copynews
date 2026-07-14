@@ -13,7 +13,9 @@ const admin = createClient(url, secret, { auth: { persistSession: false } });
 const users = await admin.auth.admin.listUsers({ page: 1, perPage: 100 });
 if (users.error) throw users.error;
 const actor = users.data.users.find(
-  (user) => user.email === "admin@copynews.local",
+  (user) =>
+    user.email ===
+    (process.env.INITIAL_ADMIN_EMAIL || "admin@copynews.local"),
 );
 if (!actor) throw new Error("Initial admin not found");
 

@@ -15,7 +15,9 @@ if ((await page.locator("input[autocomplete=email]").count()) !== 1)
   throw new Error(
     `Login not rendered: ${await page.locator("body").innerText()} | ${errors.join(" | ")}`,
   );
-await page.locator("input[autocomplete=email]").fill("admin@copynews.local");
+await page
+  .locator("input[autocomplete=email]")
+  .fill(process.env.INITIAL_ADMIN_EMAIL || "admin@copynews.local");
 await page
   .locator("input[type=password]")
   .fill(process.env.INITIAL_ADMIN_PASSWORD);

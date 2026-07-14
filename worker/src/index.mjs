@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { acquireMedia, extractMetadata } from "./adapters.mjs";
 import { generateCopy, readFrames, transcribeAudio } from "./openrouter.mjs";
+import { buildSourceContext } from "./source-context.mjs";
 const required = [
   "SUPABASE_URL",
   "SUPABASE_SECRET_KEY",
@@ -186,7 +187,7 @@ async function processJob(job) {
       if (error) throw error;
       await fs.writeFile(media, Buffer.from(await data.arrayBuffer()));
     }
-    if (!results.transcript) {
+    if (!results.transcription_completed) {
       await run("ffmpeg", [
         "-y",
         "-i",
@@ -228,10 +229,8 @@ async function processJob(job) {
         if (part) transcripts.push(part);
       }
       results.transcript = transcripts.join("\n\n");
-      if (!results.transcript)
-        throw Object.assign(new Error("A transcrição retornou vazia"), {
-          code: "EMPTY_TRANSCRIPT",
-        });
+      results.transcription_completed = true;
+      results.transcription_empty = !results.transcript;
       await updateNews(job.news_items.id, {
         transcript: results.transcript,
         transcript_language: "pt",
@@ -281,16 +280,16 @@ async function processJob(job) {
     }
     if (!results.copy) {
       results.copy = await generateCopy(
-        {
-          source_caption: results.metadata?.caption || null,
-          transcript: results.transcript || null,
-          ocr_text: results.ocr?.text || null,
-          editorial_tone: results.editorial_tone,
-          notes: results.notes,
-        },
+        buildSourceContext(results),
         process.env.OPENROUTER_API_KEY,
         process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
       );
+      if (results.transcription_empty) {
+        results.copy.warnings = [
+          "Não foi identificada fala no vídeo; o texto foi produzido a partir da legenda e/ou do OCR.",
+          ...results.copy.warnings,
+        ];
+      }
       await updateNews(job.news_items.id, {
         generated_title: results.copy.title,
         generated_caption: results.copy.caption,

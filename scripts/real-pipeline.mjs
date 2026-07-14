@@ -4,11 +4,12 @@ const {
   SUPABASE_SECRET_KEY: secret,
   SUPABASE_PUBLISHABLE_KEY: publishable,
   INITIAL_ADMIN_PASSWORD: password,
+  INITIAL_ADMIN_EMAIL: initialEmail = "admin@copynews.local",
 } = process.env;
 const admin = createClient(url, secret, { auth: { persistSession: false } }),
   client = createClient(url, publishable, { auth: { persistSession: false } });
 const login = await client.auth.signInWithPassword({
-  email: "admin@copynews.local",
+  email: initialEmail,
   password,
 });
 if (login.error) throw login.error;
@@ -46,7 +47,8 @@ try {
         .single();
       if (news.error) throw news.error;
       mediaPath = news.data.temporary_media_path;
-      if (!news.data.transcript) throw new Error("Missing real transcript");
+      if (news.data.transcript === null)
+        throw new Error("Transcription step was not persisted");
       if (!news.data.generated_title || !news.data.generated_caption)
         throw new Error("Missing generated copy");
       if (news.data.ocr_text === null) throw new Error("OCR was not executed");
@@ -69,7 +71,7 @@ try {
         JSON.stringify({
           ok: true,
           job_id: job.data.id,
-          transcript_chars: news.data.transcript.length,
+          transcript_chars: news.data.transcript?.length ?? 0,
           ocr_chars: news.data.ocr_text.length,
           title_chars: news.data.generated_title.length,
           confidence: news.data.ai_confidence,
