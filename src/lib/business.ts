@@ -1,0 +1,4 @@
+import { statusTransitions, type NewsStatus, type Role } from './constants'
+export function canTransition(from:NewsStatus,to:NewsStatus,role:Role){if(!statusTransitions[from].includes(to))return false;if(['approved','changes_requested'].includes(to))return role==='admin'||role==='editor';return role!=='viewer'}
+export function engagementRate(values:{likes:number;comments:number;shares:number;saves:number;reach?:number|null}){const interactions=values.likes+values.comments+values.shares+values.saves;return values.reach&&values.reach>0?interactions/values.reach*100:null}
+export function isPublishedOnLocalDay(value:string,day:string,timeZone='America/Maceio'){const local=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));return local===day}

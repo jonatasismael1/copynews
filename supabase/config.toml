@@ -1,0 +1,24 @@
+project_id = "copy-news"
+
+[api]
+enabled = true
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[functions.admin-users]
+verify_jwt = true
+[functions.process-source-url]
+verify_jwt = true
+[functions.revise-news-field]
+verify_jwt = true
+[functions.create-publication]
+verify_jwt = true
+[functions.record-metrics]
+verify_jwt = true
+[functions.temporary-media-url]
+verify_jwt = true
+[functions.retry-processing-step]
+verify_jwt = true
+[functions.cleanup-temporary-media]
+verify_jwt = false
