@@ -97,7 +97,10 @@ try {
 
   await page.goto(`${base}/criar`, { waitUntil: "networkidle" });
   await page.getByText("A pauta será atribuída automaticamente a você.").waitFor();
-  await page.getByText("Administrador Geral", { exact: true }).waitFor();
+  await page
+    .getByRole("main")
+    .getByText("Administrador Geral", { exact: true })
+    .waitFor();
 
   await page.goto(`${base}/noticias`, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Limpar todas" }).waitFor();
@@ -107,8 +110,11 @@ try {
     { waitUntil: "networkidle" },
   );
   await page.getByRole("heading", { name: /Carro.*Alto do Cruzeiro/i }).waitFor();
-  await page.getByText(/Corpo de Bombeiros Militar de Alagoas/i).waitFor();
-  await page.getByText(/ninguém ficou ferido/i).waitFor();
+  await page
+    .locator("p")
+    .filter({ hasText: /Corpo de Bombeiros Militar de Alagoas/i })
+    .waitFor();
+  await page.locator("p").filter({ hasText: /ninguém ficou ferido/i }).waitFor();
   const caption = await page.locator("textarea").nth(1).inputValue();
   if (caption.length < 250)
     throw new Error(`Generated caption is too short: ${caption.length}`);
