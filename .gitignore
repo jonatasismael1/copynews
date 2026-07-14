@@ -5,6 +5,7 @@ dist/
 !.env.example
 .netlify/
 .supabase/
+supabase/.temp/
 coverage/
 *.log
 worker/tmp/
