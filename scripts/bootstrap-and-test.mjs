@@ -208,5 +208,9 @@ try {
     }),
   );
 } finally {
-  for (const user of testUsers) await admin.auth.admin.deleteUser(user.id);
+  for (const user of testUsers) {
+    await admin.from("publications").delete().eq("created_by", user.id);
+    await admin.from("news_items").delete().eq("created_by", user.id);
+    await admin.auth.admin.deleteUser(user.id);
+  }
 }
