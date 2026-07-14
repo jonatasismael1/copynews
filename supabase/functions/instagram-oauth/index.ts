@@ -17,6 +17,12 @@ function env(name: string) {
   return value;
 }
 const version = () => Deno.env.get("INSTAGRAM_GRAPH_API_VERSION") || "v25.0";
+const callbackUri = () => {
+  const expected = "https://copynews.netlify.app/auth/instagram/callback";
+  if (env("INSTAGRAM_REDIRECT_URI") !== expected)
+    throw new Error("invalid_redirect_uri_configuration");
+  return expected;
+};
 const encoder = new TextEncoder();
 
 function base64Url(bytes: Uint8Array) {
@@ -88,9 +94,9 @@ async function start(req: Request, body: Record<string, unknown>) {
   const nonce = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const state = `${nonce}.${await hmac(nonce)}`;
   const now = new Date();
-  await admin.from("instagram_oauth_states").delete().lt("expires_at", now.toISOString());
-  const { error: insertError } = await admin.from("instagram_oauth_states").insert({
-    nonce_hash: await digest(nonce),
+  await admin.from("oauth_states").delete().lt("expires_at", now.toISOString());
+  const { error: insertError } = await admin.from("oauth_states").insert({
+    state_hash: await digest(state),
     user_id: user.id,
     page_id: pageId,
     expires_at: new Date(now.getTime() + 10 * 60_000).toISOString(),
@@ -98,7 +104,7 @@ async function start(req: Request, body: Record<string, unknown>) {
   if (insertError) throw insertError;
   const url = new URL("https://www.instagram.com/oauth/authorize");
   url.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
-  url.searchParams.set("redirect_uri", env("INSTAGRAM_REDIRECT_URI"));
+  url.searchParams.set("redirect_uri", callbackUri());
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set("scope", "instagram_business_basic,instagram_business_manage_insights");
@@ -112,7 +118,7 @@ async function exchangeCode(code: string) {
     client_id: env("INSTAGRAM_APP_ID"),
     client_secret: env("INSTAGRAM_APP_SECRET"),
     grant_type: "authorization_code",
-    redirect_uri: env("INSTAGRAM_REDIRECT_URI"),
+    redirect_uri: callbackUri(),
     code,
   });
   const response = await fetch("https://api.instagram.com/oauth/access_token", {
@@ -134,21 +140,23 @@ async function exchangeCode(code: string) {
 }
 
 async function callback(body: Record<string, unknown>) {
-  if (body.error) return json({ redirect_url: redirectUrl({ instagram: "error", reason: "access_denied" }) });
-  const nonce = await verifyState(body.state);
+  const state = String(body.state || "");
+  const nonce = await verifyState(state);
   if (!nonce || !body.code)
     return json({ error: "Invalid state", reason: "invalid_state" }, 400);
   const admin = adminClient();
   const now = new Date().toISOString();
-  const { data: oauthState } = await admin.from("instagram_oauth_states")
-    .update({ consumed_at: now })
-    .eq("nonce_hash", await digest(nonce))
-    .is("consumed_at", null)
-    .gt("expires_at", now)
+  const stateHash = await digest(state);
+  const { data: oauthState } = await admin.from("oauth_states")
     .select("user_id,page_id")
+    .eq("state_hash", stateHash)
+    .is("used_at", null)
+    .gt("expires_at", now)
     .maybeSingle();
   if (!oauthState) return json({ error: "Invalid state", reason: "invalid_state" }, 400);
+  console.info(JSON.stringify({ event: "state_validated" }));
   const token = await exchangeCode(String(body.code));
+  console.info(JSON.stringify({ event: "token_exchanged" }));
   const profileUrl = new URL(`https://graph.instagram.com/${version()}/me`);
   profileUrl.searchParams.set("fields", "user_id,username");
   profileUrl.searchParams.set("access_token", token.accessToken);
@@ -157,6 +165,7 @@ async function callback(body: Record<string, unknown>) {
   if (!profileResponse.ok || instagram.error) throw new Error("profile_failed");
   const providerAccountId = String(instagram.user_id || "");
   if (!providerAccountId) throw new Error("profile_failed");
+  console.info(JSON.stringify({ event: "profile_loaded" }));
   const { error: disconnectError } = await admin.from("connected_accounts").update({
     status: "disconnected",
     encrypted_access_token: "disconnected",
@@ -180,6 +189,14 @@ async function callback(body: Record<string, unknown>) {
     sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
   }, { onConflict: "provider,provider_account_id,user_id" }).select("id").single();
   if (accountError) throw accountError;
+  console.info(JSON.stringify({ event: "account_saved" }));
+  const { data: usedState, error: usedStateError } = await admin.from("oauth_states")
+    .update({ used_at: new Date().toISOString() })
+    .eq("state_hash", stateHash)
+    .is("used_at", null)
+    .select("state_hash")
+    .maybeSingle();
+  if (usedStateError || !usedState) throw usedStateError || new Error("state_already_used");
   await admin.from("audit_logs").insert({
     user_id: oauthState.user_id,
     action: "instagram.account.connected",
@@ -187,7 +204,8 @@ async function callback(body: Record<string, unknown>) {
     entity_id: account.id,
     metadata: { login: "instagram", callback: "netlify" },
   });
-  return json({ redirect_url: redirectUrl({ instagram: "connected", account_id: account.id }) });
+  console.info(JSON.stringify({ event: "callback_completed" }));
+  return json({ redirect_url: redirectUrl({ instagram: "connected" }) });
 }
 
 Deno.serve(async (req) => {

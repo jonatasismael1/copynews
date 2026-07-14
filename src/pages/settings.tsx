@@ -83,31 +83,42 @@ export function SettingsPage() {
   useEffect(() => {
     const connection = searchParams.get("instagram");
     if (!connection) return;
-    const accountId = searchParams.get("account_id");
+    const reason = searchParams.get("reason");
     setSearchParams({}, { replace: true });
-    if (connection !== "connected" || !accountId) {
-      toast.error("Não foi possível conectar o Instagram. Tente novamente.");
+    if (connection !== "connected") {
+      toast.error(
+        reason === "missing_code"
+          ? "O Instagram não retornou o código de autorização. Tente novamente."
+          : "Não foi possível conectar o Instagram. Tente novamente.",
+      );
       return;
     }
     queueMicrotask(() => setConnectingInstagram(true));
-    supabase.functions
-      .invoke("sync-instagram-publications", {
-        body: { account_id: accountId },
-      })
-      .then(async ({ error }) => {
+    void (async () => {
+      try {
+        const refreshed = await refetchAccounts();
+        const account = refreshed.data?.find(
+          (candidate) =>
+            candidate.user_id === profile?.id && candidate.status === "connected",
+        );
+        if (!account) throw new Error("connected_account_not_found");
+        const { error } = await supabase.functions.invoke(
+          "sync-instagram-publications",
+          { body: { account_id: account.id } },
+        );
         if (error) throw error;
-        await refetchAccounts();
         queryClient.invalidateQueries({ queryKey: ["publications"] });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
         toast.success("Instagram conectado e publicações sincronizadas");
-      })
-      .catch(() =>
+      } catch {
         toast.error(
           "A conta foi conectada, mas a primeira sincronização não foi concluída.",
-        ),
-      )
-      .finally(() => setConnectingInstagram(false));
-  }, [queryClient, refetchAccounts, searchParams, setSearchParams]);
+        );
+      } finally {
+        setConnectingInstagram(false);
+      }
+    })();
+  }, [profile?.id, queryClient, refetchAccounts, searchParams, setSearchParams]);
 
   async function updatePassword(event: FormEvent) {
     event.preventDefault();
