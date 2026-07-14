@@ -31,7 +31,7 @@ const initial = await ensureUser(
   initialEmail,
   initialPassword,
   "admin",
-  "Administrador Copy News",
+  "Administrador Geral",
 );
 const suffix = Date.now(),
   password = `Test#${crypto.randomUUID()}Aa1!`;
