@@ -9,10 +9,10 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 function env(name: string) { const value = Deno.env.get(name); if (!value) throw new Error(`Missing environment variable: ${name}`); return value; }
-const version = () => Deno.env.get("META_GRAPH_API_VERSION") || "v24.0";
+const version = () => Deno.env.get("META_GRAPH_API_VERSION") || "v25.0";
 
 async function graph(path: string, token: string, params: Record<string, string> = {}) {
-  const url = new URL(`https://graph.instagram.com/${version()}/${path.replace(/^\//, "")}`);
+  const url = new URL(`https://graph.facebook.com/${version()}/${path.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   url.searchParams.set("access_token", token);
   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -77,7 +77,9 @@ Deno.serve(async (req) => {
     let accountQuery = admin.from("connected_accounts").select("*").eq("provider", "instagram").eq("status", "connected");
     accountQuery = publication.connected_account_id
       ? accountQuery.eq("id", publication.connected_account_id)
-      : accountQuery.eq("page_id", publication.page_id || "00000000-0000-0000-0000-000000000000");
+      : accountQuery
+          .eq("page_id", publication.page_id || "00000000-0000-0000-0000-000000000000")
+          .eq("user_id", publication.posted_by || publication.created_by);
     const { data: account } = await accountQuery.limit(1).maybeSingle();
     if (!account) throw new Error("Conecte a conta profissional do Instagram desta página nas Configurações");
     const token = await decryptToken(account.encrypted_access_token, env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"));

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   Archive,
@@ -18,7 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useNews } from "@/hooks/use-data";
+import { useLookups, useNews } from "@/hooks/use-data";
 import { statusLabels, type NewsStatus } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -35,18 +35,28 @@ const variant = (status: NewsStatus) =>
 
 export function NewsPage() {
   const { profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data = [], isLoading, refetch } = useNews();
+  const { data: lookups } = useLookups();
   const [search, setSearch] = useState("");
+  const [userFilter, setUserFilter] = useState("all");
   const [view, setView] = useState<"list" | "kanban">("list");
   const [clearing, setClearing] = useState(false);
   const filtered = useMemo(
     () =>
-      data.filter((news) =>
-        `${news.generated_title ?? ""} ${news.source_url}`
+      data.filter((news) => {
+        const status = searchParams.get("status");
+        const matchesText = `${news.generated_title ?? ""} ${news.source_url}`
           .toLowerCase()
-          .includes(search.toLowerCase()),
-      ),
-    [data, search],
+          .includes(search.toLowerCase());
+        const matchesStatus = !status || news.status === status;
+        const matchesUser =
+          userFilter === "all" ||
+          news.created_by === userFilter ||
+          news.assigned_to === userFilter;
+        return matchesText && matchesStatus && matchesUser;
+      }),
+    [data, search, searchParams, userFilter],
   );
   const columns: NewsStatus[] = [
     "draft",
@@ -116,14 +126,14 @@ export function NewsPage() {
             Gerencie cada etapa da produção.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
           {profile?.role === "admin" && (
             <details className="relative">
-              <summary className="grid size-10 cursor-pointer list-none place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <summary data-testid="news-actions-menu" className="grid size-10 cursor-pointer list-none place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
                 <MoreHorizontal />
                 <span className="sr-only">Mais ações</span>
               </summary>
-              <div className="absolute right-0 top-11 z-20 w-48 rounded-xl border bg-card p-2 shadow-xl">
+              <div className="absolute left-0 top-11 z-20 w-48 rounded-xl border bg-card p-2 shadow-xl sm:left-auto sm:right-0">
                 <button
                   type="button"
                   className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"
@@ -144,7 +154,7 @@ export function NewsPage() {
           </Button>
         </div>
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_200px_200px_auto]">
         <div className="relative flex-1">
           <Search
             className="absolute left-3 top-3.5 text-muted-foreground"
@@ -157,6 +167,35 @@ export function NewsPage() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
+        <select
+          aria-label="Filtrar por status"
+          className="h-11 w-full rounded-xl border bg-card px-3 text-sm"
+          value={searchParams.get("status") || "all"}
+          onChange={(event) => {
+            const next = new URLSearchParams(searchParams);
+            if (event.target.value === "all") next.delete("status");
+            else next.set("status", event.target.value);
+            setSearchParams(next);
+          }}
+        >
+          <option value="all">Todos os status</option>
+          {columns.map((status) => (
+            <option key={status} value={status}>{statusLabels[status]}</option>
+          ))}
+        </select>
+        {profile?.role === "admin" && (
+          <select
+            aria-label="Filtrar notícias por usuário"
+            className="h-11 w-full rounded-xl border bg-card px-3 text-sm"
+            value={userFilter}
+            onChange={(event) => setUserFilter(event.target.value)}
+          >
+            <option value="all">Todos os usuários</option>
+            {(lookups?.profiles ?? []).map((user) => (
+              <option key={user.id} value={user.id}>{user.name}</option>
+            ))}
+          </select>
+        )}
         <div className="flex rounded-xl border bg-card p-1">
           <Button
             size="sm"
@@ -206,9 +245,9 @@ export function NewsPage() {
             return (
               <Card
                 key={item.id}
-                className="transition hover:border-primary/30 hover:shadow-lg"
+                className="max-w-full overflow-hidden transition hover:border-primary/30 hover:shadow-lg"
               >
-                  <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+                  <CardContent className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-center">
                     <Link
                       to={`/noticias/${item.id}`}
                       className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-center"
@@ -255,7 +294,7 @@ export function NewsPage() {
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center justify-between gap-4 sm:justify-end">
+                      <div className="flex min-w-0 items-center justify-between gap-4 sm:justify-end">
                       <div className="text-right">
                         <p className="text-xs text-muted-foreground">
                           Responsável
@@ -268,7 +307,7 @@ export function NewsPage() {
                     </div>
                     </Link>
                     {canManage(item) && (
-                      <div className="flex justify-end gap-1 border-t pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+                      <div className="flex w-full justify-end gap-1 border-t pt-3 sm:w-auto sm:shrink-0 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
                         <Button
                           variant="ghost"
                           size="icon"

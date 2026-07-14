@@ -1,4 +1,5 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Camera,
@@ -32,6 +33,7 @@ import { useConnectedAccounts } from "@/hooks/use-data";
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -44,16 +46,16 @@ export function SettingsPage() {
     image: profile?.canva_image_url || "",
   });
   const [savingEditorLinks, setSavingEditorLinks] = useState(false);
-  const [instagramForm, setInstagramForm] = useState({ pageId: "", token: "" });
+  const [instagramPageId, setInstagramPageId] = useState("");
   const [connectingInstagram, setConnectingInstagram] = useState(false);
   const canManageLookups =
     profile?.role === "admin" || profile?.role === "editor";
   const { data: connectedAccounts = [], refetch: refetchAccounts } =
-    useConnectedAccounts(profile?.role === "admin");
+    useConnectedAccounts(true);
 
   const { data: lookups } = useQuery({
     queryKey: ["settings-lookups"],
-    enabled: canManageLookups,
+    enabled: true,
     queryFn: async () => {
       const [pages, categories] = await Promise.all([
         supabase.from("pages").select("*").order("name"),
@@ -72,6 +74,44 @@ export function SettingsPage() {
     [Palette, "Fuso operacional", TIMEZONE],
     [History, "Histórico de contas", "Publicações e métricas de até 90 dias"],
   ] as const;
+
+  useEffect(() => {
+    const code = searchParams.get("code");
+    const state = searchParams.get("state");
+    if (!code) return;
+    const expectedState = sessionStorage.getItem("copynews-meta-state");
+    const pageId = sessionStorage.getItem("copynews-meta-page");
+    sessionStorage.removeItem("copynews-meta-state");
+    sessionStorage.removeItem("copynews-meta-page");
+    setSearchParams({}, { replace: true });
+    if (!state || state !== expectedState || !pageId) {
+      toast.error("A conexão com a Meta expirou. Tente novamente.");
+      return;
+    }
+    queueMicrotask(() => setConnectingInstagram(true));
+    supabase.functions
+      .invoke("instagram-account", {
+        body: {
+          action: "oauth_callback",
+          code,
+          page_id: pageId,
+          redirect_uri: `${window.location.origin}/configuracoes`,
+        },
+      })
+      .then(async ({ data, error }) => {
+        if (error) throw error;
+        await refetchAccounts();
+        toast.success(
+          `${Number(data?.count || 1)} conta(s) profissional(is) conectada(s)`,
+        );
+      })
+      .catch(() =>
+        toast.error(
+          "Não foi possível concluir a conexão. Confira as permissões do aplicativo Meta.",
+        ),
+      )
+      .finally(() => setConnectingInstagram(false));
+  }, [refetchAccounts, searchParams, setSearchParams]);
 
   async function updatePassword(event: FormEvent) {
     event.preventDefault();
@@ -125,22 +165,25 @@ export function SettingsPage() {
 
   async function connectInstagram(event: FormEvent) {
     event.preventDefault();
-    setConnectingInstagram(true);
-    const { error } = await supabase.functions.invoke("instagram-account", {
-      body: {
-        action: "connect",
-        page_id: instagramForm.pageId,
-        access_token: instagramForm.token,
-      },
-    });
-    setConnectingInstagram(false);
-    if (error)
-      return toast.error(
-        "Não foi possível validar a conta. Confira o token e as permissões de insights.",
-      );
-    setInstagramForm({ pageId: "", token: "" });
-    await refetchAccounts();
-    toast.success("Conta profissional do Instagram conectada");
+    const appId = import.meta.env.VITE_META_APP_ID;
+    if (!appId) return toast.error("Integração Meta ainda não configurada");
+    if (!instagramPageId) return toast.error("Selecione a página do Copy News");
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    const state = Array.from(bytes, (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+    sessionStorage.setItem("copynews-meta-state", state);
+    sessionStorage.setItem("copynews-meta-page", instagramPageId);
+    const url = new URL("https://www.facebook.com/v25.0/dialog/oauth");
+    url.searchParams.set("client_id", appId);
+    url.searchParams.set("redirect_uri", `${window.location.origin}/configuracoes`);
+    url.searchParams.set("state", state);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set(
+      "scope",
+      "instagram_basic,instagram_manage_insights,pages_read_engagement,pages_show_list",
+    );
+    window.location.assign(url.toString());
   }
 
   async function disconnectInstagram(accountId: string) {
@@ -314,8 +357,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {profile?.role === "admin" && (
-        <Card>
+      <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ChartNoAxesCombined size={19} />
@@ -324,19 +366,17 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-muted-foreground">
-              Conecte uma conta Business ou Creator usando um token oficial com
-              permissão de insights. O token é validado no Instagram e armazenado
-              criptografado; ele nunca volta para o navegador.
+              Cada usuário conecta sua própria conta Business ou Creator pelo login
+              oficial da Meta. O administrador visualiza os resultados de toda a
+              equipe, mas os tokens permanecem criptografados no backend.
             </p>
-            <form className="grid gap-4 md:grid-cols-[1fr_1.5fr_auto] md:items-end" onSubmit={connectInstagram}>
+            <form className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end" onSubmit={connectInstagram}>
               <Field label="Página do Copy News">
                 <select
                   required
                   className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  value={instagramForm.pageId}
-                  onChange={(event) =>
-                    setInstagramForm({ ...instagramForm, pageId: event.target.value })
-                  }
+                  value={instagramPageId}
+                  onChange={(event) => setInstagramPageId(event.target.value)}
                 >
                   <option value="">Selecione</option>
                   {(lookups?.pages ?? []).map((page) => (
@@ -344,28 +384,23 @@ export function SettingsPage() {
                   ))}
                 </select>
               </Field>
-              <Field label="Token da Instagram API">
-                <Input
-                  required
-                  type="password"
-                  autoComplete="off"
-                  value={instagramForm.token}
-                  onChange={(event) =>
-                    setInstagramForm({ ...instagramForm, token: event.target.value })
-                  }
-                  placeholder="Cole o token profissional"
-                />
-              </Field>
               <Button disabled={connectingInstagram}>
                 <ChartNoAxesCombined />
-                {connectingInstagram ? "Validando..." : "Conectar"}
+                {connectingInstagram ? "Conectando..." : "Entrar com a Meta"}
               </Button>
             </form>
             <div className="mt-5 divide-y border-t">
               {connectedAccounts.length ? connectedAccounts.map((account) => (
                 <div key={account.id} className="flex flex-wrap items-center gap-3 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">Instagram • {account.provider_account_id}</p>
+                    <p className="text-sm font-semibold">
+                      Instagram • {account.account_name || account.provider_account_id}
+                    </p>
+                    {profile?.role === "admin" && (
+                      <p className="text-xs text-muted-foreground">
+                        Usuário: {(account.profiles as { name?: string } | null)?.name || "Não identificado"}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {account.last_sync_at
                         ? `Última atualização: ${new Date(account.last_sync_at).toLocaleString("pt-BR")}`
@@ -387,7 +422,6 @@ export function SettingsPage() {
             </div>
           </CardContent>
         </Card>
-      )}
 
       <Card>
         <CardHeader>

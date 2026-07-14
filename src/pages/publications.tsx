@@ -24,6 +24,7 @@ import {
   usePublications,
   useRecordMetrics,
   useRefreshPublicationMetrics,
+  type PublicationWithRelations,
 } from "@/hooks/use-data";
 import {
   metricSchema,
@@ -39,9 +40,18 @@ type Snapshot = Record<string, number | string>;
 export function PublicationsPage() {
   const { profile } = useAuth();
   const { data = [], isLoading, refetch } = usePublications();
-  const [modal, setModal] = useState<"publication" | "metrics" | null>(null);
+  const { data: lookups } = useLookups();
+  const [modal, setModal] = useState<"publication" | "metrics" | "detail" | null>(null);
   const [selected, setSelected] = useState("");
+  const [userFilter, setUserFilter] = useState("all");
   const refreshMetrics = useRefreshPublicationMetrics();
+  const visiblePublications = data.filter(
+    (publication) =>
+      userFilter === "all" ||
+      publication.created_by === userFilter ||
+      publication.posted_by === userFilter,
+  );
+  const selectedPublication = data.find((publication) => publication.id === selected);
 
   async function managePublication(
     publicationId: string,
@@ -77,15 +87,30 @@ export function PublicationsPage() {
             Registros vinculados e externos, com snapshots preservados.
           </p>
         </div>
-        <Button onClick={() => setModal("publication")}>
-          <Plus />
-          Adicionar publicação
-        </Button>
+        <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[220px_auto]">
+          {profile?.role === "admin" && (
+            <select
+              aria-label="Filtrar publicações por usuário"
+              className="h-11 w-full rounded-xl border bg-card px-3 text-sm"
+              value={userFilter}
+              onChange={(event) => setUserFilter(event.target.value)}
+            >
+              <option value="all">Todos os usuários</option>
+              {(lookups?.profiles ?? []).map((user) => (
+                <option key={user.id} value={user.id}>{user.name}</option>
+              ))}
+            </select>
+          )}
+          <Button onClick={() => setModal("publication")}>
+            <Plus />
+            Adicionar publicação
+          </Button>
+        </div>
       </div>
       <div className="grid gap-3">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
-        ) : data.length === 0 ? (
+        ) : visiblePublications.length === 0 ? (
           <Card>
             <CardContent className="py-16 text-center">
               <h2 className="font-display text-lg font-semibold">
@@ -97,7 +122,7 @@ export function PublicationsPage() {
             </CardContent>
           </Card>
         ) : (
-          data.map((publication) => {
+          visiblePublications.map((publication) => {
             const sorted = [...(publication.metric_snapshots ?? [])].sort(
               (a, b) =>
                 String(b.captured_at).localeCompare(String(a.captured_at)),
@@ -110,9 +135,9 @@ export function PublicationsPage() {
                 (publication.created_by === profile.id ||
                   publication.posted_by === profile.id));
             return (
-              <Card key={publication.id}>
-                <CardContent className="p-4">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center">
+              <Card key={publication.id} className="max-w-full overflow-hidden">
+                <CardContent className="min-w-0 p-4">
+                  <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-center">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap gap-2">
                         <Badge>{publication.platform}</Badge>
@@ -122,20 +147,23 @@ export function PublicationsPage() {
                             : "Copy News"}
                         </Badge>
                       </div>
-                      <a
-                        className="mt-3 block truncate font-display font-semibold hover:text-primary hover:underline"
-                        href={publication.published_url}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        data-testid="publication-detail"
+                        className="mt-3 block w-full truncate text-left font-display font-semibold hover:text-primary hover:underline"
+                        onClick={() => {
+                          setSelected(publication.id);
+                          setModal("detail");
+                        }}
                       >
                         {publication.title}
-                      </a>
+                      </button>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {formatDate(publication.published_at)} •{" "}
                         {publication.pages?.name || "Sem página"}
                       </p>
                       <a
-                        className="mt-1 block truncate text-xs text-primary hover:underline"
+                        className="mt-1 hidden truncate text-xs text-primary hover:underline sm:block"
                         href={publication.published_url}
                         target="_blank"
                         rel="noreferrer"
@@ -143,7 +171,7 @@ export function PublicationsPage() {
                         {publication.published_url}
                       </a>
                       {publication.caption && (
-                        <p className="mt-3 line-clamp-2 whitespace-pre-line text-sm text-muted-foreground">
+                        <p className="mt-3 hidden line-clamp-2 whitespace-pre-line text-sm text-muted-foreground sm:block">
                           {publication.caption}
                         </p>
                       )}
@@ -152,11 +180,11 @@ export function PublicationsPage() {
                       <Stat label="Views" value={number(latest?.views)} />
                       <Stat label="Curtidas" value={number(latest?.likes)} />
                       <Stat label="Comentários" value={number(latest?.comments)} />
-                      <Stat label="Compart." value={number(latest?.shares)} />
-                      <Stat label="Salvos" value={number(latest?.saves)} />
-                      <Stat label="Reposts" value={number(latest?.reposts)} />
+                      <div className="hidden sm:block"><Stat label="Compart." value={number(latest?.shares)} /></div>
+                      <div className="hidden sm:block"><Stat label="Salvos" value={number(latest?.saves)} /></div>
+                      <div className="hidden sm:block"><Stat label="Reposts" value={number(latest?.reposts)} /></div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex w-full flex-wrap justify-end gap-2 border-t pt-3 md:w-auto md:shrink-0 md:border-l md:border-t-0 md:pl-3 md:pt-0">
                       <Button
                         variant="outline"
                         size="sm"
@@ -223,7 +251,7 @@ export function PublicationsPage() {
                       )}
                     </div>
                   </div>
-                  <MetricHistory snapshots={sorted} />
+                  <div className="hidden sm:block"><MetricHistory snapshots={sorted} /></div>
                 </CardContent>
               </Card>
             );
@@ -236,7 +264,72 @@ export function PublicationsPage() {
       {modal === "metrics" && (
         <MetricsModal publicationId={selected} close={() => setModal(null)} />
       )}
+      {modal === "detail" && selectedPublication && (
+        <PublicationDetails
+          publication={selectedPublication}
+          close={() => setModal(null)}
+          refresh={() => refreshMetrics.mutate(selectedPublication.id)}
+          addMetrics={() => setModal("metrics")}
+        />
+      )}
     </div>
+  );
+}
+
+function PublicationDetails({
+  publication,
+  close,
+  refresh,
+  addMetrics,
+}: {
+  publication: PublicationWithRelations;
+  close: () => void;
+  refresh: () => void;
+  addMetrics: () => void;
+}) {
+  const snapshots = [...(publication.metric_snapshots ?? [])].sort((a, b) =>
+    String(b.captured_at).localeCompare(String(a.captured_at)),
+  );
+  const latest = snapshots[0];
+  return (
+    <Overlay close={close}>
+      <div className="space-y-5">
+        <div>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{publication.platform}</Badge>
+            <Badge variant="outline">{publication.source_type === "external" ? "Externa" : "Copy News"}</Badge>
+          </div>
+          <h2 className="mt-3 font-display text-xl font-bold">{publication.title}</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatDate(publication.published_at)} • {publication.pages?.name || "Sem página"}
+          </p>
+        </div>
+        <a className="flex min-w-0 items-center gap-2 rounded-xl border p-3 text-sm text-primary hover:bg-muted" href={publication.published_url} target="_blank" rel="noreferrer">
+          <ExternalLink className="shrink-0" size={17} />
+          <span className="min-w-0 truncate">{publication.published_url}</span>
+        </a>
+        {publication.caption && (
+          <div>
+            <p className="mb-2 text-sm font-semibold">Legenda</p>
+            <p className="max-h-52 overflow-y-auto whitespace-pre-line rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground">{publication.caption}</p>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Stat label="Views" value={number(latest?.views)} />
+          <Stat label="Curtidas" value={number(latest?.likes)} />
+          <Stat label="Comentários" value={number(latest?.comments)} />
+          <Stat label="Compart." value={number(latest?.shares)} />
+          <Stat label="Salvos" value={number(latest?.saves)} />
+          <Stat label="Reposts" value={number(latest?.reposts)} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="outline" onClick={refresh}><RefreshCw /> Atualizar</Button>
+          <Button variant="outline" onClick={addMetrics}><TrendingUp /> Métricas</Button>
+        </div>
+        <MetricHistory snapshots={snapshots} />
+        <Button className="w-full" onClick={close}>Fechar</Button>
+      </div>
+    </Overlay>
   );
 }
 

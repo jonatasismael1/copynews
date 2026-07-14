@@ -11,13 +11,13 @@ import {
 } from "recharts";
 import {
   ArrowUpRight,
-  CheckCircle2,
   Clock3,
   FileCheck2,
   Plus,
   Radio,
   Trophy,
   Users,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,20 +31,44 @@ export function DashboardPage() {
   const { profile } = useAuth();
   const [period, setPeriod] = useState<Period>(1);
   const [dailyUser, setDailyUser] = useState("all");
-  const [dailyDate, setDailyDate] = useState("");
+  const [dailyDate, setDailyDate] = useState("all");
+  const [chartDetails, setChartDetails] = useState(false);
   const { data, isLoading, error } = useDashboard(period);
   const { data: adminDaily = [], isLoading: adminDailyLoading } =
     useAdminDailyResults(period, profile?.role === "admin");
   const availableDays = [...new Set(adminDaily.map((row) => row.day))];
-  const activeDailyDate = dailyDate || availableDays[0] || "";
   const dailyUsers = Array.from(
     new Map(adminDaily.map((row) => [row.user_id, row.user_name])).entries(),
   );
   const filteredDaily = adminDaily.filter(
     (row) =>
-      row.day === activeDailyDate &&
+      (dailyDate === "all" || row.day === dailyDate) &&
       (dailyUser === "all" || row.user_id === dailyUser),
   );
+  const chartData =
+    profile?.role === "admin"
+      ? Object.values(
+          filteredDaily.reduce<Record<string, { label: string; total: number }>>(
+            (rows, row) => {
+              const byUser = dailyDate !== "all";
+              const key = byUser ? row.user_id : row.day;
+              const label = byUser
+                ? row.user_name
+                : new Date(`${row.day}T12:00:00-03:00`).toLocaleDateString("pt-BR", {
+                    day: "2-digit",
+                    month: "2-digit",
+                  });
+              rows[key] ??= { label, total: 0 };
+              rows[key].total += row.publications;
+              return rows;
+            },
+            {},
+          ),
+        )
+      : (data?.daily_series ?? []).map((row) => ({
+          label: row.day,
+          total: row.total,
+        }));
   const periodLabel =
     period === 1 ? "Hoje" : period === 90 ? "3 meses" : `${period} dias`;
   const cards = [
@@ -53,24 +77,28 @@ export function DashboardPage() {
       data?.news_created ?? 0,
       FileCheck2,
       "bg-blue-50 text-blue-700",
-    ],
-    [
-      "Aguardando aprovação",
-      data?.awaiting_approval ?? 0,
-      Clock3,
-      "bg-amber-50 text-amber-700",
-    ],
-    [
-      "Aprovadas",
-      data?.approved ?? 0,
-      CheckCircle2,
-      "bg-emerald-50 text-emerald-700",
+      "/noticias",
     ],
     [
       "Publicações",
       data?.publications ?? 0,
       Radio,
       "bg-violet-50 text-violet-700",
+      "/publicacoes",
+    ],
+    [
+      "Aguardando aprovação",
+      data?.awaiting_approval ?? 0,
+      Clock3,
+      "bg-amber-50 text-amber-700",
+      "/noticias?status=awaiting_approval",
+    ],
+    [
+      "Agendados",
+      data?.scheduled ?? 0,
+      Clock3,
+      "bg-emerald-50 text-emerald-700",
+      "/noticias?status=scheduled",
     ],
   ] as const;
 
@@ -123,8 +151,9 @@ export function DashboardPage() {
           ? Array.from({ length: 4 }).map((_, index) => (
               <Skeleton key={index} className="h-32" />
             ))
-          : cards.map(([label, value, Icon, color]) => (
-              <Card key={label}>
+          : cards.map(([label, value, Icon, color, href]) => (
+              <Link key={label} to={href} className="group block rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary">
+                <Card className="h-full transition group-hover:border-primary/40 group-hover:shadow-md">
                 <CardContent className="flex items-center justify-between p-5">
                   <div>
                     <p className="text-sm text-muted-foreground">{label}</p>
@@ -141,17 +170,59 @@ export function DashboardPage() {
                     <Icon size={20} />
                   </div>
                 </CardContent>
-              </Card>
+                </Card>
+              </Link>
             ))}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.65fr_1fr]">
         <Card>
-          <CardHeader>
-            <CardTitle>Publicações por dia</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Período selecionado • America/Maceio
-            </p>
+          <CardHeader className="gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Publicações por dia</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Filtre a equipe e toque para ver os números completos.
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => setChartDetails(true)}>
+                Ver detalhes
+              </Button>
+            </div>
+            {profile?.role === "admin" && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-semibold text-muted-foreground">
+                  Dia
+                  <select
+                    aria-label="Filtrar gráfico por dia"
+                    className="mt-1 block h-10 w-full rounded-xl border bg-background px-3 text-sm text-foreground"
+                    value={dailyDate}
+                    onChange={(event) => setDailyDate(event.target.value)}
+                  >
+                    <option value="all">Todos os dias</option>
+                    {availableDays.map((day) => (
+                      <option key={day} value={day}>
+                        {new Date(`${day}T12:00:00-03:00`).toLocaleDateString("pt-BR")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-muted-foreground">
+                  Usuário
+                  <select
+                    aria-label="Filtrar gráfico por usuário"
+                    className="mt-1 block h-10 w-full rounded-xl border bg-background px-3 text-sm text-foreground"
+                    value={dailyUser}
+                    onChange={(event) => setDailyUser(event.target.value)}
+                  >
+                    <option value="all">Todos os usuários</option>
+                    {dailyUsers.map(([id, name]) => (
+                      <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="h-72">
             {isLoading ? (
@@ -159,7 +230,7 @@ export function DashboardPage() {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
-                  data={data?.daily_series ?? []}
+                  data={chartData}
                   margin={{ left: -20, right: 8, top: 10 }}
                 >
                   <defs>
@@ -188,7 +259,7 @@ export function DashboardPage() {
                     stroke="hsl(var(--border))"
                   />
                   <XAxis
-                    dataKey="day"
+                    dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     fontSize={11}
@@ -257,9 +328,10 @@ export function DashboardPage() {
                 Dia
                 <select
                   className="mt-1 block h-10 w-full min-w-40 rounded-xl border bg-background px-3 text-sm text-foreground"
-                  value={activeDailyDate}
+                  value={dailyDate}
                   onChange={(event) => setDailyDate(event.target.value)}
                 >
+                  <option value="all">Todos os dias</option>
                   {availableDays.map((day) => (
                     <option key={day} value={day}>
                       {new Date(`${day}T12:00:00-03:00`).toLocaleDateString("pt-BR")}
@@ -388,6 +460,52 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      {chartDetails && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center" onClick={() => setChartDetails(false)}>
+          <Card className="max-h-[88dvh] w-full overflow-y-auto rounded-b-none p-5 sm:max-w-3xl sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-xl font-bold">Detalhes das publicações</h2>
+                <p className="text-sm text-muted-foreground">Os mesmos filtros aplicados ao gráfico.</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setChartDetails(false)} aria-label="Fechar detalhes">
+                <X />
+              </Button>
+            </div>
+            {filteredDaily.length ? (
+              <div className="space-y-3">
+                {filteredDaily.map((row) => (
+                  <div key={`${row.day}-${row.user_id}`} className="rounded-xl border p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <b className="min-w-0 truncate">{row.user_name}</b>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(`${row.day}T12:00:00-03:00`).toLocaleDateString("pt-BR")}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      <StatDetail label="Criadas" value={row.news_created} />
+                      <StatDetail label="Finalizadas" value={row.news_completed} />
+                      <StatDetail label="Publicadas" value={row.publications} />
+                      <StatDetail label="Interações" value={row.interactions} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Nenhum resultado para os filtros selecionados." />
+            )}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatDetail({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg bg-muted/60 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-display text-lg font-bold">{Number(value).toLocaleString("pt-BR")}</p>
     </div>
   );
 }
