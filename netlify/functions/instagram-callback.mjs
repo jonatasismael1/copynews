@@ -9,6 +9,26 @@ export async function handler(event) {
     return { statusCode: 405, headers: { Allow: "GET" }, body: "Method not allowed" };
   try {
     const query = event.queryStringParameters || {};
+    if (query.teste === "1") {
+      const diagnostic = {
+        ok: true,
+        function: "instagram-callback",
+        route: "/auth/instagram/callback",
+        timestamp: new Date().toISOString(),
+      };
+      console.info(JSON.stringify({
+        event: "instagram_callback_diagnostic",
+        route: diagnostic.route,
+      }));
+      return {
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+        },
+        body: JSON.stringify(diagnostic),
+      };
+    }
     console.info(JSON.stringify({
       event: "instagram_callback_received",
       hasCode: Boolean(query.code),

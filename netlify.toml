@@ -6,6 +6,12 @@
   directory = "netlify/functions"
 
 [[redirects]]
+  from = "/auth/instagram/callback"
+  to = "/.netlify/functions/instagram-callback"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
