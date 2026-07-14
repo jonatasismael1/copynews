@@ -13,6 +13,6 @@ Conecte o repositório, use `npm run build` e publique `dist`. Cadastre apenas `
 
 ## Railway worker
 
-O serviço `copy-news-worker` usa o `railway.json` da raiz e `worker/Dockerfile`. A fonte deve permanecer conectada ao repositório `jonatasismael1/copynews`, branch `main`. Cadastre os segredos de backend, mantenha ao menos uma réplica ativa e use `/health` para verificar o processo.
+O serviço `copy-news-worker` usa o `railway.json` da raiz e `worker/Dockerfile`. Publique a raiz do repositório com `railway up --service copy-news-worker --environment production`, cadastre os segredos de backend, mantenha ao menos uma réplica ativa e use `/health` para verificar o processo.
 
 O áudio é segmentado conforme `TRANSCRIPTION_CHUNK_SECONDS` e enviado ao endpoint dedicado de transcrição do OpenRouter. Nunca grave tokens no repositório ou em logs.
