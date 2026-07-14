@@ -150,13 +150,21 @@ async function callback(body: Record<string, unknown>) {
   if (!oauthState) return json({ error: "Invalid state", reason: "invalid_state" }, 400);
   const token = await exchangeCode(String(body.code));
   const profileUrl = new URL(`https://graph.instagram.com/${version()}/me`);
-  profileUrl.searchParams.set("fields", "id,user_id,username");
+  profileUrl.searchParams.set("fields", "user_id,username");
   profileUrl.searchParams.set("access_token", token.accessToken);
   const profileResponse = await fetch(profileUrl, { signal: AbortSignal.timeout(20_000) });
   const instagram = await profileResponse.json();
   if (!profileResponse.ok || instagram.error) throw new Error("profile_failed");
-  const providerAccountId = String(instagram.user_id || instagram.id || "");
+  const providerAccountId = String(instagram.user_id || "");
   if (!providerAccountId) throw new Error("profile_failed");
+  const { error: disconnectError } = await admin.from("connected_accounts").update({
+    status: "disconnected",
+    encrypted_access_token: "disconnected",
+    token_expires_at: null,
+    updated_at: new Date().toISOString(),
+  }).eq("user_id", oauthState.user_id).eq("provider", "instagram").eq("status", "connected")
+    .neq("provider_account_id", providerAccountId);
+  if (disconnectError) throw disconnectError;
   const { data: account, error: accountError } = await admin.from("connected_accounts").upsert({
     user_id: oauthState.user_id,
     page_id: oauthState.page_id,
@@ -190,7 +198,9 @@ Deno.serve(async (req) => {
     if (body.action === "start") return await start(req, body);
     if (body.action === "callback") return await callback(body);
     return json({ error: "Invalid action" }, 400);
-  } catch {
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "connection_failed";
+    console.error(JSON.stringify({ event: "instagram_oauth_failed", reason }));
     return json({ error: "Instagram connection failed", reason: "connection_failed" }, 400);
   }
 });

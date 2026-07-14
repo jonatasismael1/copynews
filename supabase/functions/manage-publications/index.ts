@@ -63,7 +63,6 @@ Deno.serve(async (req) => {
     if (!publication) throw new Error("Publicação não encontrada");
     const canManage =
       profile.role === "admin" ||
-      profile.role === "editor" ||
       publication.created_by === user.id ||
       publication.posted_by === user.id;
     if (!canManage) throw new Error("Forbidden");

@@ -37,6 +37,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/auth-provider";
 
 type Snapshot = Record<string, number | string>;
+type Period = "today" | "yesterday" | "3days" | "7days" | "30days" | "custom";
 
 export function PublicationsPage() {
   const { profile } = useAuth();
@@ -45,14 +46,35 @@ export function PublicationsPage() {
   const [modal, setModal] = useState<"publication" | "metrics" | "detail" | null>(null);
   const [selected, setSelected] = useState("");
   const [userFilter, setUserFilter] = useState("all");
+  const [period, setPeriod] = useState<Period>("today");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [syncingAll, setSyncingAll] = useState(false);
   const refreshMetrics = useRefreshPublicationMetrics();
-  const visiblePublications = data.filter(
-    (publication) =>
+  const range = publicationRange(period, customFrom, customTo);
+  const visiblePublications = data.filter((publication) => {
+    const publishedAt = new Date(publication.published_at).getTime();
+    const matchesUser =
       userFilter === "all" ||
       publication.created_by === userFilter ||
-      publication.posted_by === userFilter,
-  );
+      publication.posted_by === userFilter;
+    return matchesUser && publishedAt >= range.from && publishedAt < range.to;
+  });
   const selectedPublication = data.find((publication) => publication.id === selected);
+
+  async function syncConnectedInstagram() {
+    setSyncingAll(true);
+    const { data: result, error } = await supabase.functions.invoke(
+      "sync-instagram-publications",
+      { body: profile?.role === "admin" ? { sync_all: true } : {} },
+    );
+    setSyncingAll(false);
+    if (error) return toast.error("Não foi possível atualizar o Instagram");
+    await refetch();
+    toast.success(
+      `${Number(result?.imported || 0)} publicação(ões) sincronizada(s)`,
+    );
+  }
 
   async function managePublication(
     publicationId: string,
@@ -81,9 +103,20 @@ export function PublicationsPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-primary">Distribuição</p>
-          <h1 className="mt-1 font-display text-3xl font-bold">Publicações</h1>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <h1 className="font-display text-3xl font-bold">Publicações</h1>
+            <Button
+              variant="outline"
+              className="shrink-0"
+              disabled={syncingAll}
+              onClick={syncConnectedInstagram}
+            >
+              <RefreshCw className={syncingAll ? "animate-spin" : ""} />
+              Atualizar
+            </Button>
+          </div>
           <p className="mt-2 text-sm text-muted-foreground">
             Registros vinculados e externos, com snapshots preservados.
           </p>
@@ -108,6 +141,39 @@ export function PublicationsPage() {
           </Button>
         </div>
       </div>
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {([
+              ["today", "Hoje"],
+              ["yesterday", "Ontem"],
+              ["3days", "3 dias"],
+              ["7days", "7 dias"],
+              ["30days", "30 dias"],
+              ["custom", "Personalizado"],
+            ] as const).map(([value, label]) => (
+              <Button
+                key={value}
+                size="sm"
+                className="shrink-0"
+                variant={period === value ? "default" : "outline"}
+                onClick={() => setPeriod(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          {period === "custom" && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input aria-label="Data inicial" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+              <Input aria-label="Data final" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+            </div>
+          )}
+          <p className="text-sm font-semibold">
+            {visiblePublications.length} publicação(ões) no período
+          </p>
+        </CardContent>
+      </Card>
       <div className="grid gap-3">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Carregando...</p>
@@ -131,10 +197,8 @@ export function PublicationsPage() {
             const latest = sorted[0];
             const canManage =
               profile?.role === "admin" ||
-              profile?.role === "editor" ||
-              (profile?.role === "writer" &&
-                (publication.created_by === profile.id ||
-                  publication.posted_by === profile.id));
+              publication.created_by === profile?.id ||
+              publication.posted_by === profile?.id;
             return (
               <Card key={publication.id} className="max-w-full overflow-hidden">
                 <CardContent className="min-w-0 p-4">
@@ -679,6 +743,28 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 function number(value: unknown) {
   return Number(value ?? 0);
+}
+function publicationRange(period: Period, customFrom: string, customTo: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  let from = new Date(today);
+  let to = new Date(tomorrow);
+  if (period === "yesterday") {
+    from.setDate(from.getDate() - 1);
+    to = new Date(today);
+  } else if (period === "3days") from.setDate(from.getDate() - 2);
+  else if (period === "7days") from.setDate(from.getDate() - 6);
+  else if (period === "30days") from.setDate(from.getDate() - 29);
+  else if (period === "custom") {
+    if (customFrom) from = new Date(`${customFrom}T00:00:00`);
+    if (customTo) {
+      to = new Date(`${customTo}T00:00:00`);
+      to.setDate(to.getDate() + 1);
+    }
+  }
+  return { from: from.getTime(), to: to.getTime() };
 }
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {

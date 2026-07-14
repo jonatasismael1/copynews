@@ -54,6 +54,9 @@ export function SettingsPage() {
     profile?.role === "admin" || profile?.role === "editor";
   const { data: connectedAccounts = [], refetch: refetchAccounts } =
     useConnectedAccounts(true);
+  const ownConnectedAccount = connectedAccounts.find(
+    (account) => account.user_id === profile?.id && account.status === "connected",
+  );
 
   const { data: lookups } = useQuery({
     queryKey: ["settings-lookups"],
@@ -202,7 +205,7 @@ export function SettingsPage() {
     setSyncingInstagram(accountId);
     const { data, error } = await supabase.functions.invoke(
       "sync-instagram-publications",
-      { body: { account_id: accountId } },
+      { body: profile?.role === "admin" ? { account_id: accountId, sync_all: true } : { account_id: accountId } },
     );
     setSyncingInstagram(null);
     if (error) return toast.error("Não foi possível sincronizar o Instagram");
@@ -407,7 +410,7 @@ export function SettingsPage() {
                 <ChartNoAxesCombined />
                 {connectingInstagram
                   ? "Conectando..."
-                  : connectedAccounts.some((account) => account.status === "connected")
+                  : ownConnectedAccount
                     ? "Reconectar Instagram"
                     : "Entrar com Instagram"}
               </Button>
@@ -445,9 +448,11 @@ export function SettingsPage() {
                         <RefreshCw className={syncingInstagram === account.id ? "animate-spin" : ""} />
                         Atualizar agora
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={() => disconnectInstagram(account.id)}>
-                        <Unplug /> Desconectar
-                      </Button>
+                      {account.user_id === profile?.id && (
+                        <Button type="button" size="sm" variant="ghost" onClick={() => disconnectInstagram(account.id)}>
+                          <Unplug /> Desconectar
+                        </Button>
+                      )}
                     </>
                   )}
                 </div>
