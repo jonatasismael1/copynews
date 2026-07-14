@@ -108,7 +108,28 @@ async function download(url, path) {
   }
   file.end();
   await new Promise((resolve) => file.once("finish", resolve));
-  return bytes;
+  return {
+    bytes,
+    contentType: (r.headers.get("content-type") || "")
+      .split(";")[0]
+      .toLowerCase(),
+  };
+}
+
+function mediaKind(type, contentType) {
+  const value = `${type || ""} ${contentType || ""}`.toLowerCase();
+  if (value.includes("image") || value.includes("photo")) return "image";
+  if (value.includes("video")) return "video";
+  return "video";
+}
+
+function mediaExtension(filename, kind, contentType) {
+  const existing = extname(filename || "");
+  if (existing) return existing;
+  if (contentType === "image/png") return ".png";
+  if (contentType === "image/webp") return ".webp";
+  if (kind === "image") return ".jpg";
+  return ".mp4";
 }
 async function update(jobId, values) {
   const { error } = await db
@@ -139,9 +160,8 @@ async function processJob(job) {
   busy = true;
   const dir = join(tmpdir(), `copy-news-${job.id}`);
   await fs.mkdir(dir, { recursive: true });
-  const media = join(dir, "source.mp4"),
-    audioPattern = join(dir, "audio-%03d.mp3"),
-    framesDir = join(dir, "frames");
+  const framesDir = join(dir, "frames");
+  let mediaFiles = [];
   let results = job.step_results || {};
   try {
     log("job.started", { jobId: job.id });
@@ -171,15 +191,52 @@ async function processJob(job) {
         cobaltUrl: process.env.COBALT_API_URL,
         cobaltKey: process.env.COBALT_API_KEY,
       });
-      const bytes = await download(acquired.mediaUrl, media);
-      const path = `${job.news_items.created_by}/${job.news_items.id}/${randomUUID()}${extname(acquired.filename) || ".mp4"}`;
-      const buffer = await fs.readFile(media);
+      for (const [index, item] of acquired.mediaItems.entries()) {
+        const localPath = join(dir, `source-${index}${extname(item.filename)}`);
+        const downloaded = await download(item.url, localPath);
+        const kind = mediaKind(item.type, downloaded.contentType);
+        const extension = mediaExtension(
+          item.filename,
+          kind,
+          downloaded.contentType,
+        );
+        const correctedPath = `${localPath}${extname(localPath) ? "" : extension}`;
+        if (correctedPath !== localPath) await fs.rename(localPath, correctedPath);
+        const contentType =
+          downloaded.contentType.startsWith("image/") ||
+          downloaded.contentType.startsWith("video/")
+            ? downloaded.contentType
+            : kind === "image"
+              ? "image/jpeg"
+              : "video/mp4";
+        mediaFiles.push({
+          path: correctedPath,
+          kind,
+          contentType,
+          bytes: downloaded.bytes,
+          source: item,
+        });
+      }
+      const primary = mediaFiles[0];
+      const extension = mediaExtension(
+        acquired.filename || primary.source.filename,
+        primary.kind,
+        primary.contentType,
+      );
+      const path = `${job.news_items.created_by}/${job.news_items.id}/${randomUUID()}${extension}`;
+      const buffer = await fs.readFile(primary.path);
       const { error } = await db.storage
         .from(bucket)
-        .upload(path, buffer, { contentType: "video/mp4", upsert: false });
+        .upload(path, buffer, { contentType: primary.contentType, upsert: false });
       if (error) throw error;
       results.media_path = path;
-      results.media_bytes = bytes;
+      results.media_bytes = mediaFiles.reduce((total, item) => total + item.bytes, 0);
+      results.media_kind = mediaFiles.length > 1 ? "carousel" : primary.kind;
+      results.media_items = mediaFiles.map((item) => ({
+        source: item.source,
+        kind: item.kind,
+        contentType: item.contentType,
+      }));
       await updateNews(job.news_items.id, {
         temporary_media_path: path,
         temporary_media_expires_at: new Date(
@@ -198,36 +255,71 @@ async function processJob(job) {
         .from(bucket)
         .download(results.media_path);
       if (error) throw error;
-      await fs.writeFile(media, Buffer.from(await data.arrayBuffer()));
+      const primaryItem = results.media_items?.[0] || {};
+      const primaryPath = join(
+        dir,
+        `source-0${extname(results.media_path) || mediaExtension("", primaryItem.kind, primaryItem.contentType)}`,
+      );
+      await fs.writeFile(primaryPath, Buffer.from(await data.arrayBuffer()));
+      mediaFiles.push({
+        path: primaryPath,
+        kind: primaryItem.kind || mediaKind("", data.type),
+        contentType: primaryItem.contentType || data.type,
+        source: primaryItem.source || {},
+      });
+      if ((results.media_items?.length || 0) > 1) {
+        const acquired = await acquireMedia(job.news_items.source_url, {
+          cobaltUrl: process.env.COBALT_API_URL,
+          cobaltKey: process.env.COBALT_API_KEY,
+        });
+        for (const [index, item] of acquired.mediaItems.slice(1).entries()) {
+          const localPath = join(
+            dir,
+            `source-${index + 1}${extname(item.filename) || ".media"}`,
+          );
+          const downloaded = await download(item.url, localPath);
+          mediaFiles.push({
+            path: localPath,
+            kind: mediaKind(item.type, downloaded.contentType),
+            contentType: downloaded.contentType,
+            bytes: downloaded.bytes,
+            source: item,
+          });
+        }
+      }
     }
     if (!results.transcription_completed) {
-      await run("ffmpeg", [
-        "-y",
-        "-i",
-        media,
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        "-b:a",
-        "64k",
-        "-f",
-        "segment",
-        "-segment_time",
-        String(Number(process.env.TRANSCRIPTION_CHUNK_SECONDS || 600)),
-        "-reset_timestamps",
-        "1",
-        audioPattern,
-      ]);
-      const audioFiles = (await fs.readdir(dir))
-        .filter((name) => /^audio-\d+\.mp3$/.test(name))
-        .sort();
-      if (!audioFiles.length)
-        throw Object.assign(
-          new Error("A mídia não possui faixa de áudio utilizável"),
-          { code: "MEDIA_HAS_NO_AUDIO" },
+      const videoFiles = mediaFiles.filter((item) => item.kind === "video");
+      for (const [index, item] of videoFiles.entries()) {
+        await run("ffmpeg", [
+          "-y",
+          "-i",
+          item.path,
+          "-vn",
+          "-ac",
+          "1",
+          "-ar",
+          "16000",
+          "-b:a",
+          "64k",
+          "-f",
+          "segment",
+          "-segment_time",
+          String(Number(process.env.TRANSCRIPTION_CHUNK_SECONDS || 600)),
+          "-reset_timestamps",
+          "1",
+          join(dir, `audio-${index}-%03d.mp3`),
+        ]).catch((error) =>
+          log("media.audio_unavailable", {
+            jobId: job.id,
+            mediaIndex: index,
+            message: error.message,
+          }),
         );
+      }
+      const audioFiles = (await fs.readdir(dir))
+        .filter((name) => /^audio-\d+-\d+\.mp3$/.test(name))
+        .sort();
       const transcripts = [];
       for (const name of audioFiles) {
         const audioData = (await fs.readFile(join(dir, name))).toString(
@@ -256,18 +348,37 @@ async function processJob(job) {
     }
     if (!results.ocr) {
       await fs.mkdir(framesDir, { recursive: true });
-      await run("ffmpeg", [
-        "-y",
-        "-i",
-        media,
-        "-vf",
-        "fps=1/5,scale=960:-1",
-        "-frames:v",
-        "8",
-        "-q:v",
-        "4",
-        join(framesDir, "frame-%02d.jpg"),
-      ]);
+      const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
+      for (const [index, item] of mediaFiles.entries()) {
+        const output = join(framesDir, `frame-${index}-%02d.jpg`);
+        const args =
+          item.kind === "image"
+            ? [
+                "-y",
+                "-i",
+                item.path,
+                "-vf",
+                "scale=960:-1",
+                "-frames:v",
+                "1",
+                "-q:v",
+                "4",
+                output,
+              ]
+            : [
+                "-y",
+                "-i",
+                item.path,
+                "-vf",
+                "fps=1/5,scale=960:-1",
+                "-frames:v",
+                String(framesPerMedia),
+                "-q:v",
+                "4",
+                output,
+              ];
+        await run("ffmpeg", args);
+      }
       const names = await fs.readdir(framesDir);
       const frames = await Promise.all(
         names
@@ -276,11 +387,13 @@ async function processJob(job) {
             (await fs.readFile(join(framesDir, n))).toString("base64"),
           ),
       );
-      results.ocr = await readFrames(
-        frames,
-        process.env.OPENROUTER_API_KEY,
-        process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini",
-      );
+      results.ocr = frames.length
+        ? await readFrames(
+            frames,
+            process.env.OPENROUTER_API_KEY,
+            process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini",
+          )
+        : { text: "", confidence: 0 };
       await updateNews(job.news_items.id, {
         ocr_text: results.ocr.text || "",
         ocr_confidence: results.ocr.confidence,
@@ -298,8 +411,13 @@ async function processJob(job) {
         process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
       );
       if (results.transcription_empty) {
+        const sourceKind = results.media_kind || "video";
         results.copy.warnings = [
-          "Não foi identificada fala no vídeo; o texto foi produzido a partir da legenda e/ou do OCR.",
+          sourceKind === "image"
+            ? "A origem é uma imagem estática; o texto foi produzido a partir da legenda e do conteúdo visual."
+            : sourceKind === "carousel"
+              ? "Não foi identificada fala utilizável no carrossel; o texto foi produzido a partir da legenda e dos itens visuais."
+              : "Não foi identificada fala no vídeo; o texto foi produzido a partir da legenda e/ou do OCR.",
           ...results.copy.warnings,
         ];
       }

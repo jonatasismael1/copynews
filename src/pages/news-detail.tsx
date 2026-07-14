@@ -4,6 +4,7 @@ import {
   Check,
   Clipboard,
   Download,
+  ExternalLink,
   Archive,
   History,
   LoaderCircle,
@@ -294,18 +295,38 @@ export function NewsDetailPage() {
           <h1 className="mt-3 font-display text-2xl font-bold sm:text-3xl">
             {title || "Notícia em processamento"}
           </h1>
-          <p className="mt-2 break-all text-xs text-muted-foreground">
+          <a
+            className="mt-2 inline-flex max-w-full items-center gap-1 break-all text-xs text-primary underline-offset-4 hover:underline"
+            href={data.source_url}
+            target="_blank"
+            rel="noreferrer"
+          >
             {data.source_url}
-          </p>
+            <ExternalLink className="shrink-0" size={13} />
+          </a>
+          {(data.publications ?? []).map(
+            (publication: { id: string; published_url: string; platform: string }) => (
+              <a
+                key={publication.id}
+                className="mt-2 flex w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
+                href={publication.published_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver publicação no {publication.platform}
+                <ExternalLink size={13} />
+              </a>
+            ),
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground" aria-live="polite">
-            {saving
-              ? "Salvando…"
-              : savedAt
-                ? `Salvo às ${savedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
-                : "Autosave ativo"}
-          </span>
+          {(saving || savedAt) && (
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              {saving
+                ? "Salvando…"
+                : `Salvo às ${savedAt!.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}
+            </span>
+          )}
           <Button
             variant="outline"
             onClick={signedDownload}
@@ -673,7 +694,24 @@ function toMaceioInput(value?: string | null) {
 function Source({ title, value }: { title: string; value?: string | null }) {
   return (
     <div>
-      <p className="text-sm font-semibold">{title}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{title}</p>
+        {value && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9"
+            aria-label={`Copiar ${title}`}
+            title={`Copiar ${title}`}
+            onClick={async () => {
+              await navigator.clipboard.writeText(value);
+              toast.success(`${title} copiada`);
+            }}
+          >
+            <Clipboard size={16} />
+          </Button>
+        )}
+      </div>
       <p className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
         {value || "Não disponível"}
       </p>

@@ -26,3 +26,7 @@ verify_jwt = false
 verify_jwt = true
 [functions.manage-publications]
 verify_jwt = true
+[functions.inspect-publication-url]
+verify_jwt = true
+[functions.profile-avatar]
+verify_jwt = true

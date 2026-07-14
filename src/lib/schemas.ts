@@ -28,15 +28,8 @@ export const createNewsSchema = z.object({
 });
 export const publicationSchema = z.object({
   news_item_id: optionalUuid,
-  title: z.string().min(2),
-  caption: z.string().optional(),
-  platform: z.string().min(2),
   page_id: optionalUuid,
   published_url: sourceUrlSchema,
-  published_at: z.string().min(1),
-  posted_by: optionalUuid,
-  credit_text: z.string().optional(),
-  notes: z.string().optional(),
 });
 export const metricSchema = z.object({
   publication_id: z.string().uuid(),

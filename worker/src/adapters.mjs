@@ -28,27 +28,41 @@ export async function acquireMedia(sourceUrl, { cobaltUrl, cobaltKey }) {
       ),
       { code: "COBALT_ERROR" },
     );
-  let mediaUrl;
-  if (["redirect", "tunnel"].includes(payload.status)) mediaUrl = payload.url;
+  let mediaItems = [];
+  if (["redirect", "tunnel"].includes(payload.status))
+    mediaItems = [
+      {
+        url: payload.url,
+        type: payload.type || "unknown",
+        filename: payload.filename || "source",
+      },
+    ];
   else if (payload.status === "picker")
-    mediaUrl =
-      payload.picker?.find((item) => item.type === "video")?.url ||
-      payload.picker?.[0]?.url;
-  if (!mediaUrl)
+    mediaItems = (payload.picker || [])
+      .filter((item) => item.url)
+      .map((item, index) => ({
+        url: item.url,
+        type: item.type || "unknown",
+        filename: item.filename || `carousel-${index + 1}`,
+      }));
+  if (!mediaItems.length)
     throw Object.assign(
       new Error("Cobalt não retornou uma mídia compatível"),
       { code: "COBALT_EMPTY" },
     );
   if (payload.status === "tunnel") {
-    const tunnel = new URL(mediaUrl);
-    const configured = new URL(endpoint);
-    tunnel.protocol = configured.protocol;
-    tunnel.host = configured.host;
-    mediaUrl = tunnel.toString();
+    mediaItems = mediaItems.map((item) => {
+      const tunnel = new URL(item.url);
+      const configured = new URL(endpoint);
+      tunnel.protocol = configured.protocol;
+      tunnel.host = configured.host;
+      return { ...item, url: tunnel.toString() };
+    });
   }
   return {
-    mediaUrl,
-    filename: payload.filename || "source.mp4",
+    mediaUrl: mediaItems[0].url,
+    mediaItems,
+    filename: payload.filename || mediaItems[0].filename || "source",
     cobaltStatus: payload.status,
   };
 }

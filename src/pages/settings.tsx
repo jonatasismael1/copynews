@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Camera,
   Database,
   History,
   KeyRound,
@@ -8,6 +9,7 @@ import {
   Plus,
   Server,
   ShieldCheck,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +19,17 @@ import { Input } from "@/components/ui/input";
 import { TIMEZONE } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/providers/auth-provider";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import { squareAvatarDataUrl } from "@/lib/avatar";
+import { PwaInstallButton } from "@/components/pwa-install";
 
 export function SettingsPage() {
-  const { profile } = useAuth();
+  const { profile, refreshProfile } = useAuth();
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [pageForm, setPageForm] = useState({ name: "", platform: "Instagram" });
   const [categoryName, setCategoryName] = useState("");
   const canManageLookups =
@@ -62,6 +68,27 @@ export function SettingsPage() {
     setPassword("");
     setConfirmation("");
     toast.success("Senha atualizada com segurança.");
+  }
+
+  async function updateAvatar(file?: File) {
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const dataUrl = await squareAvatarDataUrl(file);
+      const { error } = await supabase.functions.invoke("profile-avatar", {
+        body: { data_url: dataUrl },
+      });
+      if (error) throw error;
+      await refreshProfile();
+      queryClient.invalidateQueries({ queryKey: ["profiles"] });
+      toast.success("Foto de perfil atualizada");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível trocar a foto",
+      );
+    } finally {
+      setUploadingAvatar(false);
+    }
   }
 
   async function createPage(event: FormEvent) {
@@ -125,6 +152,51 @@ export function SettingsPage() {
           Integrações sensíveis são configuradas no backend e nunca exibidas
           aqui.
         </p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Foto de perfil</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center gap-4">
+            <ProfileAvatar
+              src={profile?.avatar_url}
+              name={profile?.name}
+              className="size-20 ring-4 ring-secondary"
+            />
+            <div>
+              <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+                <Camera size={17} />
+                {uploadingAvatar ? "Enviando..." : "Escolher na galeria"}
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={uploadingAvatar}
+                  onChange={(event) => updateAvatar(event.target.files?.[0])}
+                />
+              </label>
+              <p className="mt-2 text-xs text-muted-foreground">
+                A imagem será centralizada e recortada em formato quadrado.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Smartphone size={19} />
+              Aplicativo no celular
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Instale o Copy News na tela inicial para abrir como aplicativo.
+            </p>
+            <PwaInstallButton />
+          </CardContent>
+        </Card>
       </div>
 
       <Card>

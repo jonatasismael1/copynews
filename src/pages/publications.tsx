@@ -3,6 +3,8 @@ import {
   Archive,
   ExternalLink,
   History,
+  Link2,
+  LoaderCircle,
   Plus,
   Trash2,
   TrendingUp,
@@ -13,7 +15,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import {
   useCreatePublication,
   useLookups,
@@ -117,13 +119,31 @@ export function PublicationsPage() {
                             : "Copy News"}
                         </Badge>
                       </div>
-                      <h2 className="mt-3 truncate font-display font-semibold">
+                      <a
+                        className="mt-3 block truncate font-display font-semibold hover:text-primary hover:underline"
+                        href={publication.published_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         {publication.title}
-                      </h2>
+                      </a>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {formatDate(publication.published_at)} •{" "}
                         {publication.pages?.name || "Sem página"}
                       </p>
+                      <a
+                        className="mt-1 block truncate text-xs text-primary hover:underline"
+                        href={publication.published_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {publication.published_url}
+                      </a>
+                      {publication.caption && (
+                        <p className="mt-3 line-clamp-2 whitespace-pre-line text-sm text-muted-foreground">
+                          {publication.caption}
+                        </p>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm md:flex md:gap-8">
                       <Stat
@@ -263,115 +283,146 @@ function PublicationModal({ close }: { close: () => void }) {
   const { data: lookups } = useLookups();
   const { data: news = [] } = useNews();
   const mutation = useCreatePublication();
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm<PublicationInput>({
-    resolver: zodResolver(publicationSchema),
-    defaultValues: {
-      news_item_id: null,
-      page_id: null,
-      posted_by: null,
-      published_at: new Date().toISOString().slice(0, 16),
-    },
-  });
-  const newsField = register("news_item_id");
+  const [publishedUrl, setPublishedUrl] = useState("");
+  const [newsItemId, setNewsItemId] = useState("");
+  const [pageId, setPageId] = useState("");
+  const [inspecting, setInspecting] = useState(false);
+  const [metadata, setMetadata] = useState<{
+    title: string;
+    caption: string | null;
+    author: string | null;
+    platform: string;
+    published_at: string;
+  } | null>(null);
 
-  async function submit(values: PublicationInput) {
-    await mutation.mutateAsync(values);
+  async function inspect() {
+    const parsed = publicationSchema.safeParse({
+      published_url: publishedUrl,
+      news_item_id: newsItemId || null,
+      page_id: pageId || null,
+    });
+    if (!parsed.success) return toast.error("Informe um link válido");
+    setInspecting(true);
+    const { data, error } = await supabase.functions.invoke(
+      "inspect-publication-url",
+      { body: { published_url: publishedUrl } },
+    );
+    setInspecting(false);
+    if (error) return toast.error("Não foi possível ler esta publicação");
+    setMetadata(data);
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const values: PublicationInput = {
+      published_url: publishedUrl,
+      news_item_id: newsItemId || null,
+      page_id: pageId || null,
+    };
+    const parsed = publicationSchema.safeParse(values);
+    if (!parsed.success) return toast.error("Informe um link válido");
+    await mutation.mutateAsync(parsed.data);
     close();
   }
 
   return (
     <Overlay close={close}>
-      <form className="space-y-4" onSubmit={handleSubmit(submit)}>
+      <form className="space-y-4" onSubmit={submit}>
         <h2 className="font-display text-xl font-bold">Adicionar publicação</h2>
         <p className="text-sm text-muted-foreground">
-          Vincule uma notícia do Copy News ou registre conteúdo externo.
+          Cole o link. O Copy News buscará legenda, autor, plataforma, data e
+          hora reais da publicação.
         </p>
-        <Field label="Notícia vinculada">
-          <select
-            className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-            {...newsField}
+        <div className="flex gap-2">
+          <Input
+            aria-label="Link da publicação"
+            inputMode="url"
+            placeholder="https://instagram.com/reel/..."
+            value={publishedUrl}
             onChange={(event) => {
-              newsField.onChange(event);
-              const item = news.find(
-                (candidate) => candidate.id === event.target.value,
-              );
-              if (item) {
-                setValue("title", item.generated_title ?? "", {
-                  shouldValidate: true,
-                });
-                setValue("caption", item.generated_caption ?? "");
-                setValue("page_id", item.destination_page_id ?? null);
-              }
+              setPublishedUrl(event.target.value);
+              setMetadata(null);
             }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={inspect}
+            disabled={inspecting}
           >
-            <option value="">Publicação externa</option>
-            {news.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.generated_title || item.source_url}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <label className="block">
-          <span className="label">Título *</span>
-          <Input {...register("title")} />
-          {errors.title && (
-            <small className="text-destructive">{errors.title.message}</small>
-          )}
-        </label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Plataforma *">
-            <Input placeholder="Instagram" {...register("platform")} />
-          </Field>
-          <Field label="Data e hora *">
-            <Input type="datetime-local" {...register("published_at")} />
-          </Field>
+            {inspecting ? <LoaderCircle className="animate-spin" /> : <Link2 />}
+            <span className="hidden sm:inline">Ler publicação</span>
+          </Button>
         </div>
-        <Field label="URL publicada *">
-          <Input inputMode="url" {...register("published_url")} />
-        </Field>
-        <Field label="Página">
-          <select
-            className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-            {...register("page_id")}
-          >
-            <option value="">Sem página</option>
-            {lookups?.pages.map((page) => (
-              <option key={page.id} value={page.id}>
-                {page.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Responsável">
-          <select
-            className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-            {...register("posted_by")}
-          >
-            <option value="">Usuário atual</option>
-            {lookups?.profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Legenda">
-          <Textarea {...register("caption")} />
-        </Field>
-        <Field label="Créditos">
-          <Input {...register("credit_text")} />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
+        {metadata && (
+          <div className="rounded-2xl border bg-muted/40 p-4">
+            <div className="flex flex-wrap gap-2 text-xs font-semibold text-primary">
+              <span>{metadata.platform}</span>
+              <span>•</span>
+              <span>{formatDate(metadata.published_at)}</span>
+            </div>
+            <p className="mt-2 font-semibold">{metadata.title}</p>
+            {metadata.author && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Por {metadata.author}
+              </p>
+            )}
+            {metadata.caption && (
+              <p className="mt-3 max-h-32 overflow-y-auto whitespace-pre-line text-sm text-muted-foreground">
+                {metadata.caption}
+              </p>
+            )}
+          </div>
+        )}
+        <details className="rounded-xl border px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold">
+            Vincular ao Copy News (opcional)
+          </summary>
+          <div className="mt-4 grid gap-4">
+            <Field label="Notícia vinculada">
+              <select
+                className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+                value={newsItemId}
+                onChange={(event) => {
+                  setNewsItemId(event.target.value);
+                  const item = news.find(
+                    (candidate) => candidate.id === event.target.value,
+                  );
+                  if (item?.destination_page_id)
+                    setPageId(item.destination_page_id);
+                }}
+              >
+                <option value="">Publicação externa</option>
+                {news.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.generated_title || item.source_url}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Página">
+              <select
+                className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+                value={pageId}
+                onChange={(event) => setPageId(event.target.value)}
+              >
+                <option value="">Sem página</option>
+                {lookups?.pages.map((page) => (
+                  <option key={page.id} value={page.id}>
+                    {page.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </details>
+        <div className="grid grid-cols-2 gap-3 pt-1">
           <Button type="button" variant="outline" onClick={close}>
             Cancelar
           </Button>
-          <Button disabled={mutation.isPending}>Registrar</Button>
+          <Button disabled={mutation.isPending || inspecting}>
+            {mutation.isPending ? "Lendo e registrando..." : "Registrar"}
+          </Button>
         </div>
       </form>
     </Overlay>

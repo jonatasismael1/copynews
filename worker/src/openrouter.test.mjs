@@ -1,6 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateCopy, transcribeAudio } from "./openrouter.mjs";
+import {
+  formatSocialParagraphs,
+  generateCopy,
+  transcribeAudio,
+} from "./openrouter.mjs";
+
+test("separa legendas em parágrafos curtos para redes sociais", () => {
+  assert.equal(
+    formatSocialParagraphs(
+      "Primeiro fato confirmado. Segundo fato confirmado. Desfecho da notícia.",
+    ),
+    "Primeiro fato confirmado. Segundo fato confirmado.\n\nDesfecho da notícia.",
+  );
+  assert.equal(
+    formatSocialParagraphs("Primeiro parágrafo.\nSegundo parágrafo."),
+    "Primeiro parágrafo.\n\nSegundo parágrafo.",
+  );
+});
 
 test("usa o endpoint dedicado de transcrição do OpenRouter", async () => {
   const originalFetch = globalThis.fetch;

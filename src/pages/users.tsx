@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Plus, Save, ShieldCheck, UserRound } from "lucide-react";
+import { MoreHorizontal, Plus, Save, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { useProfiles } from "@/hooks/use-data";
 import { useAuth } from "@/providers/auth-provider";
 import { supabase } from "@/lib/supabase";
 import { roleLabels } from "@/lib/constants";
+import { ProfileAvatar } from "@/components/profile-avatar";
 export function UsersPage() {
   const { profile } = useAuth();
   const { data = [], refetch } = useProfiles();
@@ -99,9 +100,11 @@ export function UsersPage() {
         {data.map((user) => (
           <Card key={user.id}>
             <CardContent className="flex items-center gap-4 p-4">
-              <div className="grid size-11 shrink-0 place-items-center rounded-full bg-secondary">
-                <UserRound size={18} />
-              </div>
+              <ProfileAvatar
+                src={user.avatar_url}
+                name={user.name}
+                className="size-11"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{user.name}</p>
                 <p className="truncate text-xs text-muted-foreground">

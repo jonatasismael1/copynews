@@ -105,7 +105,7 @@ Deno.serve(
         status: "queued",
         progress: 0,
         step_results: {
-          editorial_tone: body.editorial_tone || "Jornalístico, claro e direto",
+          editorial_tone: body.editorial_tone || "Informativo",
           notes: body.notes || null,
         },
       })

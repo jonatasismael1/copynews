@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Info, Link2, Sparkles, UserRound, Video } from "lucide-react";
+import { ArrowLeft, Link2, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
 import { useCreateNews, useLookups } from "@/hooks/use-data";
 import { createNewsSchema, type CreateNewsInput } from "@/lib/schemas";
-import { useAuth } from "@/providers/auth-provider";
+
+const editorialTones = [
+  ["Informativo", "Notícias e atualizações"],
+  ["Analítico", "Contextualizar acontecimentos"],
+  ["Didático", "Explicar temas complexos"],
+  ["Humanizado", "Contar histórias e destacar personagens"],
+  ["Prestação de serviço", "Oferecer informações úteis ao público"],
+  ["Crítico", "Analisar com questionamento e rigor"],
+  ["Opinativo", "Apresentar uma perspectiva argumentada"],
+] as const;
 
 export function CreateNewsPage() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
   const { data } = useLookups();
   const mutation = useCreateNews();
   const {
@@ -20,7 +28,7 @@ export function CreateNewsPage() {
     formState: { errors },
   } = useForm<CreateNewsInput>({
     resolver: zodResolver(createNewsSchema),
-    defaultValues: { editorial_tone: "Jornalístico, claro e direto" },
+    defaultValues: { editorial_tone: "Informativo" },
   });
 
   async function submit(values: CreateNewsInput) {
@@ -67,25 +75,7 @@ export function CreateNewsPage() {
                   {errors.source_url.message}
                 </p>
               )}
-              <p className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
-                <Info size={14} className="mt-0.5 shrink-0" />
-                Instagram, TikTok, YouTube e outras fontes suportadas pelo
-                Cobalt. Links privados podem não estar disponíveis.
-              </p>
             </label>
-
-            <div className="flex items-center gap-3 rounded-2xl border bg-muted/40 p-4">
-              <div className="grid size-10 place-items-center rounded-full bg-background">
-                <UserRound size={18} />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Responsável</p>
-                <p className="font-semibold">{profile?.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  A pauta será atribuída automaticamente a você.
-                </p>
-              </div>
-            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label>
@@ -124,7 +114,16 @@ export function CreateNewsPage() {
                 <span className="mb-2 block text-sm font-semibold">
                   Tom editorial
                 </span>
-                <Input {...register("editorial_tone")} />
+                <select
+                  className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+                  {...register("editorial_tone")}
+                >
+                  {editorialTones.map(([tone, description]) => (
+                    <option key={tone} value={tone}>
+                      {tone} — {description}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             <label className="block">
@@ -136,21 +135,6 @@ export function CreateNewsPage() {
                 {...register("notes")}
               />
             </label>
-            <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
-              <div className="flex gap-3">
-                <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
-                  <Video size={18} />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Mídia temporária</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    O vídeo será usado apenas para preview, download,
-                    transcrição e OCR. A limpeza automática remove o arquivo
-                    após a expiração.
-                  </p>
-                </div>
-              </div>
-            </div>
             <Button className="w-full" size="lg" disabled={mutation.isPending}>
               <Sparkles />
               {mutation.isPending ? "Enviando..." : "Processar notícia"}

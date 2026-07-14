@@ -122,30 +122,31 @@ try {
     {
       body: {
         news_item_id: revisionNews.data.id,
-        title: revisionNews.data.generated_title,
-        caption: revisionNews.data.generated_caption,
-        platform: "Instagram",
-        published_url: `https://instagram.com/p/linked-${Date.now()}`,
-        published_at: new Date().toISOString(),
+        published_url:
+          "https://www.instagram.com/reel/DavpwruN_4A/?utm_source=copy_news_test",
       },
     },
   );
   if (
     linkedPublication.error ||
     linkedPublication.data.news_item_id !== revisionNews.data.id ||
-    linkedPublication.data.source_type !== "copy_news"
+    linkedPublication.data.source_type !== "copy_news" ||
+    linkedPublication.data.metadata_provider !== "instagram-public-meta"
   )
     throw linkedPublication.error || new Error("Linked publication missing");
   created.push(["publication", linkedPublication.data.id]);
   const publication = await client.functions.invoke("create-publication", {
     body: {
-      title: "Teste de publicação externa",
-      platform: "Instagram",
-      published_url: `https://instagram.com/p/test-${Date.now()}`,
-      published_at: new Date().toISOString(),
+      published_url:
+        "https://www.instagram.com/reel/DavpwruN_4A/?utm_source=copy_news_external_test",
     },
   });
-  if (publication.error) throw publication.error;
+  if (
+    publication.error ||
+    publication.data.caption?.length < 350 ||
+    publication.data.published_at !== "2026-07-13T19:20:09.909+00:00"
+  )
+    throw publication.error || new Error("Real publication metadata missing");
   created.push(["publication", publication.data.id]);
   const metrics = await client.functions.invoke("record-metrics", {
     body: {
@@ -191,8 +192,8 @@ try {
   )
     throw snapshots.error || new Error("Metric history was not preserved");
   const dashboard = await client.rpc("dashboard_summary", {
-    p_from: null,
-    p_to: null,
+    p_from: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+    p_to: new Date(Date.now() + 60_000).toISOString(),
   });
   if (
     dashboard.error ||
@@ -281,6 +282,7 @@ try {
         "OpenRouter preview and confirmed AI version",
         "linked publication",
         "external publication",
+        "real publication caption, author, date and time",
         "metric snapshot history and manual source",
         "America/Maceio dashboard breakdowns",
         "connected account 90-day history and dashboard query",

@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
+  Archive,
   ArrowRight,
   Columns3,
   LayoutList,
   LoaderCircle,
+  MoreHorizontal,
   Plus,
   Search,
   Trash2,
@@ -75,6 +77,35 @@ export function NewsPage() {
     refetch();
   }
 
+  function canManage(item: (typeof data)[number]) {
+    return (
+      profile?.role === "admin" ||
+      profile?.role === "editor" ||
+      (profile?.role === "writer" &&
+        (item.created_by === profile.id || item.assigned_to === profile.id))
+    );
+  }
+
+  async function manageNews(id: string, action: "archive" | "delete") {
+    const confirmed = window.confirm(
+      action === "archive"
+        ? "Arquivar esta notícia?"
+        : "Excluir permanentemente esta notícia?",
+    );
+    if (!confirmed) return;
+    const { error } = await supabase.functions.invoke("manage-news", {
+      body: { action, news_id: id },
+    });
+    if (error)
+      return toast.error(
+        action === "archive"
+          ? "Não foi possível arquivar a notícia"
+          : "Não foi possível excluir a notícia",
+      );
+    toast.success(action === "archive" ? "Notícia arquivada" : "Notícia excluída");
+    refetch();
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -87,14 +118,23 @@ export function NewsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {profile?.role === "admin" && (
-            <Button
-              variant="destructive"
-              onClick={clearAll}
-              disabled={clearing || data.length === 0}
-            >
-              <Trash2 />
-              {clearing ? "Limpando..." : "Limpar todas"}
-            </Button>
+            <details className="relative">
+              <summary className="grid size-10 cursor-pointer list-none place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
+                <MoreHorizontal />
+                <span className="sr-only">Mais ações</span>
+              </summary>
+              <div className="absolute right-0 top-11 z-20 w-48 rounded-xl border bg-card p-2 shadow-xl">
+                <button
+                  type="button"
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"
+                  onClick={clearAll}
+                  disabled={clearing || data.length === 0}
+                >
+                  <Trash2 size={15} />
+                  {clearing ? "Excluindo..." : "Excluir acervo"}
+                </button>
+              </div>
+            </details>
           )}
           <Button asChild>
             <Link to="/criar">
@@ -164,13 +204,15 @@ export function NewsPage() {
           {filtered.map((item) => {
             const job = item.processing_jobs?.[0];
             return (
-              <Link
-                to={`/noticias/${item.id}`}
+              <Card
                 key={item.id}
-                className="block"
+                className="transition hover:border-primary/30 hover:shadow-lg"
               >
-                <Card className="transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg">
                   <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+                    <Link
+                      to={`/noticias/${item.id}`}
+                      className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-center"
+                    >
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant={variant(item.status)}>
@@ -224,9 +266,32 @@ export function NewsPage() {
                       </div>
                       <ArrowRight className="text-muted-foreground" size={18} />
                     </div>
+                    </Link>
+                    {canManage(item) && (
+                      <div className="flex justify-end gap-1 border-t pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Arquivar notícia"
+                          aria-label="Arquivar notícia"
+                          onClick={() => manageNews(item.id, "archive")}
+                        >
+                          <Archive />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          title="Excluir notícia"
+                          aria-label="Excluir notícia"
+                          onClick={() => manageNews(item.id, "delete")}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
-              </Link>
             );
           })}
         </div>
@@ -247,19 +312,40 @@ export function NewsPage() {
                 {filtered
                   .filter((item) => item.status === column)
                   .map((item) => (
-                    <Link key={item.id} to={`/noticias/${item.id}`}>
-                      <Card className="mb-3 hover:border-primary/30">
+                    <Card key={item.id} className="mb-3 hover:border-primary/30">
                         <CardContent className="p-4">
-                          <h3 className="line-clamp-2 text-sm font-semibold">
-                            {item.generated_title ||
-                              "Notícia em processamento"}
-                          </h3>
-                          <p className="mt-3 text-xs text-muted-foreground">
-                            {item.profiles?.name || "Não atribuído"}
-                          </p>
+                          <Link to={`/noticias/${item.id}`} className="block">
+                            <h3 className="line-clamp-2 text-sm font-semibold">
+                              {item.generated_title ||
+                                "Notícia em processamento"}
+                            </h3>
+                            <p className="mt-3 text-xs text-muted-foreground">
+                              {item.profiles?.name || "Não atribuído"}
+                            </p>
+                          </Link>
+                          {canManage(item) && (
+                            <div className="mt-3 flex justify-end gap-1 border-t pt-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Arquivar notícia"
+                                onClick={() => manageNews(item.id, "archive")}
+                              >
+                                <Archive />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground hover:text-destructive"
+                                title="Excluir notícia"
+                                onClick={() => manageNews(item.id, "delete")}
+                              >
+                                <Trash2 />
+                              </Button>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
-                    </Link>
                   ))}
               </div>
             </div>
