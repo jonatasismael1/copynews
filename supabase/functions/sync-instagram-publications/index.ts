@@ -23,11 +23,12 @@ async function graph(
   path: string,
   token: string,
   params: Record<string, string> = {},
+  instagramLogin = false,
 ) {
   const url = new URL(
     path.startsWith("http")
       ? path
-      : `https://graph.facebook.com/${version()}/${path.replace(/^\//, "")}`,
+      : `https://${instagramLogin ? "graph.instagram.com" : "graph.facebook.com"}/${version()}/${path.replace(/^\//, "")}`,
   );
   for (const [key, value] of Object.entries(params))
     url.searchParams.set(key, value);
@@ -39,9 +40,19 @@ async function graph(
   return payload;
 }
 
-async function insight(mediaId: string, metric: string, token: string) {
+async function insight(
+  mediaId: string,
+  metric: string,
+  token: string,
+  instagramLogin: boolean,
+) {
   try {
-    const payload = await graph(`${mediaId}/insights`, token, { metric });
+    const payload = await graph(
+      `${mediaId}/insights`,
+      token,
+      { metric },
+      instagramLogin,
+    );
     const item = payload.data?.[0];
     const value = item?.values?.[0]?.value ?? item?.total_value?.value ?? item?.value;
     return { value: Number(value || 0), payload };
@@ -111,6 +122,9 @@ Deno.serve(async (req) => {
         account.encrypted_access_token,
         env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
       );
+      const instagramLogin = (account.scopes || []).includes(
+        "instagram_business_basic",
+      );
       const initialFrom = account.last_sync_at
         ? new Date(Date.parse(account.last_sync_at) - 24 * 60 * 60 * 1000)
         : new Date(account.sync_from || Date.now() - 90 * 86400000);
@@ -124,7 +138,7 @@ Deno.serve(async (req) => {
       };
       const media: Record<string, unknown>[] = [];
       for (let page = 0; next && page < 10; page += 1) {
-        const payload = await graph(next, token, params);
+        const payload = await graph(next, token, params, instagramLogin);
         media.push(...(payload.data || []));
         next = payload.paging?.next || null;
         params = {};
@@ -162,7 +176,10 @@ Deno.serve(async (req) => {
         imported += 1;
         const metricNames = ["views", "reach", "shares", "saved", "reposts"];
         const entries = await Promise.all(
-          metricNames.map(async (name) => [name, await insight(mediaId, name, token)] as const),
+          metricNames.map(async (name) => [
+            name,
+            await insight(mediaId, name, token, instagramLogin),
+          ] as const),
         );
         const metrics = Object.fromEntries(entries);
         const { error: metricError } = await admin.from("metric_snapshots").insert({

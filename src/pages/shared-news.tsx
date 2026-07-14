@@ -48,9 +48,9 @@ export function SharedNewsPage() {
   return (
     <main className="min-h-dvh bg-muted/30 px-4 py-6 sm:px-6">
       <div className="mx-auto max-w-4xl space-y-5">
-        <div className="rounded-3xl bg-sidebar p-6 text-sidebar-foreground shadow-sm sm:p-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Copy News</p>
-          <h1 className="mt-3 font-display text-2xl font-bold sm:text-4xl">{data.generated_title || "Notícia compartilhada"}</h1>
+        <div className="rounded-3xl bg-sidebar p-6 text-white shadow-sm sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">Copy News</p>
+          <h1 className="mt-3 font-display text-2xl font-bold leading-tight text-white sm:text-4xl">{data.generated_title || "Notícia compartilhada"}</h1>
           <div className="mt-5 flex flex-wrap gap-2">
             {data.generated_title && <Button onClick={() => copy(data.generated_title!, "Título")}><Clipboard /> Copiar título</Button>}
             {data.generated_caption && <Button variant="secondary" onClick={() => copy(data.generated_caption!, "Legenda")}><Clipboard /> Copiar legenda</Button>}

@@ -30,6 +30,28 @@ async function graph(path: string, token: string, params: Record<string, string>
   return payload;
 }
 
+async function instagramGraph(
+  path: string,
+  token: string,
+  params: Record<string, string> = {},
+) {
+  const url = new URL(
+    `https://graph.instagram.com/${version()}/${path.replace(/^\//, "")}`,
+  );
+  Object.entries(params).forEach(([key, value]) =>
+    url.searchParams.set(key, value)
+  );
+  url.searchParams.set("access_token", token);
+  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  const payload = await response.json();
+  if (!response.ok || payload.error) {
+    throw new Error(
+      payload.error?.message || "O Instagram recusou a solicitação",
+    );
+  }
+  return payload;
+}
+
 function validRedirect(value: string) {
   const url = new URL(value);
   const local = ["localhost", "127.0.0.1"].includes(url.hostname);
@@ -58,6 +80,92 @@ async function exchangeCode(code: string, redirectUri: string) {
   const longResponse = await fetch(longUrl, { signal: AbortSignal.timeout(20000) });
   const longPayload = await longResponse.json();
   return longResponse.ok && longPayload.access_token ? longPayload.access_token : payload.access_token;
+}
+
+async function exchangeInstagramCode(code: string, redirectUri: string) {
+  const form = new URLSearchParams({
+    client_id: env("META_APP_ID"),
+    client_secret: env("META_APP_SECRET"),
+    grant_type: "authorization_code",
+    redirect_uri: validRedirect(redirectUri),
+    code,
+  });
+  const response = await fetch("https://api.instagram.com/oauth/access_token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form,
+    signal: AbortSignal.timeout(20_000),
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) {
+    throw new Error(
+      payload.error_message || payload.error?.message ||
+        "Não foi possível concluir o login do Instagram",
+    );
+  }
+
+  const longUrl = new URL("https://graph.instagram.com/access_token");
+  longUrl.searchParams.set("grant_type", "ig_exchange_token");
+  longUrl.searchParams.set("client_secret", env("META_APP_SECRET"));
+  longUrl.searchParams.set("access_token", payload.access_token);
+  const longResponse = await fetch(longUrl, {
+    signal: AbortSignal.timeout(20_000),
+  });
+  const longPayload = await longResponse.json();
+  return longResponse.ok && longPayload.access_token
+    ? {
+      accessToken: String(longPayload.access_token),
+      expiresIn: Number(longPayload.expires_in || 0),
+    }
+    : { accessToken: String(payload.access_token), expiresIn: 0 };
+}
+
+async function connectInstagramLoginAccount(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  pageId: string,
+  token: string,
+  expiresIn: number,
+) {
+  const instagram = await instagramGraph("me", token, {
+    fields: "id,user_id,username",
+  });
+  const accountId = String(instagram.user_id || instagram.id || "");
+  if (!accountId) throw new Error("O Instagram não informou o ID da conta");
+  const encrypted = await encryptToken(
+    token,
+    env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
+  );
+  const { data, error } = await admin
+    .from("connected_accounts")
+    .upsert(
+      {
+        user_id: userId,
+        page_id: pageId,
+        provider: "instagram",
+        provider_account_id: accountId,
+        provider_page_id: null,
+        account_name: instagram.username
+          ? `@${instagram.username}`
+          : "Instagram profissional",
+        encrypted_access_token: encrypted,
+        token_expires_at: expiresIn > 0
+          ? new Date(Date.now() + expiresIn * 1000).toISOString()
+          : null,
+        scopes: [
+          "instagram_business_basic",
+          "instagram_business_manage_insights",
+        ],
+        status: "connected",
+        history_window_days: 90,
+        sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
+      },
+      { onConflict: "provider,provider_account_id,user_id" },
+    )
+    .select("id,user_id,page_id,provider,provider_account_id,account_name,status,last_sync_at")
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 async function connectManagedAccounts(
@@ -167,7 +275,27 @@ Deno.serve(async (req) => {
     if (!internalPage) throw new Error("Página do Copy News inválida");
 
     let accessToken = "";
-    if (body.action === "oauth_callback") {
+    if (body.action === "instagram_oauth_callback") {
+      const exchanged = await exchangeInstagramCode(
+        String(body.code || ""),
+        String(body.redirect_uri || ""),
+      );
+      const account = await connectInstagramLoginAccount(
+        admin,
+        user.id,
+        pageId,
+        exchanged.accessToken,
+        exchanged.expiresIn,
+      );
+      await admin.from("audit_logs").insert({
+        user_id: user.id,
+        action: "instagram.account.connected",
+        entity_type: "connected_account",
+        entity_id: account.id,
+        metadata: { login: "instagram" },
+      });
+      return json({ accounts: [account], count: 1 });
+    } else if (body.action === "oauth_callback") {
       accessToken = await exchangeCode(String(body.code || ""), String(body.redirect_uri || ""));
     } else if (body.action === "connect_saved_token" && profile.role === "admin") {
       accessToken = env("META_ACCESS_TOKEN");

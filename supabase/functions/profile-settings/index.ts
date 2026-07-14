@@ -19,8 +19,11 @@ function canvaUrl(value: unknown) {
   const text = String(value || "").trim();
   if (!text) return null;
   const url = new URL(text);
-  if (url.protocol !== "https:" || !/(^|\.)canva\.com$/i.test(url.hostname))
-    throw new Error("Use um link HTTPS do Canva");
+  if (
+    url.protocol !== "https:" ||
+    !/(^|\.)(canva\.com|canva\.link)$/i.test(url.hostname)
+  )
+    throw new Error("Use um link HTTPS do Canva ou canva.link");
   return url.toString();
 }
 

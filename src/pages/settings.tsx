@@ -94,7 +94,7 @@ export function SettingsPage() {
     supabase.functions
       .invoke("instagram-account", {
         body: {
-          action: "oauth_callback",
+          action: "instagram_oauth_callback",
           code,
           page_id: pageId,
           redirect_uri: `${window.location.origin}/configuracoes`,
@@ -172,7 +172,12 @@ export function SettingsPage() {
       },
     });
     setSavingEditorLinks(false);
-    if (error) return toast.error("Não foi possível salvar os links do Canva");
+    if (error) {
+      const context = await error.context?.json().catch(() => null);
+      return toast.error(
+        context?.error || "Não foi possível salvar os links do Canva",
+      );
+    }
     await refreshProfile();
     toast.success("Links do Canva atualizados");
   }
@@ -188,14 +193,16 @@ export function SettingsPage() {
     ).join("");
     sessionStorage.setItem("copynews-meta-state", state);
     sessionStorage.setItem("copynews-meta-page", instagramPageId);
-    const url = new URL("https://www.facebook.com/v25.0/dialog/oauth");
+    const url = new URL("https://www.instagram.com/oauth/authorize");
     url.searchParams.set("client_id", appId);
     url.searchParams.set("redirect_uri", `${window.location.origin}/configuracoes`);
     url.searchParams.set("state", state);
     url.searchParams.set("response_type", "code");
+    url.searchParams.set("enable_fb_login", "0");
+    url.searchParams.set("force_authentication", "1");
     url.searchParams.set(
       "scope",
-      "instagram_basic,instagram_manage_insights,pages_read_engagement,pages_show_list",
+      "instagram_business_basic,instagram_business_manage_insights",
     );
     window.location.assign(url.toString());
   }
@@ -396,8 +403,8 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-muted-foreground">
-              Cada usuário conecta sua própria conta Business ou Creator pelo login
-              oficial da Meta. O administrador visualiza os resultados de toda a
+              Cada usuário conecta sua própria conta Business ou Creator diretamente
+              pelo login oficial do Instagram. O administrador visualiza os resultados de toda a
               equipe, mas os tokens permanecem criptografados no backend.
             </p>
             <form className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end" onSubmit={connectInstagram}>
@@ -416,7 +423,7 @@ export function SettingsPage() {
               </Field>
               <Button disabled={connectingInstagram}>
                 <ChartNoAxesCombined />
-                {connectingInstagram ? "Conectando..." : "Entrar com a Meta"}
+                {connectingInstagram ? "Conectando..." : "Entrar com Instagram"}
               </Button>
             </form>
             <div className="mt-5 divide-y border-t">

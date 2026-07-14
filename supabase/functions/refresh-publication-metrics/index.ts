@@ -11,8 +11,15 @@ const json = (body: unknown, status = 200) =>
 function env(name: string) { const value = Deno.env.get(name); if (!value) throw new Error(`Missing environment variable: ${name}`); return value; }
 const version = () => Deno.env.get("META_GRAPH_API_VERSION") || "v25.0";
 
-async function graph(path: string, token: string, params: Record<string, string> = {}) {
-  const url = new URL(`https://graph.facebook.com/${version()}/${path.replace(/^\//, "")}`);
+async function graph(
+  path: string,
+  token: string,
+  params: Record<string, string> = {},
+  instagramLogin = false,
+) {
+  const url = new URL(
+    `https://${instagramLogin ? "graph.instagram.com" : "graph.facebook.com"}/${version()}/${path.replace(/^\//, "")}`,
+  );
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   url.searchParams.set("access_token", token);
   const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -28,12 +35,17 @@ function postKey(value: string) {
   } catch { return ""; }
 }
 
-async function resolveMediaId(accountId: string, publicationUrl: string, token: string) {
+async function resolveMediaId(
+  accountId: string,
+  publicationUrl: string,
+  token: string,
+  instagramLogin: boolean,
+) {
   let path = `${accountId}/media`;
   let params: Record<string, string> = { fields: "id,permalink,timestamp", limit: "100" };
   const expected = postKey(publicationUrl);
   for (let page = 0; page < 5; page += 1) {
-    const payload = await graph(path, token, params);
+    const payload = await graph(path, token, params, instagramLogin);
     const match = (payload.data || []).find((item: { permalink?: string }) =>
       expected && postKey(item.permalink || "") === expected
     );
@@ -48,9 +60,19 @@ async function resolveMediaId(accountId: string, publicationUrl: string, token: 
   throw new Error("Publicação não encontrada entre as mídias recentes da conta conectada");
 }
 
-async function insight(mediaId: string, metric: string, token: string) {
+async function insight(
+  mediaId: string,
+  metric: string,
+  token: string,
+  instagramLogin: boolean,
+) {
   try {
-    const payload = await graph(`${mediaId}/insights`, token, { metric });
+    const payload = await graph(
+      `${mediaId}/insights`,
+      token,
+      { metric },
+      instagramLogin,
+    );
     const item = payload.data?.[0];
     const value = item?.values?.[0]?.value ?? item?.total_value?.value ?? item?.value;
     return { value: Number(value || 0), payload };
@@ -83,12 +105,13 @@ Deno.serve(async (req) => {
     const { data: account } = await accountQuery.limit(1).maybeSingle();
     if (!account) throw new Error("Conecte a conta profissional do Instagram desta página nas Configurações");
     const token = await decryptToken(account.encrypted_access_token, env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"));
+    const instagramLogin = (account.scopes || []).includes("instagram_business_basic");
     const mediaId = /^\d+$/.test(publication.external_media_id || "")
       ? publication.external_media_id
-      : await resolveMediaId(account.provider_account_id, publication.published_url, token);
-    const basic = await graph(mediaId, token, { fields: "id,media_type,permalink,like_count,comments_count,timestamp" });
+      : await resolveMediaId(account.provider_account_id, publication.published_url, token, instagramLogin);
+    const basic = await graph(mediaId, token, { fields: "id,media_type,permalink,like_count,comments_count,timestamp" }, instagramLogin);
     const names = ["views", "reach", "shares", "saved", "reposts"];
-    const entries = await Promise.all(names.map(async (name) => [name, await insight(mediaId, name, token)] as const));
+    const entries = await Promise.all(names.map(async (name) => [name, await insight(mediaId, name, token, instagramLogin)] as const));
     const metrics = Object.fromEntries(entries);
     const snapshot = {
       publication_id: publication.id,
