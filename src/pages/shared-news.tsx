@@ -54,7 +54,7 @@ export function SharedNewsPage() {
           <div className="mt-5 flex flex-wrap gap-2">
             {data.generated_title && <Button onClick={() => copy(data.generated_title!, "Título")}><Clipboard /> Copiar título</Button>}
             {data.generated_caption && <Button variant="secondary" onClick={() => copy(data.generated_caption!, "Legenda")}><Clipboard /> Copiar legenda</Button>}
-            {data.download_url && <Button variant="outline" asChild><a href={data.download_url}><Download /> Baixar mídia</a></Button>}
+            {data.download_url && <Button className="border-white/30 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950" variant="outline" asChild><a href={data.download_url}><Download /> Baixar mídia</a></Button>}
           </div>
         </div>
         <SharedField title="Legenda gerada" value={data.generated_caption} onCopy={copy} />

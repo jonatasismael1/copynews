@@ -78,50 +78,29 @@ export function SettingsPage() {
   ] as const;
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    const state = searchParams.get("state");
-    if (!code) return;
-    const expectedState = sessionStorage.getItem("copynews-meta-state");
-    const pageId = sessionStorage.getItem("copynews-meta-page");
-    sessionStorage.removeItem("copynews-meta-state");
-    sessionStorage.removeItem("copynews-meta-page");
+    const connection = searchParams.get("instagram");
+    if (!connection) return;
+    const accountId = searchParams.get("account_id");
     setSearchParams({}, { replace: true });
-    if (!state || state !== expectedState || !pageId) {
-      toast.error("A conexão com a Meta expirou. Tente novamente.");
+    if (connection !== "connected" || !accountId) {
+      toast.error("Não foi possível conectar o Instagram. Tente novamente.");
       return;
     }
     queueMicrotask(() => setConnectingInstagram(true));
     supabase.functions
-      .invoke("instagram-account", {
-        body: {
-          action: "instagram_oauth_callback",
-          code,
-          page_id: pageId,
-          redirect_uri: `${window.location.origin}/configuracoes`,
-        },
+      .invoke("sync-instagram-publications", {
+        body: { account_id: accountId },
       })
-      .then(async ({ data, error }) => {
+      .then(async ({ error }) => {
         if (error) throw error;
-        const accountIds = (data?.accounts || []).map(
-          (account: { id: string }) => account.id,
-        );
-        for (const accountId of accountIds) {
-          const { error: syncError } = await supabase.functions.invoke(
-            "sync-instagram-publications",
-            { body: { account_id: accountId } },
-          );
-          if (syncError) throw syncError;
-        }
         await refetchAccounts();
         queryClient.invalidateQueries({ queryKey: ["publications"] });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success(
-          `${Number(data?.count || 1)} conta(s) profissional(is) conectada(s)`,
-        );
+        toast.success("Instagram conectado e publicações sincronizadas");
       })
       .catch(() =>
         toast.error(
-          "Não foi possível concluir a conexão. Confira as permissões do aplicativo Meta.",
+          "A conta foi conectada, mas a primeira sincronização não foi concluída.",
         ),
       )
       .finally(() => setConnectingInstagram(false));
@@ -184,27 +163,29 @@ export function SettingsPage() {
 
   async function connectInstagram(event: FormEvent) {
     event.preventDefault();
-    const appId = import.meta.env.VITE_META_APP_ID;
-    if (!appId) return toast.error("Integração Meta ainda não configurada");
     if (!instagramPageId) return toast.error("Selecione a página do Copy News");
-    const bytes = crypto.getRandomValues(new Uint8Array(24));
-    const state = Array.from(bytes, (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("");
-    sessionStorage.setItem("copynews-meta-state", state);
-    sessionStorage.setItem("copynews-meta-page", instagramPageId);
-    const url = new URL("https://www.instagram.com/oauth/authorize");
-    url.searchParams.set("client_id", appId);
-    url.searchParams.set("redirect_uri", `${window.location.origin}/configuracoes`);
-    url.searchParams.set("state", state);
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("enable_fb_login", "0");
-    url.searchParams.set("force_authentication", "1");
-    url.searchParams.set(
-      "scope",
-      "instagram_business_basic,instagram_business_manage_insights",
-    );
-    window.location.assign(url.toString());
+    setConnectingInstagram(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setConnectingInstagram(false);
+      return toast.error("Sua sessão expirou. Entre novamente.");
+    }
+    try {
+      const response = await fetch("/.netlify/functions/instagram-auth-start", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ page_id: instagramPageId }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.authorization_url) throw new Error(result.error);
+      window.location.assign(result.authorization_url);
+    } catch {
+      setConnectingInstagram(false);
+      toast.error("Não foi possível iniciar o login do Instagram");
+    }
   }
 
   async function disconnectInstagram(accountId: string) {
@@ -405,7 +386,8 @@ export function SettingsPage() {
             <p className="mb-4 text-sm text-muted-foreground">
               Cada usuário conecta sua própria conta Business ou Creator diretamente
               pelo login oficial do Instagram. O administrador visualiza os resultados de toda a
-              equipe, mas os tokens permanecem criptografados no backend.
+              equipe, mas os tokens permanecem criptografados no backend. O acesso é
+              renovado automaticamente antes de expirar e pode ser reconectado aqui.
             </p>
             <form className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end" onSubmit={connectInstagram}>
               <Field label="Página do Copy News">
@@ -423,7 +405,11 @@ export function SettingsPage() {
               </Field>
               <Button disabled={connectingInstagram}>
                 <ChartNoAxesCombined />
-                {connectingInstagram ? "Conectando..." : "Entrar com Instagram"}
+                {connectingInstagram
+                  ? "Conectando..."
+                  : connectedAccounts.some((account) => account.status === "connected")
+                    ? "Reconectar Instagram"
+                    : "Entrar com Instagram"}
               </Button>
             </form>
             <div className="mt-5 divide-y border-t">
