@@ -223,7 +223,7 @@ export function NewsDetailPage() {
     );
     if (error || !result?.public_slug)
       return toast.error("Não foi possível criar o link compartilhável");
-    const url = `${window.location.origin}/${result.public_slug}`;
+    const url = `https://copynews.netlify.app/${result.public_slug}`;
     await refetch();
     if (navigator.share) {
       try {

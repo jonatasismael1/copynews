@@ -75,6 +75,7 @@ function adminClient() {
 }
 
 async function start(req: Request, body: Record<string, unknown>) {
+  console.info(JSON.stringify({ event: "oauth_start_called" }));
   const authorization = req.headers.get("Authorization");
   if (!authorization) return json({ error: "Unauthorized" }, 401);
   const auth = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
@@ -110,6 +111,7 @@ async function start(req: Request, body: Record<string, unknown>) {
   url.searchParams.set("scope", "instagram_business_basic,instagram_business_manage_insights");
   url.searchParams.set("enable_fb_login", "0");
   url.searchParams.set("force_authentication", "1");
+  console.info(JSON.stringify({ event: "oauth_url_created" }));
   return json({ authorization_url: url.toString() });
 }
 
