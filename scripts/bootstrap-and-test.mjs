@@ -75,6 +75,7 @@ try {
       source_platform: "web",
       status: "draft",
       created_by: writer.id,
+      assigned_to: writer.id,
     })
     .select()
     .single();
@@ -92,6 +93,35 @@ try {
   });
   if (!viewerInsert.error)
     throw new Error("RLS failed: viewer inserted content");
+  const writerReassign = await clients.writer
+    .from("news_items")
+    .update({
+      assigned_to: testUsers.find(
+        (user) => user.app_metadata.role === "viewer",
+      ).id,
+    })
+    .eq("id", inserted.data.id);
+  if (!writerReassign.error)
+    throw new Error("Assignment guard failed: writer reassigned content");
+  const editorReassign = await clients.editor
+    .from("news_items")
+    .update({
+      assigned_to: testUsers.find(
+        (user) => user.app_metadata.role === "editor",
+      ).id,
+    })
+    .eq("id", inserted.data.id);
+  if (!editorReassign.error)
+    throw new Error("Assignment guard failed: editor reassigned content");
+  const adminReassign = await clients.admin
+    .from("news_items")
+    .update({
+      assigned_to: testUsers.find(
+        (user) => user.app_metadata.role === "admin",
+      ).id,
+    })
+    .eq("id", inserted.data.id);
+  if (adminReassign.error) throw adminReassign.error;
   const editorApprove = await clients.editor
     .from("news_items")
     .update({ status: "approved" })
@@ -103,6 +133,60 @@ try {
     .eq("id", inserted.data.id);
   if (viewerRead.error || viewerRead.data.length !== 1)
     throw new Error("RLS failed: viewer cannot read");
+  const writerArchive = await clients.writer.functions.invoke("manage-news", {
+    body: { action: "archive", news_id: inserted.data.id },
+  });
+  if (writerArchive.error) throw writerArchive.error;
+  const archivedNews = await admin
+    .from("news_items")
+    .select("archived_at,status")
+    .eq("id", inserted.data.id)
+    .single();
+  if (
+    archivedNews.error ||
+    !archivedNews.data.archived_at ||
+    archivedNews.data.status !== "archived"
+  )
+    throw archivedNews.error || new Error("Writer archive failed");
+  const writerDelete = await clients.writer.functions.invoke("manage-news", {
+    body: { action: "delete", news_id: inserted.data.id },
+  });
+  if (writerDelete.error) throw writerDelete.error;
+
+  const writerPublication = await clients.writer
+    .from("publications")
+    .insert({
+      title: "Publicação do redator",
+      platform: "Instagram",
+      published_url: `https://instagram.com/p/writer-${suffix}`,
+      published_at: new Date().toISOString(),
+      created_by: writer.id,
+      posted_by: writer.id,
+      source_type: "external",
+    })
+    .select("id")
+    .single();
+  if (writerPublication.error) throw writerPublication.error;
+  const publicationArchive = await clients.writer.functions.invoke(
+    "manage-publications",
+    {
+      body: {
+        action: "archive",
+        publication_id: writerPublication.data.id,
+      },
+    },
+  );
+  if (publicationArchive.error) throw publicationArchive.error;
+  const publicationDelete = await clients.writer.functions.invoke(
+    "manage-publications",
+    {
+      body: {
+        action: "delete",
+        publication_id: writerPublication.data.id,
+      },
+    },
+  );
+  if (publicationDelete.error) throw publicationDelete.error;
   await admin.from("news_items").delete().eq("id", inserted.data.id);
   console.log(
     JSON.stringify({
@@ -113,9 +197,13 @@ try {
         "admin audit read",
         "writer create",
         "writer approval denied",
+        "writer and editor reassignment denied",
+        "admin reassignment allowed",
         "editor approval",
         "viewer read",
         "viewer write denied",
+        "writer news archive and delete",
+        "writer publication archive and delete",
       ],
     }),
   );

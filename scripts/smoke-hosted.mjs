@@ -64,6 +64,13 @@ try {
   });
   if (queued.error) throw queued.error;
   created.push(["news", queued.data.news_item_id]);
+  const assignment = await admin
+    .from("news_items")
+    .select("assigned_to")
+    .eq("id", queued.data.news_item_id)
+    .single();
+  if (assignment.error || assignment.data.assigned_to !== login.data.user.id)
+    throw assignment.error || new Error("Current user was not assigned");
   const revisionNews = await admin
     .from("news_items")
     .insert({
@@ -195,6 +202,74 @@ try {
     !Array.isArray(dashboard.data.ranking)
   )
     throw dashboard.error || new Error("Dashboard did not count publication");
+  let page = await admin.from("pages").select("id").limit(1).maybeSingle();
+  if (page.error) throw page.error;
+  if (!page.data) {
+    page = await admin
+      .from("pages")
+      .insert({ name: "Pagina de teste", platform: "Instagram" })
+      .select("id")
+      .single();
+    if (page.error) throw page.error;
+    created.push(["page", page.data.id]);
+  }
+  const account = await admin
+    .from("connected_accounts")
+    .insert({
+      page_id: page.data.id,
+      provider: "instagram",
+      provider_account_id: `history-${Date.now()}`,
+      encrypted_access_token: "smoke-test-token",
+      status: "connected",
+    })
+    .select("id,history_window_days,sync_from")
+    .single();
+  if (account.error) throw account.error;
+  created.push(["connected_account", account.data.id]);
+  const historyAgeDays =
+    (Date.now() - new Date(account.data.sync_from).getTime()) / 86_400_000;
+  if (
+    account.data.history_window_days !== 90 ||
+    historyAgeDays < 89.9 ||
+    historyAgeDays > 90.1
+  )
+    throw new Error("Connected account did not receive a 90-day history window");
+  const dashboard90 = await client.rpc("dashboard_summary", {
+    p_from: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+    p_to: new Date().toISOString(),
+  });
+  if (dashboard90.error || !Array.isArray(dashboard90.data.daily_series))
+    throw dashboard90.error || new Error("90-day dashboard query failed");
+  const deletionFixture = await admin
+    .from("news_items")
+    .insert({
+      source_url: "https://example.com/delete-test",
+      source_platform: "web",
+      status: "draft",
+      created_by: login.data.user.id,
+      assigned_to: login.data.user.id,
+    })
+    .select("id")
+    .single();
+  if (deletionFixture.error) throw deletionFixture.error;
+  created.push(["news", deletionFixture.data.id]);
+  const deleted = await client.functions.invoke("manage-news", {
+    body: { action: "delete", news_id: deletionFixture.data.id },
+  });
+  if (deleted.error || deleted.data.deleted !== 1)
+    throw deleted.error || new Error("Individual deletion failed");
+  const deletedCheck = await admin
+    .from("news_items")
+    .select("id")
+    .eq("id", deletionFixture.data.id)
+    .maybeSingle();
+  if (deletedCheck.error || deletedCheck.data)
+    throw deletedCheck.error || new Error("Deleted news still exists");
+  const unsafeClear = await client.functions.invoke("manage-news", {
+    body: { action: "delete_all", confirmation: "wrong" },
+  });
+  if (!unsafeClear.error)
+    throw new Error("Bulk deletion accepted without confirmation");
   console.log(
     JSON.stringify({
       ok: true,
@@ -202,11 +277,14 @@ try {
         "admin Edge Function",
         "admin own and other user goals",
         "authenticated enqueue",
+        "current-user assignment",
         "OpenRouter preview and confirmed AI version",
         "linked publication",
         "external publication",
         "metric snapshot history and manual source",
         "America/Maceio dashboard breakdowns",
+        "connected account 90-day history and dashboard query",
+        "individual deletion and bulk confirmation guard",
       ],
       job_id: queued.data.job_id,
     }),
@@ -222,5 +300,8 @@ try {
     if (type === "news") await admin.from("news_items").delete().eq("id", id);
     if (type === "publication")
       await admin.from("publications").delete().eq("id", id);
+    if (type === "connected_account")
+      await admin.from("connected_accounts").delete().eq("id", id);
+    if (type === "page") await admin.from("pages").delete().eq("id", id);
   }
 }

@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Database,
+  History,
   KeyRound,
   Palette,
   Plus,
@@ -46,6 +47,7 @@ export function SettingsPage() {
     [KeyRound, "OpenRouter", "IA e transcrição no backend"],
     [ShieldCheck, "Segurança", "RLS e Storage privado"],
     [Palette, "Fuso operacional", TIMEZONE],
+    [History, "Histórico de contas", "Publicações e métricas de até 90 dias"],
   ] as const;
 
   async function updatePassword(event: FormEvent) {

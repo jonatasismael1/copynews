@@ -122,9 +122,18 @@ async function update(jobId, values) {
   if (error) throw error;
 }
 async function updateNews(newsId, values) {
-  const { error } = await db.from("news_items").update(values).eq("id", newsId);
+  const { data, error } = await db
+    .from("news_items")
+    .update(values)
+    .eq("id", newsId)
+    .select("id")
+    .maybeSingle();
   if (error)
     throw Object.assign(new Error(error.message), { code: "DATABASE_UPDATE" });
+  if (!data)
+    throw Object.assign(new Error("A notícia foi excluída durante o processamento"), {
+      code: "NEWS_DELETED",
+    });
 }
 async function processJob(job) {
   busy = true;
@@ -147,6 +156,10 @@ async function processJob(job) {
     }
     if (!results.metadata) {
       results.metadata = await extractMetadata(job.news_items.source_url);
+      await updateNews(job.news_items.id, {
+        source_caption: results.metadata.caption,
+        source_author: results.metadata.author,
+      });
       await update(job.id, {
         current_step: "fetch_media",
         progress: 16,
@@ -316,6 +329,10 @@ async function processJob(job) {
       message: error.message,
       code: error.code,
     });
+    if (error.code === "NEWS_DELETED" && results.media_path) {
+      await db.storage.from(bucket).remove([results.media_path]);
+      log("job.deleted_media_cleaned", { jobId: job.id });
+    }
     await db
       .from("processing_jobs")
       .update({

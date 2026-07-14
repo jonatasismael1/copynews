@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Check,
   Clipboard,
   Download,
+  Archive,
   History,
   LoaderCircle,
   RefreshCw,
   Sparkles,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -42,6 +44,7 @@ const writerStatuses: NewsStatus[] = [
 
 export function NewsDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { profile } = useAuth();
   const { data: lookups } = useLookups();
   const { data, isLoading, refetch } = useNewsItem(id);
@@ -138,6 +141,11 @@ export function NewsDetailPage() {
   const job = data.processing_jobs?.[0];
   const statuses = profile?.role === "writer" ? writerStatuses : allStatuses;
   const hasPublication = (data.publications?.length ?? 0) > 0;
+  const canManageRecord =
+    profile?.role === "admin" ||
+    profile?.role === "editor" ||
+    (profile?.role === "writer" &&
+      (data.created_by === profile.id || data.assigned_to === profile.id));
 
   async function persist(showToast: boolean) {
     if (!data || saving) return;
@@ -158,7 +166,9 @@ export function NewsDetailPage() {
       generated_title: title,
       generated_caption: caption,
       status,
-      assigned_to: assignedTo || null,
+      ...(profile?.role === "admin"
+        ? { assigned_to: assignedTo || null }
+        : {}),
       category_id: categoryId || null,
       destination_page_id: destinationPageId || null,
       scheduled_at:
@@ -239,6 +249,38 @@ export function NewsDetailPage() {
     }
   }
 
+  async function deleteNews() {
+    if (
+      !window.confirm(
+        "Excluir permanentemente esta notícia? Esta ação não pode ser desfeita.",
+      )
+    )
+      return;
+    setSaving(true);
+    const { data: result, error } = await supabase.functions.invoke(
+      "manage-news",
+      { body: { action: "delete", news_id: data.id } },
+    );
+    setSaving(false);
+    if (error) return toast.error("Não foi possível excluir a notícia");
+    if (result.media_cleanup_pending)
+      toast.warning("Notícia excluída; a limpeza da mídia será retomada.");
+    else toast.success("Notícia excluída");
+    navigate("/noticias", { replace: true });
+  }
+
+  async function archiveNews() {
+    if (!window.confirm("Arquivar esta notícia?")) return;
+    setSaving(true);
+    const { error } = await supabase.functions.invoke("manage-news", {
+      body: { action: "archive", news_id: data.id },
+    });
+    setSaving(false);
+    if (error) return toast.error("Não foi possível arquivar a notícia");
+    toast.success("Notícia arquivada");
+    navigate("/noticias", { replace: true });
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -276,6 +318,22 @@ export function NewsDetailPage() {
             <Check />
             Salvar agora
           </Button>
+          {canManageRecord && (
+            <>
+              <Button variant="outline" onClick={archiveNews} disabled={saving}>
+                <Archive />
+                Arquivar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={deleteNews}
+                disabled={saving}
+              >
+                <Trash2 />
+                Excluir notícia
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -360,6 +418,7 @@ export function NewsDetailPage() {
               className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
               value={assignedTo}
               onChange={(event) => setAssignedTo(event.target.value)}
+              disabled={profile?.role !== "admin"}
             >
               <option value="">Não atribuído</option>
               {lookups?.profiles.map((item) => (
@@ -368,6 +427,11 @@ export function NewsDetailPage() {
                 </option>
               ))}
             </select>
+            {profile?.role !== "admin" && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Somente administradores podem trocar o responsável.
+              </p>
+            )}
           </Field>
           <Field label="Categoria">
             <select

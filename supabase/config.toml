@@ -22,3 +22,7 @@ verify_jwt = true
 verify_jwt = true
 [functions.cleanup-temporary-media]
 verify_jwt = false
+[functions.manage-news]
+verify_jwt = true
+[functions.manage-publications]
+verify_jwt = true

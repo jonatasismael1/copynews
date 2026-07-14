@@ -21,7 +21,6 @@ export const aiResultSchema = z.object({
 });
 export const createNewsSchema = z.object({
   source_url: sourceUrlSchema,
-  assigned_to: z.string().uuid().optional().or(z.literal("")),
   category_id: z.string().uuid().optional().or(z.literal("")),
   destination_page_id: z.string().uuid().optional().or(z.literal("")),
   editorial_tone: z.string().max(100).optional(),

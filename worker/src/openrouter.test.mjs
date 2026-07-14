@@ -70,3 +70,49 @@ test("rejeita JSON estruturalmente inválido da IA", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("orienta a IA a preservar os fatos de legendas extensas", async () => {
+  const originalFetch = globalThis.fetch;
+  let request;
+  globalThis.fetch = async (_url, options) => {
+    request = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                title: "Título completo",
+                caption: "Legenda completa com fatos confirmados. ".repeat(8),
+                summary: "Resumo",
+                category_suggestion: null,
+                detected_facts: [],
+                warnings: [],
+                confidence: "high",
+              }),
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  try {
+    await generateCopy(
+      { source_caption: "Legenda extensa com fatos confirmados. ".repeat(8) },
+      "test-key",
+      "test-model",
+    );
+    assert.match(request.messages[0].content, /2 a 4 parágrafos/);
+    assert.match(request.messages[0].content, /todos os fatos relevantes/);
+    assert.ok(
+      request.response_format.json_schema.schema.properties.caption.minLength >
+        200,
+    );
+    const requirements = JSON.parse(request.messages[1].content)
+      .editorial_requirements;
+    assert.equal(requirements.preserve_all_relevant_source_facts, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

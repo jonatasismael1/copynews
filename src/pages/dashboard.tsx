@@ -24,12 +24,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDashboard } from "@/hooks/use-data";
 
-type Period = 1 | 7 | 30;
+type Period = 1 | 7 | 30 | 90;
 
 export function DashboardPage() {
   const [period, setPeriod] = useState<Period>(1);
   const { data, isLoading, error } = useDashboard(period);
-  const periodLabel = period === 1 ? "Hoje" : `${period} dias`;
+  const periodLabel =
+    period === 1 ? "Hoje" : period === 90 ? "3 meses" : `${period} dias`;
   const cards = [
     [
       "Notícias criadas",
@@ -81,14 +82,14 @@ export function DashboardPage() {
         className="flex w-fit rounded-xl border bg-card p-1"
         aria-label="Filtrar período"
       >
-        {([1, 7, 30] as Period[]).map((days) => (
+        {([1, 7, 30, 90] as Period[]).map((days) => (
           <Button
             key={days}
             size="sm"
             variant={period === days ? "secondary" : "ghost"}
             onClick={() => setPeriod(days)}
           >
-            {days === 1 ? "Hoje" : `${days} dias`}
+            {days === 1 ? "Hoje" : days === 90 ? "3 meses" : `${days} dias`}
           </Button>
         ))}
       </div>

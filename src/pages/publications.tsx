@@ -1,7 +1,15 @@
 import { useState } from "react";
-import { ExternalLink, History, Plus, TrendingUp } from "lucide-react";
+import {
+  Archive,
+  ExternalLink,
+  History,
+  Plus,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,13 +27,40 @@ import {
   type MetricInput,
   type PublicationInput,
 } from "@/lib/schemas";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/providers/auth-provider";
 
 type Snapshot = Record<string, number | string>;
 
 export function PublicationsPage() {
-  const { data = [], isLoading } = usePublications();
+  const { profile } = useAuth();
+  const { data = [], isLoading, refetch } = usePublications();
   const [modal, setModal] = useState<"publication" | "metrics" | null>(null);
   const [selected, setSelected] = useState("");
+
+  async function managePublication(
+    publicationId: string,
+    action: "archive" | "delete",
+  ) {
+    const message =
+      action === "archive"
+        ? "Arquivar esta publicação?"
+        : "Excluir permanentemente esta publicação e suas métricas?";
+    if (!window.confirm(message)) return;
+    const { error } = await supabase.functions.invoke("manage-publications", {
+      body: { action, publication_id: publicationId },
+    });
+    if (error)
+      return toast.error(
+        action === "archive"
+          ? "Não foi possível arquivar a publicação"
+          : "Não foi possível excluir a publicação",
+      );
+    toast.success(
+      action === "archive" ? "Publicação arquivada" : "Publicação excluída",
+    );
+    refetch();
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -63,6 +98,12 @@ export function PublicationsPage() {
                 String(b.captured_at).localeCompare(String(a.captured_at)),
             );
             const latest = sorted[0];
+            const canManage =
+              profile?.role === "admin" ||
+              profile?.role === "editor" ||
+              (profile?.role === "writer" &&
+                (publication.created_by === profile.id ||
+                  publication.posted_by === profile.id));
             return (
               <Card key={publication.id}>
                 <CardContent className="p-4">
@@ -113,6 +154,30 @@ export function PublicationsPage() {
                           <ExternalLink />
                         </a>
                       </Button>
+                      {canManage && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            title="Arquivar publicação"
+                            onClick={() =>
+                              managePublication(publication.id, "archive")
+                            }
+                          >
+                            <Archive />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            title="Excluir publicação"
+                            onClick={() =>
+                              managePublication(publication.id, "delete")
+                            }
+                          >
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                   <MetricHistory snapshots={sorted} />
