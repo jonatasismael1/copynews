@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Check,
   Clipboard,
@@ -8,6 +8,7 @@ import {
   Archive,
   History,
   LoaderCircle,
+  Palette,
   RefreshCw,
   Sparkles,
   Trash2,
@@ -147,6 +148,13 @@ export function NewsDetailPage() {
     profile?.role === "editor" ||
     (profile?.role === "writer" &&
       (data.created_by === profile.id || data.assigned_to === profile.id));
+  const editorReady =
+    job?.status === "completed" && Boolean(title.trim() && caption.trim());
+  const editorType = mediaEditorType(job?.step_results);
+  const editorUrl =
+    editorType === "video"
+      ? profile?.canva_video_url
+      : profile?.canva_image_url;
 
   async function persist(showToast: boolean) {
     if (!data || saving) return;
@@ -339,6 +347,22 @@ export function NewsDetailPage() {
             <Check />
             Salvar agora
           </Button>
+          {editorReady && editorUrl && (
+            <Button asChild>
+              <a href={editorUrl} target="_blank" rel="noreferrer">
+                <Palette />
+                Abrir editor
+              </a>
+            </Button>
+          )}
+          {editorReady && !editorUrl && (
+            <Button variant="outline" asChild>
+              <Link to="/configuracoes">
+                <Palette />
+                Configurar editor
+              </Link>
+            </Button>
+          )}
           {canManageRecord && (
             <>
               <Button variant="outline" onClick={archiveNews} disabled={saving}>
@@ -682,6 +706,20 @@ export function NewsDetailPage() {
       )}
     </div>
   );
+}
+
+function mediaEditorType(stepResults: unknown): "video" | "image" {
+  if (!stepResults || typeof stepResults !== "object") return "video";
+  const result = stepResults as {
+    media_kind?: string;
+    media_items?: { kind?: string }[];
+  };
+  if (result.media_kind === "image") return "image";
+  if (result.media_kind === "carousel")
+    return result.media_items?.some((item) => item.kind === "video")
+      ? "video"
+      : "image";
+  return "video";
 }
 
 function toMaceioInput(value?: string | null) {

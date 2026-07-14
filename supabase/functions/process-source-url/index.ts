@@ -91,6 +91,7 @@ Deno.serve(
         assigned_to: user.id,
         category_id: body.category_id || null,
         destination_page_id: body.destination_page_id || null,
+        transcribe_audio: body.transcribe_audio === true,
         created_by: user.id,
         status: "processing",
       })
@@ -107,6 +108,7 @@ Deno.serve(
         step_results: {
           editorial_tone: body.editorial_tone || "Informativo",
           notes: body.notes || null,
+          transcribe_audio: body.transcribe_audio === true,
         },
       })
       .select("id")

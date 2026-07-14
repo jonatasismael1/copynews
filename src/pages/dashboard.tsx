@@ -22,13 +22,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDashboard } from "@/hooks/use-data";
+import { useAdminDailyResults, useDashboard } from "@/hooks/use-data";
+import { useAuth } from "@/providers/auth-provider";
 
 type Period = 1 | 7 | 30 | 90;
 
 export function DashboardPage() {
+  const { profile } = useAuth();
   const [period, setPeriod] = useState<Period>(1);
+  const [dailyUser, setDailyUser] = useState("all");
+  const [dailyDate, setDailyDate] = useState("");
   const { data, isLoading, error } = useDashboard(period);
+  const { data: adminDaily = [], isLoading: adminDailyLoading } =
+    useAdminDailyResults(period, profile?.role === "admin");
+  const availableDays = [...new Set(adminDaily.map((row) => row.day))];
+  const activeDailyDate = dailyDate || availableDays[0] || "";
+  const dailyUsers = Array.from(
+    new Map(adminDaily.map((row) => [row.user_id, row.user_name])).entries(),
+  );
+  const filteredDaily = adminDaily.filter(
+    (row) =>
+      row.day === activeDailyDate &&
+      (dailyUser === "all" || row.user_id === dailyUser),
+  );
   const periodLabel =
     period === 1 ? "Hoje" : period === 90 ? "3 meses" : `${period} dias`;
   const cards = [
@@ -223,6 +239,79 @@ export function DashboardPage() {
           }))}
         />
       </div>
+
+      {profile?.role === "admin" && (
+        <Card>
+          <CardHeader className="gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users size={19} className="text-primary" />
+                Resultado diário por usuário
+              </CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Acompanhe toda a equipe, incluindo sua própria produção.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Dia
+                <select
+                  className="mt-1 block h-10 w-full min-w-40 rounded-xl border bg-background px-3 text-sm text-foreground"
+                  value={activeDailyDate}
+                  onChange={(event) => setDailyDate(event.target.value)}
+                >
+                  {availableDays.map((day) => (
+                    <option key={day} value={day}>
+                      {new Date(`${day}T12:00:00-03:00`).toLocaleDateString("pt-BR")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs font-semibold text-muted-foreground">
+                Usuário
+                <select
+                  className="mt-1 block h-10 w-full min-w-48 rounded-xl border bg-background px-3 text-sm text-foreground"
+                  value={dailyUser}
+                  onChange={(event) => setDailyUser(event.target.value)}
+                >
+                  <option value="all">Todos os usuários</option>
+                  {dailyUsers.map(([id, name]) => (
+                    <option key={id} value={id}>{name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {adminDailyLoading ? (
+              <Skeleton className="h-36" />
+            ) : filteredDaily.length ? (
+              <div className="overflow-x-auto rounded-xl border">
+                <div className="grid min-w-[720px] grid-cols-[1.5fr_repeat(5,1fr)] gap-3 bg-muted/60 px-4 py-3 text-xs font-semibold text-muted-foreground">
+                  <span>Usuário</span>
+                  <span>Criadas</span>
+                  <span>Finalizadas</span>
+                  <span>Publicadas</span>
+                  <span>Meta diária</span>
+                  <span>Interações</span>
+                </div>
+                {filteredDaily.map((row) => (
+                  <div key={`${row.day}-${row.user_id}`} className="grid min-w-[720px] grid-cols-[1.5fr_repeat(5,1fr)] gap-3 border-t px-4 py-3 text-sm">
+                    <b>{row.user_name}</b>
+                    <span>{row.news_created}</span>
+                    <span>{row.news_completed}</span>
+                    <span>{row.publications}</span>
+                    <span>{row.publications}/{row.daily_goal}</span>
+                    <span>{Number(row.interactions).toLocaleString("pt-BR")}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Nenhum resultado para os filtros selecionados." />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>

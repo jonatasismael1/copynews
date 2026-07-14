@@ -21,6 +21,7 @@ export const aiResultSchema = z.object({
 });
 export const createNewsSchema = z.object({
   source_url: sourceUrlSchema,
+  transcribe_audio: z.boolean().optional(),
   category_id: z.string().uuid().optional().or(z.literal("")),
   destination_page_id: z.string().uuid().optional().or(z.literal("")),
   editorial_tone: z.string().max(100).optional(),
@@ -41,6 +42,7 @@ export const metricSchema = z.object({
   comments: z.number().int().min(0),
   shares: z.number().int().min(0),
   saves: z.number().int().min(0),
+  reposts: z.number().int().min(0),
   clicks: z.number().int().min(0),
   followers_gained: z.number().int().min(0),
 });

@@ -30,3 +30,9 @@ verify_jwt = true
 verify_jwt = true
 [functions.profile-avatar]
 verify_jwt = true
+[functions.profile-settings]
+verify_jwt = true
+[functions.instagram-account]
+verify_jwt = true
+[functions.refresh-publication-metrics]
+verify_jwt = true

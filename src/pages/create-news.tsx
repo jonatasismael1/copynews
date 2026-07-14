@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Link2, Sparkles } from "lucide-react";
+import { ArrowLeft, AudioLines, Link2, Sparkles } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ export function CreateNewsPage() {
     formState: { errors },
   } = useForm<CreateNewsInput>({
     resolver: zodResolver(createNewsSchema),
-    defaultValues: { editorial_tone: "Informativo" },
+    defaultValues: { editorial_tone: "Informativo", transcribe_audio: false },
   });
 
   async function submit(values: CreateNewsInput) {
@@ -75,6 +75,24 @@ export function CreateNewsPage() {
                   {errors.source_url.message}
                 </p>
               )}
+            </label>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-2xl border bg-muted/30 p-4">
+              <input
+                type="checkbox"
+                className="mt-1 size-5 accent-primary"
+                {...register("transcribe_audio")}
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-2 text-sm font-semibold">
+                  <AudioLines size={17} className="text-primary" />
+                  Transcrever o áudio
+                </span>
+                <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                  Ative quando a fala do vídeo trouxer informações importantes.
+                  Desativado, o conteúdo usa a legenda original e o texto visível.
+                </span>
+              </span>
             </label>
 
             <div className="grid gap-4 sm:grid-cols-2">

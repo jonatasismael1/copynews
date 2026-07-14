@@ -6,6 +6,7 @@ import {
   Link2,
   LoaderCircle,
   Plus,
+  RefreshCw,
   Trash2,
   TrendingUp,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import {
   useNews,
   usePublications,
   useRecordMetrics,
+  useRefreshPublicationMetrics,
 } from "@/hooks/use-data";
 import {
   metricSchema,
@@ -39,6 +41,7 @@ export function PublicationsPage() {
   const { data = [], isLoading, refetch } = usePublications();
   const [modal, setModal] = useState<"publication" | "metrics" | null>(null);
   const [selected, setSelected] = useState("");
+  const refreshMetrics = useRefreshPublicationMetrics();
 
   async function managePublication(
     publicationId: string,
@@ -145,14 +148,34 @@ export function PublicationsPage() {
                         </p>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm md:flex md:gap-8">
-                      <Stat
-                        label="Visualizações"
-                        value={number(latest?.views)}
-                      />
-                      <Stat label="Interações" value={interactions(latest)} />
+                    <div className="grid grid-cols-3 gap-x-4 gap-y-3 text-sm md:min-w-72">
+                      <Stat label="Views" value={number(latest?.views)} />
+                      <Stat label="Curtidas" value={number(latest?.likes)} />
+                      <Stat label="Comentários" value={number(latest?.comments)} />
+                      <Stat label="Compart." value={number(latest?.shares)} />
+                      <Stat label="Salvos" value={number(latest?.saves)} />
+                      <Stat label="Reposts" value={number(latest?.reposts)} />
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          refreshMetrics.isPending &&
+                          refreshMetrics.variables === publication.id
+                        }
+                        onClick={() => refreshMetrics.mutate(publication.id)}
+                      >
+                        <RefreshCw
+                          className={
+                            refreshMetrics.isPending &&
+                            refreshMetrics.variables === publication.id
+                              ? "animate-spin"
+                              : ""
+                          }
+                        />
+                        Atualizar
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -248,16 +271,20 @@ function MetricHistory({ snapshots }: { snapshots: Snapshot[] }) {
           </span>
         )}
       </summary>
-      <div className="mt-3 overflow-hidden rounded-xl border">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-3 bg-muted/60 px-3 py-2 text-[11px] font-semibold text-muted-foreground">
+      <div className="mt-3 overflow-x-auto rounded-xl border">
+        <div className="grid min-w-[720px] grid-cols-[1.4fr_repeat(6,auto)] gap-4 bg-muted/60 px-3 py-2 text-[11px] font-semibold text-muted-foreground">
           <span>Coleta</span>
           <span>Views</span>
-          <span>Interações</span>
+          <span>Curtidas</span>
+          <span>Comentários</span>
+          <span>Compart.</span>
+          <span>Salvos</span>
+          <span>Reposts</span>
         </div>
         {snapshots.map((snapshot, index) => (
           <div
             key={String(snapshot.id ?? snapshot.captured_at)}
-            className="grid grid-cols-[1fr_auto_auto] gap-3 border-t px-3 py-2 text-xs"
+            className="grid min-w-[720px] grid-cols-[1.4fr_repeat(6,auto)] gap-4 border-t px-3 py-2 text-xs"
           >
             <span>
               {formatDate(String(snapshot.captured_at))}
@@ -266,14 +293,21 @@ function MetricHistory({ snapshots }: { snapshots: Snapshot[] }) {
                   Atual
                 </Badge>
               )}
+              <span className="ml-1 text-[10px] uppercase text-muted-foreground">
+                {snapshot.source === "api" ? "Instagram" : "Manual"}
+              </span>
             </span>
             <b>{number(snapshot.views).toLocaleString("pt-BR")}</b>
-            <b>{interactions(snapshot).toLocaleString("pt-BR")}</b>
+            <b>{number(snapshot.likes).toLocaleString("pt-BR")}</b>
+            <b>{number(snapshot.comments).toLocaleString("pt-BR")}</b>
+            <b>{number(snapshot.shares).toLocaleString("pt-BR")}</b>
+            <b>{number(snapshot.saves).toLocaleString("pt-BR")}</b>
+            <b>{number(snapshot.reposts).toLocaleString("pt-BR")}</b>
           </div>
         ))}
       </div>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        Fonte manual. Cada coleta permanece registrada.
+        Coletas da API e inserções manuais permanecem registradas.
       </p>
     </details>
   );
@@ -449,6 +483,7 @@ function MetricsModal({
       comments: 0,
       shares: 0,
       saves: 0,
+      reposts: 0,
       clicks: 0,
       followers_gained: 0,
     },
@@ -477,6 +512,7 @@ function MetricsModal({
               "comments",
               "shares",
               "saves",
+              "reposts",
               "clicks",
               "followers_gained",
             ] as const
@@ -492,6 +528,7 @@ function MetricsModal({
                   comments: "Comentários",
                   shares: "Compartilhamentos",
                   saves: "Salvamentos",
+                  reposts: "Reposts",
                   clicks: "Cliques",
                   followers_gained: "Seguidores ganhos",
                 }[name]
@@ -528,14 +565,6 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 function number(value: unknown) {
   return Number(value ?? 0);
-}
-function interactions(snapshot?: Snapshot) {
-  return (
-    number(snapshot?.likes) +
-    number(snapshot?.comments) +
-    number(snapshot?.shares) +
-    number(snapshot?.saves)
-  );
 }
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {

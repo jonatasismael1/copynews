@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { acquireMedia, extractMetadata } from "./adapters.mjs";
 import { generateCopy, readFrames, transcribeAudio } from "./openrouter.mjs";
 import { buildSourceContext } from "./source-context.mjs";
+import { shouldTranscribe } from "./processing-options.mjs";
 const required = [
   "SUPABASE_URL",
   "SUPABASE_SECRET_KEY",
@@ -246,7 +247,9 @@ async function processJob(job) {
         source_author: results.metadata.author,
       });
       await update(job.id, {
-        current_step: "extract_audio",
+        current_step: shouldTranscribe(job.news_items)
+          ? "extract_audio"
+          : "extract_ocr",
         progress: 30,
         step_results: results,
       });
@@ -288,7 +291,7 @@ async function processJob(job) {
         }
       }
     }
-    if (!results.transcription_completed) {
+    if (!results.transcription_completed && shouldTranscribe(job.news_items)) {
       const videoFiles = mediaFiles.filter((item) => item.kind === "video");
       for (const [index, item] of videoFiles.entries()) {
         await run("ffmpeg", [
@@ -339,6 +342,21 @@ async function processJob(job) {
       await updateNews(job.news_items.id, {
         transcript: results.transcript,
         transcript_language: "pt",
+      });
+      await update(job.id, {
+        current_step: "extract_ocr",
+        progress: 55,
+        step_results: results,
+      });
+    }
+    if (!results.transcription_completed && !shouldTranscribe(job.news_items)) {
+      results.transcript = "";
+      results.transcription_completed = true;
+      results.transcription_empty = true;
+      results.transcription_skipped = true;
+      await updateNews(job.news_items.id, {
+        transcript: null,
+        transcript_language: null,
       });
       await update(job.id, {
         current_step: "extract_ocr",
@@ -413,7 +431,9 @@ async function processJob(job) {
       if (results.transcription_empty) {
         const sourceKind = results.media_kind || "video";
         results.copy.warnings = [
-          sourceKind === "image"
+          results.transcription_skipped
+            ? "A transcrição foi desativada; o texto foi produzido a partir da legenda original e do conteúdo visual."
+            : sourceKind === "image"
             ? "A origem é uma imagem estática; o texto foi produzido a partir da legenda e do conteúdo visual."
             : sourceKind === "carousel"
               ? "Não foi identificada fala utilizável no carrossel; o texto foi produzido a partir da legenda e dos itens visuais."

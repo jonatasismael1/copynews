@@ -4,12 +4,18 @@ import {
   Camera,
   Database,
   History,
+  Images,
+  ChartNoAxesCombined,
   KeyRound,
+  Link2,
   Palette,
   Plus,
+  Save,
   Server,
   ShieldCheck,
   Smartphone,
+  Unplug,
+  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +28,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { squareAvatarDataUrl } from "@/lib/avatar";
 import { PwaInstallButton } from "@/components/pwa-install";
+import { useConnectedAccounts } from "@/hooks/use-data";
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
@@ -32,8 +39,18 @@ export function SettingsPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [pageForm, setPageForm] = useState({ name: "", platform: "Instagram" });
   const [categoryName, setCategoryName] = useState("");
+  const [editorLinks, setEditorLinks] = useState({
+    video: profile?.canva_video_url || "",
+    image: profile?.canva_image_url || "",
+  });
+  const [savingEditorLinks, setSavingEditorLinks] = useState(false);
+  const [instagramForm, setInstagramForm] = useState({ pageId: "", token: "" });
+  const [connectingInstagram, setConnectingInstagram] = useState(false);
   const canManageLookups =
     profile?.role === "admin" || profile?.role === "editor";
+  const { data: connectedAccounts = [], refetch: refetchAccounts } =
+    useConnectedAccounts(profile?.role === "admin");
+
   const { data: lookups } = useQuery({
     queryKey: ["settings-lookups"],
     enabled: canManageLookups,
@@ -89,6 +106,51 @@ export function SettingsPage() {
     } finally {
       setUploadingAvatar(false);
     }
+  }
+
+  async function saveEditorLinks(event: FormEvent) {
+    event.preventDefault();
+    setSavingEditorLinks(true);
+    const { error } = await supabase.functions.invoke("profile-settings", {
+      body: {
+        canva_video_url: editorLinks.video,
+        canva_image_url: editorLinks.image,
+      },
+    });
+    setSavingEditorLinks(false);
+    if (error) return toast.error("Não foi possível salvar os links do Canva");
+    await refreshProfile();
+    toast.success("Links do Canva atualizados");
+  }
+
+  async function connectInstagram(event: FormEvent) {
+    event.preventDefault();
+    setConnectingInstagram(true);
+    const { error } = await supabase.functions.invoke("instagram-account", {
+      body: {
+        action: "connect",
+        page_id: instagramForm.pageId,
+        access_token: instagramForm.token,
+      },
+    });
+    setConnectingInstagram(false);
+    if (error)
+      return toast.error(
+        "Não foi possível validar a conta. Confira o token e as permissões de insights.",
+      );
+    setInstagramForm({ pageId: "", token: "" });
+    await refetchAccounts();
+    toast.success("Conta profissional do Instagram conectada");
+  }
+
+  async function disconnectInstagram(accountId: string) {
+    if (!window.confirm("Desconectar esta conta do Instagram?")) return;
+    const { error } = await supabase.functions.invoke("instagram-account", {
+      body: { action: "disconnect", account_id: accountId },
+    });
+    if (error) return toast.error("Não foi possível desconectar a conta");
+    await refetchAccounts();
+    toast.success("Conta desconectada");
   }
 
   async function createPage(event: FormEvent) {
@@ -198,6 +260,134 @@ export function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 size={19} />
+            Editores do Canva
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={saveEditorLinks}>
+            <p className="text-sm text-muted-foreground">
+              Estes links abrem o modelo correto depois que o título e a legenda
+              estiverem prontos. Cada usuário pode configurar os próprios modelos.
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Modelo para vídeo">
+                <div className="relative">
+                  <Video className="absolute left-3 top-3 text-muted-foreground" size={17} />
+                  <Input
+                    className="pl-10"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://www.canva.com/design/..."
+                    value={editorLinks.video}
+                    onChange={(event) =>
+                      setEditorLinks({ ...editorLinks, video: event.target.value })
+                    }
+                  />
+                </div>
+              </Field>
+              <Field label="Modelo para imagem ou carrossel">
+                <div className="relative">
+                  <Images className="absolute left-3 top-3 text-muted-foreground" size={17} />
+                  <Input
+                    className="pl-10"
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://www.canva.com/design/..."
+                    value={editorLinks.image}
+                    onChange={(event) =>
+                      setEditorLinks({ ...editorLinks, image: event.target.value })
+                    }
+                  />
+                </div>
+              </Field>
+            </div>
+            <Button disabled={savingEditorLinks}>
+              <Save />
+              {savingEditorLinks ? "Salvando..." : "Salvar links"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {profile?.role === "admin" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ChartNoAxesCombined size={19} />
+              Instagram profissional e métricas
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Conecte uma conta Business ou Creator usando um token oficial com
+              permissão de insights. O token é validado no Instagram e armazenado
+              criptografado; ele nunca volta para o navegador.
+            </p>
+            <form className="grid gap-4 md:grid-cols-[1fr_1.5fr_auto] md:items-end" onSubmit={connectInstagram}>
+              <Field label="Página do Copy News">
+                <select
+                  required
+                  className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+                  value={instagramForm.pageId}
+                  onChange={(event) =>
+                    setInstagramForm({ ...instagramForm, pageId: event.target.value })
+                  }
+                >
+                  <option value="">Selecione</option>
+                  {(lookups?.pages ?? []).map((page) => (
+                    <option key={page.id} value={page.id}>{page.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Token da Instagram API">
+                <Input
+                  required
+                  type="password"
+                  autoComplete="off"
+                  value={instagramForm.token}
+                  onChange={(event) =>
+                    setInstagramForm({ ...instagramForm, token: event.target.value })
+                  }
+                  placeholder="Cole o token profissional"
+                />
+              </Field>
+              <Button disabled={connectingInstagram}>
+                <ChartNoAxesCombined />
+                {connectingInstagram ? "Validando..." : "Conectar"}
+              </Button>
+            </form>
+            <div className="mt-5 divide-y border-t">
+              {connectedAccounts.length ? connectedAccounts.map((account) => (
+                <div key={account.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">Instagram • {account.provider_account_id}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {account.last_sync_at
+                        ? `Última atualização: ${new Date(account.last_sync_at).toLocaleString("pt-BR")}`
+                        : "Ainda sem atualização de métricas"}
+                    </p>
+                  </div>
+                  <Badge variant={account.status === "connected" ? "success" : "danger"}>
+                    {account.status === "connected" ? "Conectada" : "Desconectada"}
+                  </Badge>
+                  {account.status === "connected" && (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => disconnectInstagram(account.id)}>
+                      <Unplug /> Desconectar
+                    </Button>
+                  )}
+                </div>
+              )) : (
+                <p className="py-5 text-sm text-muted-foreground">Nenhuma conta profissional conectada.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

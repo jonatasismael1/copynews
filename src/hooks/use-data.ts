@@ -64,7 +64,17 @@ export function useCreateNews() {
         "process-source-url",
         { body: input },
       );
-      if (error) throw error;
+      if (error) {
+        let detail = error.message;
+        try {
+          const payload = await (error as unknown as { context?: Response })
+            .context?.clone().json();
+          if (payload?.error) detail = payload.error;
+        } catch {
+          // Preserve the SDK error when the response body is unavailable.
+        }
+        throw new Error(detail);
+      }
       return data as { news_item_id: string; job_id: string };
     },
     onSuccess: () => {
@@ -159,6 +169,51 @@ export function useRecordMetrics() {
       toast.success("Novo snapshot registrado");
     },
     onError: (error) => toast.error(message(error)),
+  });
+}
+
+export function useRefreshPublicationMetrics() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (publicationId: string) => {
+      const { data, error } = await supabase.functions.invoke(
+        "refresh-publication-metrics",
+        { body: { publication_id: publicationId } },
+      );
+      if (error) {
+        let detail = error.message;
+        try {
+          const payload = await (error as unknown as { context?: Response })
+            .context?.clone().json();
+          if (payload?.error) detail = payload.error;
+        } catch {
+          // Preserve the SDK error when the response body is unavailable.
+        }
+        throw new Error(detail);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["publications"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Métricas atualizadas pelo Instagram");
+    },
+    onError: (error) => toast.error(message(error)),
+  });
+}
+
+export function useConnectedAccounts(enabled = true) {
+  return useQuery({
+    queryKey: ["connected-accounts"],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("connected_accounts")
+        .select("id,page_id,provider,provider_account_id,status,last_sync_at,token_expires_at")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
   });
 }
 
@@ -262,6 +317,33 @@ export function useDashboard(days = 1) {
       });
       if (error) throw error;
       return data as DashboardSummary;
+    },
+  });
+}
+
+export type AdminDailyResult = {
+  day: string;
+  user_id: string;
+  user_name: string;
+  daily_goal: number;
+  news_created: number;
+  news_completed: number;
+  publications: number;
+  interactions: number;
+};
+
+export function useAdminDailyResults(days = 1, enabled = true) {
+  const bounds = dashboardBounds(days);
+  return useQuery({
+    queryKey: ["admin-daily-results", days],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_daily_results", {
+        p_from: bounds.from,
+        p_to: bounds.to,
+      });
+      if (error) throw error;
+      return data as AdminDailyResult[];
     },
   });
 }
