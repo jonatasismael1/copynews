@@ -50,6 +50,21 @@ try {
       if (!news.data.generated_title || !news.data.generated_caption)
         throw new Error("Missing generated copy");
       if (news.data.ocr_text === null) throw new Error("OCR was not executed");
+      const signed = await client.functions.invoke("temporary-media-url", {
+        body: { news_item_id: newsId },
+      });
+      if (signed.error || !signed.data?.url)
+        throw signed.error || new Error("Missing signed media URL");
+      const mediaResponse = await fetch(signed.data.url, {
+        headers: { Range: "bytes=0-31" },
+      });
+      if (
+        !mediaResponse.ok ||
+        (await mediaResponse.arrayBuffer()).byteLength === 0
+      )
+        throw new Error(
+          `Signed media download failed: ${mediaResponse.status}`,
+        );
       console.log(
         JSON.stringify({
           ok: true,
@@ -59,6 +74,7 @@ try {
           title_chars: news.data.generated_title.length,
           confidence: news.data.ai_confidence,
           media_temporary: Boolean(mediaPath),
+          signed_download: true,
         }),
       );
       break;

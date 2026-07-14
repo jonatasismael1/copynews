@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { transcribeAudio } from "./openrouter.mjs";
+import { generateCopy, transcribeAudio } from "./openrouter.mjs";
 
 test("usa o endpoint dedicado de transcrição do OpenRouter", async () => {
   const originalFetch = globalThis.fetch;
@@ -43,6 +43,28 @@ test("propaga falha da transcrição como erro do OpenRouter", async () => {
       () =>
         transcribeAudio("audio-base64", "test-key", "openai/whisper-large-v3"),
       (error) => error.code === "OPENROUTER_ERROR" && /503/.test(error.message),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejeita JSON estruturalmente inválido da IA", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          { message: { content: JSON.stringify({ title: "incompleto" }) } },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  try {
+    await assert.rejects(
+      () => generateCopy({}, "test-key", "test-model"),
+      (error) => error.code === "INVALID_AI_RESPONSE",
     );
   } finally {
     globalThis.fetch = originalFetch;

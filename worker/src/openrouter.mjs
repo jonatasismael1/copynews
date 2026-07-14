@@ -1,4 +1,32 @@
+import { z } from "zod";
+
 const endpoint = "https://openrouter.ai/api/v1/chat/completions";
+const ocrResultSchema = z.object({
+  text: z.string(),
+  confidence: z.number().min(0).max(1).nullable(),
+});
+const copyResultSchema = z.object({
+  title: z.string().min(3),
+  caption: z.string().min(3),
+  summary: z.string(),
+  category_suggestion: z.string().nullable(),
+  detected_facts: z.array(z.string()),
+  warnings: z.array(z.string()),
+  confidence: z.enum(["low", "medium", "high"]),
+});
+
+function parseStructured(schema, raw) {
+  try {
+    return schema.parse(JSON.parse(raw));
+  } catch (error) {
+    throw Object.assign(
+      new Error(`Resposta inválida da IA: ${error.message}`),
+      {
+        code: "INVALID_AI_RESPONSE",
+      },
+    );
+  }
+}
 async function request(body, apiKey) {
   const r = await fetch(endpoint, {
     method: "POST",
@@ -68,11 +96,7 @@ export async function readFrames(frames, apiKey, model) {
     apiKey,
   );
   const raw = data.choices?.[0]?.message?.content || "{}";
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return { text: raw, confidence: null };
-  }
+  return parseStructured(ocrResultSchema, raw);
 }
 export async function generateCopy(context, apiKey, model) {
   const schema = {
@@ -119,8 +143,5 @@ export async function generateCopy(context, apiKey, model) {
   );
   const raw = data.choices?.[0]?.message?.content;
   if (!raw) throw new Error("Resposta vazia da IA");
-  const result = JSON.parse(raw);
-  for (const key of schema.schema.required)
-    if (!(key in result)) throw new Error(`Resposta inválida da IA: ${key}`);
-  return result;
+  return parseStructured(copyResultSchema, raw);
 }

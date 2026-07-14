@@ -9,3 +9,6 @@
 - URLs de entrada aceitam somente HTTP(S) e rejeitam hosts locais.
 - Alterações editoriais e administrativas geram histórico/auditoria.
 - IA usa saída estruturada; divergências geram alertas para revisão humana.
+- Cadastro público está desativado; usuários são criados por Edge Function administrativa.
+- A origem de recuperação de senha é restrita ao domínio de produção.
+- A proteção nativa contra senhas vazadas depende de plano pago do Supabase e permanece como limitação operacional conhecida.
