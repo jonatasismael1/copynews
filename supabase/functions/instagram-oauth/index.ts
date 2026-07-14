@@ -154,9 +154,15 @@ async function callback(body: Record<string, unknown>) {
     .gt("expires_at", now)
     .maybeSingle();
   if (!oauthState) return json({ error: "Invalid state", reason: "invalid_state" }, 400);
-  console.info(JSON.stringify({ event: "state_validated" }));
+  const completedStages: string[] = [];
+  const recordStage = (event: string) => {
+    completedStages.push(event);
+    console.info(JSON.stringify({ event }));
+  };
+  recordStage("state_validated");
+  try {
   const token = await exchangeCode(String(body.code));
-  console.info(JSON.stringify({ event: "token_exchanged" }));
+  recordStage("token_exchanged");
   const profileUrl = new URL(`https://graph.instagram.com/${version()}/me`);
   profileUrl.searchParams.set("fields", "user_id,username");
   profileUrl.searchParams.set("access_token", token.accessToken);
@@ -165,7 +171,7 @@ async function callback(body: Record<string, unknown>) {
   if (!profileResponse.ok || instagram.error) throw new Error("profile_failed");
   const providerAccountId = String(instagram.user_id || "");
   if (!providerAccountId) throw new Error("profile_failed");
-  console.info(JSON.stringify({ event: "profile_loaded" }));
+  recordStage("profile_loaded");
   const { error: disconnectError } = await admin.from("connected_accounts").update({
     status: "disconnected",
     encrypted_access_token: "disconnected",
@@ -189,7 +195,7 @@ async function callback(body: Record<string, unknown>) {
     sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
   }, { onConflict: "provider,provider_account_id,user_id" }).select("id").single();
   if (accountError) throw accountError;
-  console.info(JSON.stringify({ event: "account_saved" }));
+  recordStage("account_saved");
   const { data: usedState, error: usedStateError } = await admin.from("oauth_states")
     .update({ used_at: new Date().toISOString() })
     .eq("state_hash", stateHash)
@@ -204,8 +210,23 @@ async function callback(body: Record<string, unknown>) {
     entity_id: account.id,
     metadata: { login: "instagram", callback: "netlify" },
   });
-  console.info(JSON.stringify({ event: "callback_completed" }));
-  return json({ redirect_url: redirectUrl({ instagram: "connected" }) });
+  recordStage("callback_completed");
+  return json({
+    redirect_url: redirectUrl({ instagram: "connected" }),
+    completed_stages: completedStages,
+  });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "callback_failed",
+      after: completedStages.at(-1) || "state_validated",
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    }));
+    return json({
+      error: "Instagram connection failed",
+      reason: "connection_failed",
+      completed_stages: completedStages,
+    }, 400);
+  }
 }
 
 Deno.serve(async (req) => {

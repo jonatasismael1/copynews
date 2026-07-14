@@ -32,11 +32,20 @@ export async function handler(event) {
       signal: AbortSignal.timeout(30_000),
     });
     const payload = await response.json();
+    const safeStages = new Set([
+      "state_validated",
+      "token_exchanged",
+      "profile_loaded",
+      "account_saved",
+      "callback_completed",
+    ]);
+    for (const stage of payload.completed_stages || []) {
+      if (safeStages.has(stage)) console.info(JSON.stringify({ event: stage }));
+    }
     if (!response.ok || !payload.redirect_url) {
       console.error(JSON.stringify({ event: "callback_failed", stage: "backend", status: response.status }));
       return settingsRedirect({ instagram: "error", reason: payload.reason || "connection_failed" });
     }
-    console.info(JSON.stringify({ event: "callback_completed" }));
     return { statusCode: 302, headers: { Location: payload.redirect_url }, body: "" };
   } catch (error) {
     console.error(JSON.stringify({
