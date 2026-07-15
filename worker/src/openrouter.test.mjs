@@ -6,6 +6,7 @@ import {
   formatSocialParagraphs,
   generateCopy,
   isUsableTitle,
+  normalizeHeadlineCase,
   transcribeAudio,
   validateCopy,
 } from "./openrouter.mjs";
@@ -27,10 +28,24 @@ test("separa legendas em parágrafos curtos para redes sociais", () => {
   );
 });
 
-test("título completo usa title_only e pode permanecer praticamente igual", () => {
+test("título completo usa title_only, preserva fatos e recebe edição de estrutura", () => {
   const sources = classify({ originalTitle: "Prefeitura de Maceió inaugura nova escola no bairro Pontal nesta terça-feira", originalCaption: "A unidade foi inaugurada nesta terça-feira." });
   assert.equal(sources.sourceMode, "title_only");
-  assert.deepEqual(validateCopy(result(sources, sources.originalTitle), sources), []);
+  assert.deepEqual(
+    validateCopy(
+      result(
+        sources,
+        "Prefeitura de Maceió inaugura nesta terça-feira nova escola no bairro Pontal",
+      ),
+      sources,
+    ),
+    [],
+  );
+  assert.ok(
+    validateCopy(result(sources, sources.originalTitle), sources).some((item) =>
+      /copiado literalmente/.test(item),
+    ),
+  );
 });
 
 test("remove rodapé promocional da legenda sem retirar o conteúdo jornalístico", () => {
@@ -42,12 +57,26 @@ test("remove rodapé promocional da legenda sem retirar o conteúdo jornalístic
   );
 });
 
-test("título completo do OCR não é ampliado por números da legenda", () => {
+test("título OCR em caixa alta vira escrita normal e usa a legenda para explicar HGE", () => {
   const sources = classify({
     ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
     originalCaption: "A fiscalização ocorreu nos dias 9 e 10 no Hospital Geral do Estado.",
   });
-  assert.equal(sources.sourceMode, "title_only");
+  assert.equal(
+    sources.originalTitle,
+    "Vigilância sanitária notifica HGE após flagrar irregularidades em fiscalização",
+  );
+  assert.equal(sources.sourceMode, "title_plus_caption");
+});
+
+test("preserva siglas ao normalizar manchetes que vieram em caixa alta", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "PF INVESTIGA HGE APÓS DENÚNCIA EM AL",
+      "A PF investiga o Hospital Geral do Estado (HGE), em AL.",
+    ),
+    "PF investiga HGE após denúncia em AL",
+  );
 });
 
 test("título incompleto usa somente a legenda para complementar", () => {
@@ -105,7 +134,7 @@ test("caso real preserva colisão, feridos e local e rejeita fatos inventados", 
     originalTitle: "MOTORISTA EMBRIAGADO É PRESO APÓS COLIDIR COM MOTO E DEIXAR FERIDOS EM PALMEIRA",
     originalCaption: "Um motorista sob forte efeito de bebidas alcoólicas colidiu contra uma motocicleta, deixando 2 pessoas feridas no bairro Graciliano Ramos, em Palmeira dos Índios.",
   });
-  const allowed = "Motorista embriagado é preso após colidir com moto e deixar feridos em Palmeira";
+  const allowed = "Após colidir com moto e deixar feridos em Palmeira, motorista embriagado é preso";
   assert.deepEqual(validateCopy(result(sources, allowed), sources), []);
   for (const invented of ["atropelamento", "morte", "fuga", "hospitalização", "10º Batalhão", "delegado José"])
     assert.ok(validateCopy(result(sources, `${allowed} ${invented}`), sources).length > 0, invented);
@@ -137,6 +166,21 @@ test("rejeita a notícia inventada sobre São Gonçalo, Covid e ocupação de UT
   const violations = validateCopy(invented, sources);
   assert.ok(violations.some((item) => /Entidade nova no título/.test(item)));
   assert.ok(violations.some((item) => /Número novo/.test(item)));
+});
+
+test("aceita edição forte e fiel da manchete do HGE em capitalização normal", () => {
+  const sources = classify({
+    ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+    originalCaption: "A Vigilância Sanitária de Maceió encontrou irregularidades graves durante fiscalização no Hospital Geral do Estado (HGE) e notificou o hospital.",
+  });
+  const edited = result(
+    sources,
+    "Vigilância Sanitária encontra irregularidades graves no HGE durante fiscalização e notifica hospital",
+  );
+  edited.sourceMode = "title_plus_caption";
+  edited.titleSources = ["originalTitle", "originalCaption"];
+  assert.deepEqual(validateCopy(edited, sources), []);
+  assert.ok(edited.title.length <= 150);
 });
 
 test("article_fallback usa somente conteúdo extraído do link", () => {
