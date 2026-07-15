@@ -383,8 +383,6 @@ export async function generateCopy(context, apiKey, model) {
         response_format: { type: "json_schema", json_schema: schema },
         temperature: 0,
         top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
         stream: false,
         provider: { require_parameters: true },
       },
