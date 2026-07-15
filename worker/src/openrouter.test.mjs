@@ -250,6 +250,129 @@ test("sem título e sem legenda, a transcrição gera título e legenda", async 
   }
 });
 
+test("preserva capitalização de nomes institucionais identificados na legenda", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FISCALIZAÇÃO",
+      "A Vigilância Sanitária de Maceió realizou fiscalização no HGE.",
+    ),
+    "Vigilância Sanitária notifica HGE após fiscalização",
+  );
+});
+
+test("corrige somente a legenda, preserva o título aprovado e recupera datas omitidas", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    calls += 1;
+    const content = calls === 1
+      ? {
+          title: "Vigilância Sanitária encontra irregularidades no HGE durante fiscalização",
+          caption: "A Vigilância Sanitária de Maceió encontrou irregularidades durante fiscalização no HGE.",
+          sourceMode: "title_plus_caption",
+          titleSources: ["originalTitle", "originalCaption"],
+          preservedFacts: [],
+          warnings: [],
+        }
+      : {
+          title: "Vigilância Sanitária encontra irregularidades no HGE durante fiscalização",
+          caption: "Na quarta-feira (15), a Vigilância Sanitária de Maceió informou que encontrou irregularidades durante fiscalização realizada no HGE na quinta-feira (9) e na sexta-feira (10).",
+          sourceMode: "title_plus_caption",
+          titleSources: ["originalTitle", "originalCaption"],
+          preservedFacts: [],
+          warnings: [],
+        };
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  try {
+    const generated = await generateCopy(
+      {
+        ocr_text: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+        ocr_confidence: 0.99,
+        source_caption:
+          "Na quarta-feira (15), a Vigilância Sanitária de Maceió informou que encontrou irregularidades durante fiscalização realizada no HGE na quinta-feira (9) e na sexta-feira (10).",
+      },
+      "key",
+      "model",
+    );
+    assert.equal(calls, 2);
+    assert.equal(
+      generated.title,
+      "Vigilância Sanitária encontra irregularidades no HGE durante fiscalização",
+    );
+    assert.match(generated.caption, /\(15\)/);
+    assert.match(generated.caption, /\(9\)/);
+    assert.match(generated.caption, /\(10\)/);
+    assert.match(
+      requests[1].messages[1].content,
+      /TÍTULO APROVADO E BLOQUEADO/,
+    );
+    assert.match(
+      requests[1].messages[1].content,
+      /deve conter literalmente estes números\/datas: 15, 9, 10/,
+    );
+    assert.notEqual(generated.sourceMode, "manual_review");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejeita mês acrescentado quando a fonte informa apenas os dias", () => {
+  const sources = classify({
+    originalCaption:
+      "A fiscalização ocorreu na quinta-feira (9) e na sexta-feira (10).",
+  });
+  const violations = validateCopy(
+    result(
+      sources,
+      "Fiscalização encontra irregularidades em hospital",
+      "A fiscalização ocorreu nos dias 9 e 10 de março.",
+    ),
+    sources,
+  );
+  assert.ok(
+    violations.some((item) => /Referência temporal nova na legenda: março/.test(item)),
+  );
+});
+
+test("remove mês inventado da resposta sem descartar a legenda melhorada", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      title: "Fiscalização encontra irregularidades em hospital nos dias 9 e 10",
+      caption: "A fiscalização encontrou irregularidades no hospital nos dias 9 e 10 de março.",
+      sourceMode: "caption_only",
+      titleSources: ["originalCaption"],
+      preservedFacts: [],
+      warnings: [],
+    }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const generated = await generateCopy(
+      {
+        source_caption:
+          "Nos dias 9 e 10, uma fiscalização encontrou irregularidades no hospital.",
+      },
+      "key",
+      "model",
+    );
+    assert.doesNotMatch(generated.caption, /março/i);
+    assert.match(generated.caption, /dias 9 e 10/);
+    assert.notEqual(generated.sourceMode, "manual_review");
+    assert.ok(
+      generated.warnings.some((item) =>
+        /Referência temporal não sustentada removida: março/.test(item),
+      ),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async () => {
   const originalFetch = globalThis.fetch;
   let request;
