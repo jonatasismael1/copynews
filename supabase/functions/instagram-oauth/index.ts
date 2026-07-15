@@ -16,7 +16,7 @@ function env(name: string) {
   if (!value) throw new Error(`Missing environment variable: ${name}`);
   return value;
 }
-const instagramGraphVersion = () => Deno.env.get("INSTAGRAM_GRAPH_API_VERSION") || "v25.0";
+const metaVersion = () => Deno.env.get("META_GRAPH_API_VERSION") || "v25.0";
 const callbackUri = () => {
   const expected = "https://copynews.netlify.app/auth/instagram/callback";
   if (env("INSTAGRAM_REDIRECT_URI") !== expected)
@@ -122,54 +122,68 @@ async function start(req: Request, body: Record<string, unknown>) {
     expires_at: new Date(now.getTime() + 10 * 60_000).toISOString(),
   });
   if (insertError) throw insertError;
-  const url = new URL("https://www.instagram.com/oauth/authorize");
+  const url = new URL(`https://www.facebook.com/${metaVersion()}/dialog/oauth`);
   url.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
   url.searchParams.set("redirect_uri", callbackUri());
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
-  url.searchParams.set("scope", "instagram_business_basic,instagram_business_manage_insights");
+  url.searchParams.set(
+    "scope",
+    "instagram_basic,instagram_manage_insights,pages_read_engagement,pages_show_list",
+  );
   console.info(JSON.stringify({ event: "oauth_url_created" }));
   return json({ authorization_url: url.toString() });
 }
 
 async function exchangeCode(code: string) {
-  const form = new URLSearchParams({
-    client_id: env("INSTAGRAM_APP_ID"),
-    client_secret: env("INSTAGRAM_APP_SECRET"),
-    grant_type: "authorization_code",
-    redirect_uri: callbackUri(),
-    code,
-  });
-  const response = await fetch("https://api.instagram.com/oauth/access_token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form,
-    signal: AbortSignal.timeout(20_000),
-  });
+  const shortUrl = new URL(`https://graph.facebook.com/${metaVersion()}/oauth/access_token`);
+  shortUrl.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
+  shortUrl.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
+  shortUrl.searchParams.set("redirect_uri", callbackUri());
+  shortUrl.searchParams.set("code", code);
+  const response = await fetch(shortUrl, { signal: AbortSignal.timeout(20_000) });
   const payload = await response.json();
   if (!response.ok || !payload.access_token) {
     throw new OAuthStepError("code_exchange_failed", {
-      provider: "instagram",
+      provider: "meta",
       status: response.status,
       errorType: payload.error_type || payload.error?.type || null,
       errorCode: payload.code || payload.error?.code || null,
     });
   }
-  const url = new URL("https://graph.instagram.com/access_token");
-  url.searchParams.set("grant_type", "ig_exchange_token");
+  const url = new URL(`https://graph.facebook.com/${metaVersion()}/oauth/access_token`);
+  url.searchParams.set("grant_type", "fb_exchange_token");
+  url.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
   url.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
-  url.searchParams.set("access_token", payload.access_token);
+  url.searchParams.set("fb_exchange_token", payload.access_token);
   const longResponse = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   const longPayload = await longResponse.json();
   if (!longResponse.ok || !longPayload.access_token) {
     throw new OAuthStepError("long_token_failed", {
-      provider: "instagram",
+      provider: "meta",
       status: longResponse.status,
       errorType: longPayload.error?.type || null,
       errorCode: longPayload.error?.code || null,
     });
   }
   return { accessToken: String(longPayload.access_token), expiresIn: Number(longPayload.expires_in || 0) };
+}
+
+async function graph(path: string, token: string, params: Record<string, string> = {}) {
+  const url = new URL(`https://graph.facebook.com/${metaVersion()}/${path.replace(/^\//, "")}`);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  url.searchParams.set("access_token", token);
+  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  const payload = await response.json();
+  if (!response.ok || payload.error) {
+    throw new OAuthStepError("profile_failed", {
+      provider: "meta",
+      status: response.status,
+      errorType: payload.error?.type || null,
+      errorCode: payload.error?.code || null,
+    });
+  }
+  return payload;
 }
 
 async function callback(body: Record<string, unknown>) {
@@ -196,21 +210,21 @@ async function callback(body: Record<string, unknown>) {
   try {
   const token = await exchangeCode(String(body.code));
   recordStage("token_exchanged");
-  const profileUrl = new URL(`https://graph.instagram.com/${instagramGraphVersion()}/me`);
-  profileUrl.searchParams.set("fields", "user_id,username");
-  profileUrl.searchParams.set("access_token", token.accessToken);
-  const profileResponse = await fetch(profileUrl, { signal: AbortSignal.timeout(20_000) });
-  const instagram = await profileResponse.json();
-  if (!profileResponse.ok || instagram.error) {
-    throw new OAuthStepError("profile_failed", {
-      provider: "instagram",
-      status: profileResponse.status,
-      errorType: instagram.error?.type || null,
-      errorCode: instagram.error?.code || null,
-    });
-  }
-  const providerAccountId = String(instagram.user_id || instagram.id || "");
-  if (!providerAccountId) throw new OAuthStepError("profile_missing_user_id");
+  const accountsPayload = await graph("me/accounts", token.accessToken, {
+    fields: "id,name,access_token,tasks,instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}",
+    limit: "100",
+  });
+  const managedPages = (accountsPayload.data || []).filter(
+    (page: Record<string, unknown>) =>
+      page.access_token &&
+      (page.instagram_business_account as Record<string, unknown> | undefined)?.id,
+  );
+  const selectedPage = managedPages[0] as Record<string, unknown> | undefined;
+  const instagram = selectedPage?.instagram_business_account as
+    | { id?: string; username?: string; name?: string }
+    | undefined;
+  if (!selectedPage || !instagram?.id) throw new OAuthStepError("profile_missing_user_id");
+  const providerAccountId = String(instagram.id);
   recordStage("profile_loaded");
   const { error: disconnectError } = await admin.from("connected_accounts").update({
     status: "disconnected",
@@ -225,11 +239,14 @@ async function callback(body: Record<string, unknown>) {
     page_id: oauthState.page_id,
     provider: "instagram",
     provider_account_id: providerAccountId,
-    provider_page_id: null,
+    provider_page_id: String(selectedPage.id || ""),
     account_name: instagram.username ? `@${instagram.username}` : "Instagram profissional",
-    encrypted_access_token: await encryptToken(token.accessToken, env("CONNECTED_ACCOUNT_ENCRYPTION_KEY")),
+    encrypted_access_token: await encryptToken(
+      String(selectedPage.access_token || token.accessToken),
+      env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
+    ),
     token_expires_at: token.expiresIn > 0 ? new Date(Date.now() + token.expiresIn * 1000).toISOString() : null,
-    scopes: ["instagram_business_basic", "instagram_business_manage_insights"],
+    scopes: ["instagram_basic", "instagram_manage_insights", "pages_read_engagement", "pages_show_list"],
     status: "connected",
     history_window_days: 90,
     sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
