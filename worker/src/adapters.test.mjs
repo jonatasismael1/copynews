@@ -91,8 +91,9 @@ test("extrai o texto, a data e a imagem de uma matéria", () => {
     </main></article>`;
   const result = parseArticleMetadata(html, "https://jornal.test/materia");
   assert.equal(result.title, "TRE rejeita pedido");
-  assert.match(result.caption, /Primeiro fato confirmado/);
-  assert.match(result.caption, /Segundo fato confirmado/);
+  assert.equal(result.caption, "Decisão preserva reportagens");
+  assert.match(result.articleBody, /Primeiro fato confirmado/);
+  assert.match(result.articleBody, /Segundo fato confirmado/);
   assert.equal(result.publishedAt, "2026-07-13 15:36");
   assert.equal(result.mediaItems[0].url, "https://cdn.test/capa.jpg");
   assert.equal(result.provider, "web-article");

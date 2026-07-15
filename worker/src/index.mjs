@@ -498,7 +498,9 @@ async function processJob(job) {
       results.copy = await generateCopy(
         buildSourceContext(results),
         process.env.OPENROUTER_API_KEY,
-        process.env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
+        process.env.OPENROUTER_REWRITE_MODEL ||
+          process.env.OPENROUTER_MODEL ||
+          "openai/gpt-4.1-mini",
       );
       if (results.transcription_empty) {
         const sourceKind = results.media_kind || "video";
