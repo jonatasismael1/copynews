@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifySources,
+  cleanSourceCaption,
   formatSocialParagraphs,
   generateCopy,
   isUsableTitle,
@@ -30,6 +31,23 @@ test("título completo usa title_only e pode permanecer praticamente igual", () 
   const sources = classify({ originalTitle: "Prefeitura de Maceió inaugura nova escola no bairro Pontal nesta terça-feira", originalCaption: "A unidade foi inaugurada nesta terça-feira." });
   assert.equal(sources.sourceMode, "title_only");
   assert.deepEqual(validateCopy(result(sources, sources.originalTitle), sources), []);
+});
+
+test("remove rodapé promocional da legenda sem retirar o conteúdo jornalístico", () => {
+  assert.equal(
+    cleanSourceCaption(
+      "Primeiro fato confirmado.\n\nSegundo fato confirmado.\n\nAcesse a matéria completa em nosso site\n\n📲(82) 99999-9999",
+    ),
+    "Primeiro fato confirmado.\n\nSegundo fato confirmado.",
+  );
+});
+
+test("título completo do OCR não é ampliado por números da legenda", () => {
+  const sources = classify({
+    ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+    originalCaption: "A fiscalização ocorreu nos dias 9 e 10 no Hospital Geral do Estado.",
+  });
+  assert.equal(sources.sourceMode, "title_only");
 });
 
 test("título incompleto usa somente a legenda para complementar", () => {
@@ -87,10 +105,38 @@ test("caso real preserva colisão, feridos e local e rejeita fatos inventados", 
     originalTitle: "MOTORISTA EMBRIAGADO É PRESO APÓS COLIDIR COM MOTO E DEIXAR FERIDOS EM PALMEIRA",
     originalCaption: "Um motorista sob forte efeito de bebidas alcoólicas colidiu contra uma motocicleta, deixando 2 pessoas feridas no bairro Graciliano Ramos, em Palmeira dos Índios.",
   });
-  const allowed = "Motorista embriagado é preso após colidir com moto e deixar 2 feridos em Palmeira dos Índios";
+  const allowed = "Motorista embriagado é preso após colidir com moto e deixar feridos em Palmeira";
   assert.deepEqual(validateCopy(result(sources, allowed), sources), []);
   for (const invented of ["atropelamento", "morte", "fuga", "hospitalização", "10º Batalhão", "delegado José"])
     assert.ok(validateCopy(result(sources, `${allowed} ${invented}`), sources).length > 0, invented);
+});
+
+test("fallback de revisão manual também nunca ultrapassa 150 caracteres", async () => {
+  const generated = await generateCopy(
+    {
+      original_title: `Motociclista fica ferido após colisão ${"em trecho da rodovia estadual ".repeat(6)}`,
+      source_caption: "O motociclista morreu após atropelamento no mesmo local.",
+    },
+    "unused",
+    "unused",
+  );
+  assert.equal(generated.sourceMode, "manual_review");
+  assert.ok(generated.title.length <= 150);
+});
+
+test("rejeita a notícia inventada sobre São Gonçalo, Covid e ocupação de UTI", () => {
+  const sources = classify({
+    ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+    originalCaption: "A Vigilância Sanitária de Maceió encontrou camas enferrujadas, teto aberto e fiação exposta durante fiscalização no HGE.",
+  });
+  const invented = result(
+    sources,
+    "Hospital de Campanha de São Gonçalo está com 100% dos leitos de UTI ocupados",
+    "A Prefeitura de São Gonçalo informou que a unidade atende pacientes com Covid-19 e possui 20 leitos de UTI.",
+  );
+  const violations = validateCopy(invented, sources);
+  assert.ok(violations.some((item) => /Entidade nova no título/.test(item)));
+  assert.ok(violations.some((item) => /Número novo/.test(item)));
 });
 
 test("article_fallback usa somente conteúdo extraído do link", () => {

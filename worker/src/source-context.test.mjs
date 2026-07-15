@@ -15,7 +15,7 @@ test("mantém título, legenda, corpo e OCR em campos separados", () => {
   const context = buildSourceContext({
     metadata: { title: "Título original", caption: "Legenda original", articleBody: "Corpo da matéria" },
     transcript: "Transcrição",
-    ocr: { text: "Título no vídeo", confidence: 0.91 },
+    ocr: { text: "Logo e outros textos", title: "Título no vídeo", confidence: 0.91 },
   });
   assert.equal(context.original_title, "Título original");
   assert.equal(context.source_caption, "Legenda original");

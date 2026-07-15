@@ -173,6 +173,27 @@ export function parseInstagramMetadata(html) {
   };
 }
 
+export function parseInstagramEmbedImage(html) {
+  const normalized = decodeHtml(
+    html.replace(/\\u0026/g, "&").replace(/\\\//g, "/"),
+  );
+  const candidates = [
+    ...new Set(normalized.match(/https:\/\/scontent[^"'<>\\\s]+/g) || []),
+  ].filter((candidate) => {
+    try {
+      const stp = new URL(candidate).searchParams.get("stp") || "";
+      return !/^c\d/.test(stp) && !/s100x100/.test(stp);
+    } catch {
+      return false;
+    }
+  });
+  const original = candidates.find((candidate) => {
+    const stp = new URL(candidate).searchParams.get("stp") || "";
+    return /dst-jpg_e\d+_tt\d+$/.test(stp);
+  });
+  return original || candidates.find((candidate) => /p1080x1080/.test(candidate)) || null;
+}
+
 export function parseArticleMetadata(html, sourceUrl) {
   const title =
     metaContent(html, "property", "og:title") ||
@@ -238,7 +259,36 @@ async function instagramMetadata(sourceUrl) {
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) return { caption: null, author: null, provider: "none" };
-  return parseInstagramMetadata(await response.text());
+  const metadata = parseInstagramMetadata(await response.text());
+  try {
+    const embedUrl = new URL(url);
+    embedUrl.search = "";
+    embedUrl.pathname = `${embedUrl.pathname.replace(/\/?$/, "/")}embed/`;
+    const embedResponse = await fetch(embedUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; CopyNewsBot/1.0; +https://copynews.netlify.app)",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const fullImage = embedResponse.ok
+      ? parseInstagramEmbedImage(await embedResponse.text())
+      : null;
+    if (fullImage)
+      metadata.mediaItems = [
+        {
+          url: fullImage,
+          type: "image",
+          filename: safeFilename(fullImage, "instagram-original.jpg"),
+        },
+      ];
+  } catch (error) {
+    console.warn(
+      JSON.stringify({ event: "instagram.embed.failed", message: error.message }),
+    );
+  }
+  return metadata;
 }
 
 export async function extractMetadata(sourceUrl) {

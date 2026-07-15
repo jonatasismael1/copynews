@@ -4,6 +4,7 @@ import {
   acquireMedia,
   extractMetadata,
   parseArticleMetadata,
+  parseInstagramEmbedImage,
   parseInstagramMetadata,
 } from "./adapters.mjs";
 
@@ -22,6 +23,17 @@ test("Cobalt rejeita resposta sem mídia", async () => {
     /blocked/,
   );
   global.fetch = original;
+});
+
+test("prefere a imagem vertical completa do embed à prévia quadrada", () => {
+  const cropped =
+    "https://scontent.test/post.jpg?stp=c0.114.1440.1440a_dst-jpg_e35_s640x640_tt6&amp;oh=crop";
+  const full =
+    "https://scontent.test/post.jpg?stp=dst-jpg_e35_tt6\\u0026oh=full";
+  assert.equal(
+    parseInstagramEmbedImage(`{\"thumbnail\":\"${cropped}\",\"display_url\":\"${full}\"}`),
+    "https://scontent.test/post.jpg?stp=dst-jpg_e35_tt6&oh=full",
+  );
 });
 
 test("normaliza a origem de túnel da Railway", async () => {
@@ -101,9 +113,14 @@ test("extrai o texto, a data e a imagem de uma matéria", () => {
 
 test("consulta a página pública móvel do Reel em vez do embed vazio", async () => {
   const original = global.fetch;
-  let request;
+  const requests = [];
   global.fetch = async (url, options) => {
-    request = { url: String(url), options };
+    requests.push({ url: String(url), options });
+    if (String(url).endsWith("/embed/"))
+      return new Response(
+        '{"display_url":"https:\\/\\/scontent.test\\/original.jpg?stp=dst-jpg_e35_tt6\\u0026oh=full"}',
+        { status: 200 },
+      );
     return new Response(
       '<meta property="og:title" content="Portal no Instagram: &quot;Legenda completa da publicação&quot;" />',
       { status: 200 },
@@ -114,8 +131,9 @@ test("consulta a página pública móvel do Reel em vez do embed vazio", async (
       "https://www.instagram.com/reel/DavpwruN_4A/?utm_source=test",
     );
     assert.equal(result.caption, "Legenda completa da publicação");
-    assert.match(request.url, /\/reel\/DavpwruN_4A\/\?__a=1$/);
-    assert.match(request.options.headers["User-Agent"], /Instagram/);
+    assert.equal(result.mediaItems[0].url, "https://scontent.test/original.jpg?stp=dst-jpg_e35_tt6&oh=full");
+    assert.match(requests[0].url, /\/reel\/DavpwruN_4A\/\?__a=1$/);
+    assert.match(requests[0].options.headers["User-Agent"], /Instagram/);
   } finally {
     global.fetch = original;
   }

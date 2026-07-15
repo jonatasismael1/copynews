@@ -11,6 +11,7 @@ const sourceModes = [
 const titleSourceNames = ["originalTitle", "originalCaption", "articleBody"];
 const ocrResultSchema = z.object({
   text: z.string(),
+  title: z.string().nullable(),
   confidence: z.number().min(0).max(1).nullable(),
 });
 const copyResultSchema = z.object({
@@ -137,11 +138,11 @@ export async function transcribeAudio(base64, apiKey, model) {
 }
 
 export async function readFrames(frames, apiKey, model) {
-  if (!frames.length) return { text: "", confidence: null };
+  if (!frames.length) return { text: "", title: null, confidence: null };
   const content = [
     {
       type: "text",
-      text: 'Faça OCR dos textos jornalísticos visíveis nestes frames. Remova duplicatas, preserve grafia, não invente texto ilegível. Retorne JSON {"text":"...","confidence":0.0}.',
+      text: 'Faça OCR fiel dos textos jornalísticos visíveis. Em "text", preserve todo o texto legível sem duplicatas. Em "title", retorne somente a manchete principal exatamente como aparece na arte, priorizando o texto jornalístico em maior destaque; ignore logotipos, marcas d’água e editorias. Se não houver manchete clara, use null. Não complete texto ilegível. Retorne JSON {"text":"...","title":"... ou null","confidence":0.0}.',
     },
     ...frames.map((data) => ({
       type: "image_url",
@@ -188,6 +189,19 @@ export function isUsableCaption(value) {
   return Boolean(candidate && candidate.length >= 20 && !genericTitle.test(candidate));
 }
 
+export function cleanSourceCaption(value) {
+  const candidate = text(value);
+  if (!candidate) return "";
+  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|📲|☎|whatsapp\b)/i;
+  const lines = candidate.split(/\n+/).map((line) => line.trim());
+  const cutoff = lines.findIndex((line) => boilerplate.test(line));
+  return lines
+    .slice(0, cutoff >= 0 ? cutoff : lines.length)
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
 function sourceContradictions(title, caption) {
   const contradictions = [];
   for (const group of occurrenceGroups) {
@@ -207,7 +221,7 @@ export function classifySources(input) {
     : isUsableTitle(ocrTitle, { ocrConfidence: input.ocrConfidence })
       ? ocrTitle
       : "";
-  const suppliedCaption = text(input.originalCaption);
+  const suppliedCaption = cleanSourceCaption(input.originalCaption);
   const originalCaption = isUsableCaption(suppliedCaption) ? suppliedCaption : "";
   const articleBody = text(input.articleBody);
   const contradictions = originalTitle && originalCaption
@@ -216,10 +230,8 @@ export function classifySources(input) {
   let sourceMode;
   if (contradictions.length) sourceMode = "manual_review";
   else if (originalTitle) {
-    const captionAddsNumber = (originalCaption.match(/\b\d[\d.,:%ºª-]*\b/g) || [])
-      .some((number) => !originalTitle.includes(number));
     const needsCaption = originalCaption &&
-      (originalTitle.length < 45 || incompleteTitle.test(originalTitle) || captionAddsNumber);
+      (originalTitle.length < 45 || incompleteTitle.test(originalTitle));
     sourceMode = needsCaption ? "title_plus_caption" : "title_only";
   } else if (originalCaption) sourceMode = "caption_only";
   else if (articleBody) sourceMode = "article_fallback";
@@ -252,6 +264,11 @@ function properNames(value) {
     .filter((name) => name.split(/\s+/).length > 1);
 }
 
+function namedRoles(value) {
+  return [...value.matchAll(/\b(?:[Dd]elegad[oa]|[Pp]refeit[oa]|[Vv]ereador(?:a)?|[Ss]ecretári[oa]|[Gg]overnador(?:a)?|[Mm]édic[oa])\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)*/gu)]
+    .map((match) => match[0].trim());
+}
+
 export function validateCopy(result, sources) {
   const violations = [];
   const title = text(result.title);
@@ -273,6 +290,9 @@ export function validateCopy(result, sources) {
   const requiredNames = properNames(sources.originalTitle);
   for (const name of requiredNames)
     if (!contains(title, name)) violations.push(`Nome próprio removido do título: ${name}`);
+  for (const name of [...properNames(title), ...namedRoles(title)])
+    if (!contains(allowed, name))
+      violations.push(`Entidade nova no título: ${name}`);
   const sourceNumbers = sources.originalTitle.match(/\b\d[\d.,:%ºª-]*\b/g) || [];
   for (const number of sourceNumbers)
     if (!title.includes(number)) violations.push(`Número removido do título: ${number}`);
@@ -295,17 +315,17 @@ export function validateCopy(result, sources) {
     if (contains(title, prohibited) && !contains(allowed, prohibited))
       violations.push(`Sensacionalismo não presente na fonte: ${prohibited}`);
   const meaningfulSourceTokens = new Set(tokens(allowed).filter((token) => token.length >= 5));
-  const unknownTitleTokens = tokens(title).filter(
-    (token) => token.length >= 8 && !meaningfulSourceTokens.has(token),
-  );
   const unsupportedRiskWords = tokens(title).filter(
     (token) => ["fuga", "morte", "morreu", "hospitalizacao", "hospitalizado"].includes(token) &&
       !meaningfulSourceTokens.has(token),
   );
-  if (unknownTitleTokens.some((token) => token.length >= 7) || unsupportedRiskWords.length)
-    violations.push(`Título contém termos sem apoio claro na fonte: ${unknownTitleTokens.join(", ")}`);
+  if (unsupportedRiskWords.length)
+    violations.push(`Título contém consequência sem apoio na fonte: ${unsupportedRiskWords.join(", ")}`);
   if (!caption) violations.push("Legenda vazia");
   const captionSource = sources.originalCaption || sources.articleBody || sources.originalTitle;
+  for (const name of [...properNames(caption), ...namedRoles(caption)])
+    if (!contains(captionSource, name))
+      violations.push(`Entidade nova na legenda: ${name}`);
   const captionNumbers = captionSource.match(/\b\d[\d.,:%ºª-]*\b/g) || [];
   for (const number of captionNumbers)
     if (!caption.includes(number)) violations.push(`Número removido da legenda: ${number}`);
@@ -333,10 +353,18 @@ function userPrompt(sources, violations = []) {
   return `TÍTULO ORIGINAL:\n${sources.originalTitle || "[ausente]"}\n\nLEGENDA ORIGINAL:\n${sources.originalCaption || "[ausente]"}\n\nCONTEÚDO COMPLEMENTAR:\n${sources.articleBody || "[ausente]"}\n\nOCR (referência para o título original):\n${sources.ocrTitle || "[ausente]"}\n\nMODO DE FONTE:\n${sources.sourceMode}\n\nMODO DE REESCRITA:\n${sources.rewriteMode}\n\nGere título e legenda fiéis. Use primeiro o título original. Use a legenda para complementar somente quando o modo permitir. Use o conteúdo complementar somente em article_fallback. Em manual_review, mantenha o título original e não misture o detalhe conflitante. Não acrescente informações externas. O título pode ser mais forte, mas deve manter exatamente fatos, personagens, acusações, consequências e nível de certeza.${violations.length ? `\n\nA versão anterior foi rejeitada. Corrija somente estas violações:\n- ${violations.join("\n- ")}` : ""}`;
 }
 
+function fitTitle(value) {
+  const candidate = text(value);
+  if (candidate.length <= 150) return candidate;
+  const limited = candidate.slice(0, 150);
+  const lastSpace = limited.lastIndexOf(" ");
+  return (lastSpace >= 100 ? limited.slice(0, lastSpace) : limited).trim();
+}
+
 function fallbackCopy(sources, violations) {
   const caption = sources.originalCaption || sources.articleBody || sources.originalTitle;
   return {
-    title: sources.originalTitle || caption.split(/\n|[.!?]\s/)[0].slice(0, 150),
+    title: fitTitle(sources.originalTitle || caption.split(/\n|[.!?]\s/)[0]),
     caption: formatSocialParagraphs(caption),
     sourceMode: "manual_review",
     titleSources: sources.originalTitle ? ["originalTitle"] : sources.originalCaption ? ["originalCaption"] : ["articleBody"],
@@ -390,7 +418,10 @@ export async function generateCopy(context, apiKey, model) {
     );
     const raw = data.choices?.[0]?.message?.content;
     if (!raw) throw new Error("Resposta vazia da IA");
-    return parseStructured(copyResultSchema, raw);
+    return {
+      ...parseStructured(copyResultSchema, raw),
+      sourceMode: sources.sourceMode,
+    };
   }
   let result = await createCopy();
   let violations = validateCopy(result, sources);

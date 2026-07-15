@@ -7,7 +7,7 @@ export function buildSourceContext(results) {
     source_caption: text(results.metadata?.caption),
     article_body: text(results.metadata?.articleBody),
     transcript: text(results.transcript),
-    ocr_text: text(results.ocr?.text),
+    ocr_text: text(results.ocr?.title) || text(results.ocr?.text),
     ocr_confidence:
       typeof results.ocr?.confidence === "number" ? results.ocr.confidence : null,
     editorial_tone: text(results.editorial_tone),
