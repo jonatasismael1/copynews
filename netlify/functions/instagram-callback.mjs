@@ -43,7 +43,13 @@ export async function handler(event) {
       if (safeStages.has(stage)) console.info(JSON.stringify({ event: stage }));
     }
     if (!response.ok || !payload.redirect_url) {
-      console.error(JSON.stringify({ event: "callback_failed", stage: "backend", status: response.status }));
+      console.error(JSON.stringify({
+        event: "callback_failed",
+        stage: "backend",
+        status: response.status,
+        reason: payload.reason || "connection_failed",
+        completedStages: payload.completed_stages || [],
+      }));
       return settingsRedirect({ instagram: "error", reason: payload.reason || "connection_failed" });
     }
     return { statusCode: 302, headers: { Location: payload.redirect_url }, body: "" };

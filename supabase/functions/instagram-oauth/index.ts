@@ -25,6 +25,18 @@ const callbackUri = () => {
 };
 const encoder = new TextEncoder();
 
+class OAuthStepError extends Error {
+  reason: string;
+  details: Record<string, unknown>;
+
+  constructor(reason: string, details: Record<string, unknown> = {}) {
+    super(reason);
+    this.name = "OAuthStepError";
+    this.reason = reason;
+    this.details = details;
+  }
+}
+
 function base64Url(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -128,14 +140,28 @@ async function exchangeCode(code: string) {
     signal: AbortSignal.timeout(20_000),
   });
   const payload = await response.json();
-  if (!response.ok || !payload.access_token) throw new Error("code_exchange_failed");
+  if (!response.ok || !payload.access_token) {
+    throw new OAuthStepError("code_exchange_failed", {
+      provider: "instagram",
+      status: response.status,
+      errorType: payload.error_type || payload.error?.type || null,
+      errorCode: payload.code || payload.error?.code || null,
+    });
+  }
   const url = new URL("https://graph.instagram.com/access_token");
   url.searchParams.set("grant_type", "ig_exchange_token");
   url.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
   url.searchParams.set("access_token", payload.access_token);
   const longResponse = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   const longPayload = await longResponse.json();
-  if (!longResponse.ok || !longPayload.access_token) throw new Error("long_token_failed");
+  if (!longResponse.ok || !longPayload.access_token) {
+    throw new OAuthStepError("long_token_failed", {
+      provider: "instagram",
+      status: longResponse.status,
+      errorType: longPayload.error?.type || null,
+      errorCode: longPayload.error?.code || null,
+    });
+  }
   return { accessToken: String(longPayload.access_token), expiresIn: Number(longPayload.expires_in || 0) };
 }
 
@@ -168,9 +194,16 @@ async function callback(body: Record<string, unknown>) {
   profileUrl.searchParams.set("access_token", token.accessToken);
   const profileResponse = await fetch(profileUrl, { signal: AbortSignal.timeout(20_000) });
   const instagram = await profileResponse.json();
-  if (!profileResponse.ok || instagram.error) throw new Error("profile_failed");
+  if (!profileResponse.ok || instagram.error) {
+    throw new OAuthStepError("profile_failed", {
+      provider: "instagram",
+      status: profileResponse.status,
+      errorType: instagram.error?.type || null,
+      errorCode: instagram.error?.code || null,
+    });
+  }
   const providerAccountId = String(instagram.user_id || "");
-  if (!providerAccountId) throw new Error("profile_failed");
+  if (!providerAccountId) throw new OAuthStepError("profile_missing_user_id");
   recordStage("profile_loaded");
   const { error: disconnectError } = await admin.from("connected_accounts").update({
     status: "disconnected",
@@ -187,7 +220,7 @@ async function callback(body: Record<string, unknown>) {
     provider_account_id: providerAccountId,
     provider_page_id: null,
     account_name: instagram.username ? `@${instagram.username}` : "Instagram profissional",
-    encrypted_access_token: await encryptToken(token.accessToken, env("TOKEN_ENCRYPTION_KEY")),
+    encrypted_access_token: await encryptToken(token.accessToken, env("CONNECTED_ACCOUNT_ENCRYPTION_KEY")),
     token_expires_at: token.expiresIn > 0 ? new Date(Date.now() + token.expiresIn * 1000).toISOString() : null,
     scopes: ["instagram_business_basic", "instagram_business_manage_insights"],
     status: "connected",
@@ -216,14 +249,18 @@ async function callback(body: Record<string, unknown>) {
     completed_stages: completedStages,
   });
   } catch (error) {
+    const reason = error instanceof OAuthStepError
+      ? error.reason
+      : error instanceof Error ? error.message : "connection_failed";
     console.error(JSON.stringify({
       event: "callback_failed",
       after: completedStages.at(-1) || "state_validated",
-      errorType: error instanceof Error ? error.name : "UnknownError",
+      reason,
+      details: error instanceof OAuthStepError ? error.details : undefined,
     }));
     return json({
       error: "Instagram connection failed",
-      reason: "connection_failed",
+      reason,
       completed_stages: completedStages,
     }, 400);
   }

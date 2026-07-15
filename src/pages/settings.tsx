@@ -177,7 +177,9 @@ export function SettingsPage() {
 
   async function connectInstagram(event: FormEvent) {
     event.preventDefault();
-    if (!instagramPageId) return toast.error("Selecione a página do Copy News");
+    const pages = lookups?.pages ?? [];
+    const pageId = instagramPageId || (pages.length === 1 ? pages[0].id : "");
+    if (!pageId) return toast.error("Selecione a página do Copy News");
     setConnectingInstagram(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -191,7 +193,7 @@ export function SettingsPage() {
           Authorization: `Bearer ${session.access_token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ page_id: instagramPageId }),
+        body: JSON.stringify({ page_id: pageId }),
       });
       const result = await response.json();
       if (!response.ok || !result.authorization_url) throw new Error(result.error);
@@ -408,7 +410,7 @@ export function SettingsPage() {
                 <select
                   required
                   className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  value={instagramPageId}
+                  value={instagramPageId || ((lookups?.pages ?? []).length === 1 ? (lookups?.pages ?? [])[0].id : "")}
                   onChange={(event) => setInstagramPageId(event.target.value)}
                 >
                   <option value="">Selecione</option>
