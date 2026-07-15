@@ -12,7 +12,7 @@ import {
 } from "./openrouter.mjs";
 
 const classify = (input) => classifySources({ ocrConfidence: 0.9, ...input });
-const result = (sources, title, caption = sources.originalCaption || sources.articleBody || title) => ({
+const result = (sources, title, caption = sources.captionSource || title) => ({
   title,
   caption,
   sourceMode: sources.sourceMode,
@@ -184,8 +184,70 @@ test("aceita edição forte e fiel da manchete do HGE em capitalização normal"
 });
 
 test("article_fallback usa somente conteúdo extraído do link", () => {
-  assert.equal(classify({ articleBody: "O corpo da matéria informa a decisão judicial." }).sourceMode, "article_fallback");
+  const article = classify({ articleBody: "O corpo da matéria informa a decisão judicial." });
+  assert.equal(article.sourceMode, "article_fallback");
+  assert.equal(article.supplementalKind, "articleBody");
   assert.equal(classify({ originalCaption: "Veja mais", articleBody: "O corpo da matéria informa a decisão judicial." }).sourceMode, "article_fallback");
+});
+
+test("título do OCR usa a transcrição para gerar a legenda quando não há legenda original", async () => {
+  const originalFetch = globalThis.fetch;
+  let request;
+  globalThis.fetch = async (_url, options) => {
+    request = JSON.parse(options.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      title: "Prefeitura anuncia reforma da ponte após vistoria técnica",
+      caption: "A Prefeitura anunciou a reforma da ponte após uma vistoria técnica realizada nesta quarta-feira.",
+      sourceMode: "title_only",
+      titleSources: ["originalTitle"],
+      preservedFacts: ["reforma da ponte"],
+      warnings: [],
+    }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const generated = await generateCopy(
+      {
+        ocr_text: "PREFEITURA ANUNCIA REFORMA DA PONTE APÓS VISTORIA TÉCNICA",
+        ocr_confidence: 0.95,
+        transcript: "A Prefeitura anunciou a reforma da ponte após uma vistoria técnica realizada nesta quarta-feira.",
+      },
+      "key",
+      "model",
+    );
+    assert.equal(generated.sourceMode, "title_only");
+    assert.match(generated.caption, /vistoria técnica realizada nesta quarta-feira/);
+    assert.match(request.messages[1].content, /FONTE AUTORIZADA PARA A LEGENDA:\ntranscript/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("sem título e sem legenda, a transcrição gera título e legenda", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      title: "Defesa Civil interdita ponte após vistoria técnica em Pilar",
+      caption: "A Defesa Civil interditou a ponte após uma vistoria técnica realizada no município de Pilar.",
+      sourceMode: "article_fallback",
+      titleSources: ["transcript"],
+      preservedFacts: ["ponte interditada em Pilar"],
+      warnings: [],
+    }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const generated = await generateCopy(
+      {
+        transcript: "A Defesa Civil interditou a ponte após uma vistoria técnica realizada no município de Pilar.",
+      },
+      "key",
+      "model",
+    );
+    assert.equal(generated.sourceMode, "article_fallback");
+    assert.deepEqual(generated.titleSources, ["transcript"]);
+    assert.match(generated.title, /Defesa Civil/);
+    assert.match(generated.caption, /município de Pilar/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async () => {
