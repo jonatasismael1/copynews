@@ -202,9 +202,11 @@ export function parseArticleMetadata(html, sourceUrl) {
   const parts = [description, article]
     .filter(Boolean)
     .filter((value, index, values) => values.indexOf(value) === index);
-  const caption = parts.join("\n\n").slice(0, 24_000) || title;
+  const caption = (description || title || "").slice(0, 8_000) || null;
+  const articleBody = (article || parts.join("\n\n")).slice(0, 24_000) || null;
   return {
-    caption: caption || null,
+    caption,
+    articleBody,
     title: title || null,
     author: author || new URL(sourceUrl).hostname,
     publishedAt,
