@@ -118,6 +118,8 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
     assert.equal(request.top_p, 1);
     assert.equal(request.stream, false);
     assert.equal(request.provider.require_parameters, true);
+    assert.equal("frequency_penalty" in request, false);
+    assert.equal("presence_penalty" in request, false);
     assert.equal(request.response_format.json_schema.strict, true);
     assert.equal(request.response_format.json_schema.schema.additionalProperties, false);
     assert.match(request.messages[0].content, /Colisão não é atropelamento/);
