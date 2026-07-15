@@ -109,8 +109,6 @@ async function start(req: Request, body: Record<string, unknown>) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set("scope", "instagram_business_basic,instagram_business_manage_insights");
-  url.searchParams.set("enable_fb_login", "0");
-  url.searchParams.set("force_authentication", "1");
   console.info(JSON.stringify({ event: "oauth_url_created" }));
   return json({ authorization_url: url.toString() });
 }
