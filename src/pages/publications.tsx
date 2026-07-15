@@ -50,6 +50,7 @@ export function PublicationsPage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [syncingAll, setSyncingAll] = useState(false);
+  const [refreshingPublication, setRefreshingPublication] = useState("");
   const refreshMetrics = useRefreshPublicationMetrics();
   const range = publicationRange(period, customFrom, customTo);
   const visiblePublications = data.filter((publication) => {
@@ -62,18 +63,52 @@ export function PublicationsPage() {
   });
   const selectedPublication = data.find((publication) => publication.id === selected);
 
-  async function syncConnectedInstagram() {
+  async function refreshPublicationList() {
     setSyncingAll(true);
-    const { data: result, error } = await supabase.functions.invoke(
-      "sync-instagram-publications",
-      { body: profile?.role === "admin" ? { sync_all: true } : {} },
-    );
-    setSyncingAll(false);
-    if (error) return toast.error("Não foi possível atualizar o Instagram");
     await refetch();
-    toast.success(
-      `${Number(result?.imported || 0)} publicação(ões) sincronizada(s)`,
-    );
+    setSyncingAll(false);
+    toast.success("Publicações atualizadas");
+  }
+
+  async function refreshPublication(publication: PublicationWithRelations) {
+    setRefreshingPublication(publication.id);
+    try {
+      if (publication.connected_account_id) {
+        await refreshMetrics.mutateAsync(publication.id);
+      } else {
+        const { data: metadata, error } = await supabase.functions.invoke(
+          "inspect-publication-url",
+          { body: { published_url: publication.published_url } },
+        );
+        if (error) throw error;
+        const { error: updateError } = await supabase
+          .from("publications")
+          .update({
+            title: metadata.title,
+            caption: metadata.caption,
+            platform: metadata.platform,
+            published_at: metadata.published_at,
+            credit_text: metadata.author,
+            external_media_id: metadata.external_media_id,
+            thumbnail_url: metadata.thumbnail_url,
+            metadata_provider: metadata.provider,
+            metadata_fetched_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", publication.id);
+        if (updateError) throw updateError;
+        await refetch();
+        toast.success("Dados da publicação atualizados pelo link");
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar esta publicação",
+      );
+    } finally {
+      setRefreshingPublication("");
+    }
   }
 
   async function managePublication(
@@ -111,7 +146,7 @@ export function PublicationsPage() {
               variant="outline"
               className="shrink-0"
               disabled={syncingAll}
-              onClick={syncConnectedInstagram}
+              onClick={refreshPublicationList}
             >
               <RefreshCw className={syncingAll ? "animate-spin" : ""} />
               Atualizar
@@ -254,15 +289,13 @@ export function PublicationsPage() {
                         variant="outline"
                         size="sm"
                         disabled={
-                          refreshMetrics.isPending &&
-                          refreshMetrics.variables === publication.id
+                          refreshingPublication === publication.id
                         }
-                        onClick={() => refreshMetrics.mutate(publication.id)}
+                        onClick={() => refreshPublication(publication)}
                       >
                         <RefreshCw
                           className={
-                            refreshMetrics.isPending &&
-                            refreshMetrics.variables === publication.id
+                            refreshingPublication === publication.id
                               ? "animate-spin"
                               : ""
                           }
@@ -333,7 +366,7 @@ export function PublicationsPage() {
         <PublicationDetails
           publication={selectedPublication}
           close={() => setModal(null)}
-          refresh={() => refreshMetrics.mutate(selectedPublication.id)}
+          refresh={() => refreshPublication(selectedPublication)}
           addMetrics={() => setModal("metrics")}
         />
       )}

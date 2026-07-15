@@ -36,6 +36,7 @@ export function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const [settingsTab, setSettingsTab] = useState<"general" | "backend">("general");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [saving, setSaving] = useState(false);
@@ -293,6 +294,27 @@ export function SettingsPage() {
         </p>
       </div>
 
+      <div className="flex flex-wrap gap-2 rounded-2xl border bg-card p-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={settingsTab === "general" ? "default" : "ghost"}
+          onClick={() => setSettingsTab("general")}
+        >
+          Geral
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={settingsTab === "backend" ? "default" : "ghost"}
+          onClick={() => setSettingsTab("backend")}
+        >
+          Configuração de backend
+        </Button>
+      </div>
+
+      {settingsTab === "general" && (
+        <>
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
@@ -391,6 +413,11 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+        </>
+      )}
+
+      {settingsTab === "backend" && (
+      <>
       <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -496,6 +523,11 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+      </>
+      )}
+
+      {settingsTab === "general" && (
+      <>
       {canManageLookups && (
         <div className="grid gap-6 lg:grid-cols-2">
           <LookupCard
@@ -603,6 +635,8 @@ export function SettingsPage() {
           </p>
         </CardContent>
       </Card>
+      </>
+      )}
     </div>
   );
 }
