@@ -20,7 +20,7 @@ function env(name: string) {
 
 function cleanCaption(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return null;
-  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|📲|☎|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
+  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|(?:a|o)\s+(?:r[aá]dio|portal|emissora|equipe).*\b(?:cobertura|rep[oó]rter(?:es)?)\b|📲|☎|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
   const contactOnly = /^(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-.\s]?\d{4}$/;
   const lines = value.split(/\n+/).map((line) => line.trim());
   const cutoff = lines.findIndex(

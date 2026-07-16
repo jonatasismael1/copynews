@@ -3,6 +3,25 @@ const jsonHeaders = {
   accept: "application/json",
 };
 
+export function isInstagramReelUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.hostname.includes("instagram.com") &&
+      /^\/reels?\//i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function isVideoMediaItem(item) {
+  const value = `${item?.type || ""} ${item?.filename || ""}`.toLowerCase();
+  return /\bvideo\b/.test(value) || /\.(mp4|mov|m4v|webm)(?:$|[?#])/i.test(value);
+}
+
+export function selectDownloadableMedia(items) {
+  return items.find((item) => item.auditOnly !== true);
+}
+
 export async function acquireMedia(sourceUrl, { cobaltUrl, cobaltKey }) {
   const endpoint = cobaltUrl.replace(/\/$/, "");
   const response = await fetch(endpoint, {

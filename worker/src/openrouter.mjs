@@ -61,15 +61,21 @@ const occurrencePatterns = {
   acusacao: /\b(acusa[cç][aã]o)\b/i,
 };
 const certaintyTerms = [
-  "segundo",
-  "afirma",
   "alega",
   "teria",
   "supostamente",
   "acusado",
   "investigado",
+];
+const attributionTerms = [
+  "segundo",
   "de acordo com",
   "conforme informado",
+  "afirma",
+  "afirmou",
+  "informou",
+  "declarou",
+  "relatou",
 ];
 
 const normalize = (value = "") =>
@@ -81,6 +87,8 @@ const text = (value) =>
   typeof value === "string" && value.trim() ? value.trim() : "";
 const contains = (haystack, needle) =>
   normalize(haystack).includes(normalize(needle));
+const hasAttribution = (value) =>
+  attributionTerms.some((term) => contains(value, term));
 const containsOccurrence = (haystack, term) =>
   occurrencePatterns[term]?.test(haystack) ?? contains(haystack, term);
 const tokens = (value) =>
@@ -246,7 +254,7 @@ export function isUsableCaption(value) {
 export function cleanSourceCaption(value) {
   const candidate = text(value);
   if (!candidate) return "";
-  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|📲|☎|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
+  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|(?:a|o)\s+(?:r[aá]dio|portal|emissora|equipe).*\b(?:cobertura|rep[oó]rter(?:es)?)\b|📲|☎|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
   const contactOnly = /^(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-.\s]?\d{4}$/;
   const lines = candidate.split(/\n+/).map((line) => line.trim());
   const cutoff = lines.findIndex(
@@ -455,6 +463,8 @@ export function validateCopy(result, sources) {
   for (const marker of certaintyTerms)
     if (contains(sources.originalTitle, marker) && !contains(title, marker))
       violations.push(`Nível de certeza removido: ${marker}`);
+  if (hasAttribution(sources.originalTitle) && !hasAttribution(title))
+    violations.push("Atribuição removida do título");
   for (const prohibited of ["escândalo", "revolta", "chocante", "absurdo", "polêmica", "humilhação", "caos", "desmascarado"])
     if (contains(title, prohibited) && !contains(allowed, prohibited))
       violations.push(`Sensacionalismo não presente na fonte: ${prohibited}`);
@@ -497,6 +507,8 @@ export function validateCopy(result, sources) {
   for (const marker of certaintyTerms)
     if (contains(captionSource, marker) && !contains(caption, marker))
       violations.push(`Nível de certeza removido da legenda: ${marker}`);
+  if (hasAttribution(captionSource) && !hasAttribution(caption))
+    violations.push("Atribuição removida da legenda");
   return [...new Set(violations)];
 }
 

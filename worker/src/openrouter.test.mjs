@@ -108,7 +108,9 @@ test("crítica direta preserva nome e teor", () => {
 test("denúncia não pode virar fato confirmado", () => {
   const sources = classify({ originalTitle: "Segundo promotora, empresa é acusada de fraude em contrato público" });
   const violations = validateCopy(result(sources, "Empresa comete fraude em contrato público"), sources);
-  assert.ok(violations.some((item) => /Nível de certeza removido/.test(item)));
+  assert.ok(
+    violations.some((item) => /Nível de certeza removido|Atribuição removida/.test(item)),
+  );
 });
 
 test("contradição entre título e legenda exige manual_review sem mistura", () => {
@@ -286,6 +288,29 @@ test("não usa a legenda original bruta quando a versão limpa está ausente", a
       ),
     (error) => error.code === "INSUFFICIENT_SOURCE",
   );
+  assert.equal(
+    cleanSourceCaption(
+      "O Corpo de Bombeiros constatou o óbito no local.\n\nA Rádio Papacaça esteve no local realizando toda a cobertura com os repórteres Alves França e André Neto.",
+    ),
+    "O Corpo de Bombeiros constatou o óbito no local.",
+  );
+});
+
+test("aceita atribuição equivalente sem devolver a legenda original", () => {
+  const sources = classify({
+    originalTitle: "Homem passa mal e morre após cair na rua em Bom Conselho",
+    originalCaption:
+      "Um homem de 46 anos foi encontrado caído em Bom Conselho. Segundo populares, ele caiu ao tentar se levantar. De acordo com a irmã da vítima, ele se recuperava de uma cirurgia realizada há cerca de 30 dias. O Corpo de Bombeiros constatou o óbito.",
+  });
+  const generated = {
+    title: "Homem morre após cair na rua em Bom Conselho",
+    caption:
+      "Um homem de 46 anos foi encontrado caído em Bom Conselho. Segundo populares, a queda ocorreu quando ele tentou se levantar. A irmã da vítima informou que ele se recuperava de uma cirurgia feita há cerca de 30 dias. O Corpo de Bombeiros constatou o óbito.",
+    sourceMode: sources.sourceMode,
+    usedSources: ["originalTitle", "originalCaption"],
+    warnings: [],
+  };
+  assert.deepEqual(validateCopy(generated, sources), []);
 });
 
 test("preserva capitalização de nomes institucionais identificados na legenda", () => {

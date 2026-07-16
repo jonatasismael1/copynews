@@ -3,10 +3,37 @@ import assert from "node:assert/strict";
 import {
   acquireMedia,
   extractMetadata,
+  isInstagramReelUrl,
+  isVideoMediaItem,
+  selectDownloadableMedia,
   parseArticleMetadata,
   parseInstagramEmbedImage,
   parseInstagramMetadata,
 } from "./adapters.mjs";
+
+test("identifica Reel e não confunde a capa JPG com o vídeo", () => {
+  assert.equal(isInstagramReelUrl("https://www.instagram.com/reel/Da2vzBfSyxk/"), true);
+  assert.equal(isInstagramReelUrl("https://www.instagram.com/p/Da03fX7lJrc/"), false);
+  assert.equal(
+    isVideoMediaItem({ type: "unknown", filename: "instagram_Da2vzBfSyxk.jpg" }),
+    false,
+  );
+  assert.equal(
+    isVideoMediaItem({ type: "unknown", filename: "instagram_Da2vzBfSyxk.mp4" }),
+    true,
+  );
+  assert.equal(
+    selectDownloadableMedia([
+      { filename: "capa.jpg", auditOnly: true },
+      { filename: "reel.mp4", auditOnly: false },
+    ]).filename,
+    "reel.mp4",
+  );
+  assert.equal(
+    selectDownloadableMedia([{ filename: "capa.jpg", auditOnly: true }]),
+    undefined,
+  );
+});
 
 test("Cobalt rejeita resposta sem mídia", async () => {
   const original = global.fetch;

@@ -5,7 +5,13 @@ import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
-import { acquireMedia, extractMetadata } from "./adapters.mjs";
+import {
+  acquireMedia,
+  extractMetadata,
+  isInstagramReelUrl,
+  isVideoMediaItem,
+  selectDownloadableMedia,
+} from "./adapters.mjs";
 import {
   cleanSourceCaption,
   generateCopy,
@@ -123,6 +129,45 @@ async function download(url, path) {
   };
 }
 
+async function downloadReelWithYtDlp(sourceUrl, dir) {
+  const output = join(dir, "instagram-reel.mp4");
+  await run("yt-dlp", [
+    "--no-playlist",
+    "--no-part",
+    "--no-write-thumbnail",
+    "--force-overwrites",
+    "--max-filesize",
+    "100M",
+    "--socket-timeout",
+    "20",
+    "--retries",
+    "2",
+    "--format",
+    "best[ext=mp4][vcodec!=none][acodec!=none]",
+    "--merge-output-format",
+    "mp4",
+    "--output",
+    output,
+    sourceUrl,
+  ]);
+  const stats = await fs.stat(output);
+  if (!stats.size || stats.size > 100 * 1024 * 1024)
+    throw Object.assign(new Error("Mídia excede 100 MB"), {
+      code: "MEDIA_TOO_LARGE",
+    });
+  return {
+    mediaItems: [
+      {
+        localPath: output,
+        type: "video",
+        filename: "instagram-reel.mp4",
+      },
+    ],
+    filename: "instagram-reel.mp4",
+    fallbackProvider: "yt-dlp",
+  };
+}
+
 function mediaKind(type, contentType) {
   const value = `${type || ""} ${contentType || ""}`.toLowerCase();
   if (value.includes("image") || value.includes("photo")) return "image";
@@ -229,6 +274,31 @@ async function processJob(job) {
             cobaltUrl: process.env.COBALT_API_URL,
             cobaltKey: process.env.COBALT_API_KEY,
           });
+          if (
+            isInstagramReelUrl(job.news_items.source_url) &&
+            !acquired.mediaItems.some(isVideoMediaItem)
+          ) {
+            log("media.reel_cover_returned", { jobId: job.id });
+            try {
+              acquired = await downloadReelWithYtDlp(
+                job.news_items.source_url,
+                dir,
+              );
+              log("media.reel_video_recovered", {
+                jobId: job.id,
+                provider: "yt-dlp",
+              });
+            } catch (fallbackError) {
+              log("media.reel_video_unavailable", {
+                jobId: job.id,
+                message: fallbackError.message,
+              });
+              acquired.mediaItems = acquired.mediaItems.map((item) => ({
+                ...item,
+                auditOnly: true,
+              }));
+            }
+          }
         } catch (error) {
           log("media.provider_unavailable", {
             jobId: job.id,
@@ -258,7 +328,10 @@ async function processJob(job) {
           }
           if (results.metadata.mediaItems?.length) {
             acquired = {
-              mediaItems: results.metadata.mediaItems,
+              mediaItems: results.metadata.mediaItems.map((item) => ({
+                ...item,
+                auditOnly: isInstagramReelUrl(job.news_items.source_url),
+              })),
               filename: results.metadata.mediaItems[0].filename,
             };
           } else if (!results.metadata.caption) {
@@ -268,8 +341,14 @@ async function processJob(job) {
       }
       for (const [index, item] of (acquired?.mediaItems || []).entries()) {
         try {
-          const localPath = join(dir, `source-${index}${extname(item.filename)}`);
-          const downloaded = await download(item.url, localPath);
+          const localPath = item.localPath ||
+            join(dir, `source-${index}${extname(item.filename)}`);
+          const downloaded = item.localPath
+            ? {
+                bytes: (await fs.stat(item.localPath)).size,
+                contentType: "video/mp4",
+              }
+            : await download(item.url, localPath);
           const kind = mediaKind(item.type, downloaded.contentType);
           const extension = mediaExtension(
             item.filename,
@@ -292,6 +371,7 @@ async function processJob(job) {
             contentType,
             bytes: downloaded.bytes,
             source: item,
+            auditOnly: item.auditOnly === true,
           });
         } catch (error) {
           log("media.item_unavailable", {
@@ -301,7 +381,7 @@ async function processJob(job) {
           });
         }
       }
-      const primary = mediaFiles[0];
+      const primary = selectDownloadableMedia(mediaFiles);
       if (!primary) {
         if (!results.metadata.caption) {
           throw Object.assign(
