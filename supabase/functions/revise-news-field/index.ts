@@ -18,6 +18,21 @@ function env(name: string) {
   return value;
 }
 
+function cleanCaption(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|📲|☎|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
+  const contactOnly = /^(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-.\s]?\d{4}$/;
+  const lines = value.split(/\n+/).map((line) => line.trim());
+  const cutoff = lines.findIndex(
+    (line) => boilerplate.test(line) || contactOnly.test(line),
+  );
+  return lines
+    .slice(0, cutoff >= 0 ? cutoff : lines.length)
+    .filter(Boolean)
+    .join("\n\n")
+    .trim() || null;
+}
+
 async function context(req: Request) {
   const authorization = req.headers.get("Authorization");
   if (!authorization) throw new Error("Unauthorized");
@@ -66,7 +81,7 @@ Deno.serve(
     const { data: news, error } = await client
       .from("news_items")
       .select(
-        "generated_title,generated_caption,original_title,original_caption,clean_original_caption,transcript",
+        "generated_title,generated_caption,original_title,clean_original_caption,transcript",
       )
       .eq("id", body.news_item_id)
       .single();
@@ -103,8 +118,9 @@ Deno.serve(
                 instruction: body.instruction,
                 sources: {
                   originalTitle: news.original_title,
-                  originalCaption:
-                    news.clean_original_caption || news.original_caption,
+                  originalCaption: cleanCaption(
+                    news.clean_original_caption,
+                  ),
                   transcription: news.transcript,
                 },
               }),

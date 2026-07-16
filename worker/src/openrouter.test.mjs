@@ -276,6 +276,18 @@ test("sem título e sem legenda, a transcrição gera título e legenda", async 
   }
 });
 
+test("não usa a legenda original bruta quando a versão limpa está ausente", async () => {
+  await assert.rejects(
+    () =>
+      generateCopy(
+        { original_caption: "WhatsApp (82) 99999-9999" },
+        "unused",
+        "unused",
+      ),
+    (error) => error.code === "INSUFFICIENT_SOURCE",
+  );
+});
+
 test("preserva capitalização de nomes institucionais identificados na legenda", () => {
   assert.equal(
     normalizeHeadlineCase(

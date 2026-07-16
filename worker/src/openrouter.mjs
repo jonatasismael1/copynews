@@ -578,8 +578,7 @@ function fallbackCopy(sources, violations, approvedTitle = null, approvedSources
 export async function generateCopy(context, apiKey, model) {
   const sources = classifySources({
     originalTitle: context.original_title,
-    originalCaption:
-      context.clean_original_caption || context.original_caption,
+    originalCaption: context.clean_original_caption,
     articleBody: context.article_body,
     transcript: context.transcript,
   });
