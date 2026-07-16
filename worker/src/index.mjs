@@ -131,6 +131,7 @@ async function download(url, path) {
 
 async function downloadReelWithYtDlp(sourceUrl, dir) {
   const output = join(dir, "instagram-reel.mp4");
+  const outputTemplate = join(dir, "instagram-reel.%(ext)s");
   await run("yt-dlp", [
     "--no-playlist",
     "--no-part",
@@ -143,11 +144,11 @@ async function downloadReelWithYtDlp(sourceUrl, dir) {
     "--retries",
     "2",
     "--format",
-    "best[ext=mp4][vcodec!=none][acodec!=none]",
-    "--merge-output-format",
+    "best[vcodec!=none][acodec!=none]/bestvideo+bestaudio/best[vcodec!=none]",
+    "--remux-video",
     "mp4",
     "--output",
-    output,
+    outputTemplate,
     sourceUrl,
   ]);
   const stats = await fs.stat(output);
