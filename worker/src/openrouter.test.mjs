@@ -11,13 +11,12 @@ import {
   validateCopy,
 } from "./openrouter.mjs";
 
-const classify = (input) => classifySources({ ocrConfidence: 0.9, ...input });
+const classify = (input) => classifySources(input);
 const result = (sources, title, caption = sources.captionSource || title) => ({
   title,
   caption,
   sourceMode: sources.sourceMode,
-  titleSources: ["originalTitle"],
-  preservedFacts: [],
+  usedSources: ["originalTitle"],
   warnings: [],
 });
 
@@ -57,9 +56,9 @@ test("remove rodapé promocional da legenda sem retirar o conteúdo jornalístic
   );
 });
 
-test("título OCR em caixa alta vira escrita normal e usa a legenda para explicar HGE", () => {
+test("título limpo extraído do OCR vira escrita normal e usa a legenda para explicar HGE", () => {
   const sources = classify({
-    ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+    originalTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
     originalCaption: "A fiscalização ocorreu nos dias 9 e 10 no Hospital Geral do Estado.",
   });
   assert.equal(
@@ -95,9 +94,9 @@ test("título genérico é ignorado em favor da legenda", () => {
   assert.equal(sources.sourceMode, "caption_only");
 });
 
-test("OCR ilegível ou de baixa confiança não vira fato", () => {
+test("título extraído ilegível não vira fato", () => {
   assert.equal(isUsableTitle("PR3F3!TUR@ ###", { ocrConfidence: 0.3 }), false);
-  assert.equal(classify({ ocrTitle: "PR3F3!TUR@ ###", ocrConfidence: 0.3, originalCaption: "Prefeitura anuncia calendário." }).sourceMode, "caption_only");
+  assert.equal(classify({ originalTitle: "PR3F3!TUR@ ###", originalCaption: "Prefeitura anuncia calendário." }).sourceMode, "caption_only");
 });
 
 test("crítica direta preserva nome e teor", () => {
@@ -135,7 +134,8 @@ test("caso real preserva colisão, feridos e local e rejeita fatos inventados", 
     originalCaption: "Um motorista sob forte efeito de bebidas alcoólicas colidiu contra uma motocicleta, deixando 2 pessoas feridas no bairro Graciliano Ramos, em Palmeira dos Índios.",
   });
   const allowed = "Após colidir com moto e deixar feridos em Palmeira, motorista embriagado é preso";
-  assert.deepEqual(validateCopy(result(sources, allowed), sources), []);
+  const faithfulCaption = "No bairro Graciliano Ramos, em Palmeira dos Índios, um motorista sob forte efeito de bebidas alcoólicas colidiu contra uma motocicleta e deixou 2 pessoas feridas.";
+  assert.deepEqual(validateCopy(result(sources, allowed, faithfulCaption), sources), []);
   for (const invented of ["atropelamento", "morte", "fuga", "hospitalização", "10º Batalhão", "delegado José"])
     assert.ok(validateCopy(result(sources, `${allowed} ${invented}`), sources).length > 0, invented);
 });
@@ -144,7 +144,7 @@ test("fallback de revisão manual também nunca ultrapassa 150 caracteres", asyn
   const generated = await generateCopy(
     {
       original_title: `Motociclista fica ferido após colisão ${"em trecho da rodovia estadual ".repeat(6)}`,
-      source_caption: "O motociclista morreu após atropelamento no mesmo local.",
+      clean_original_caption: "O motociclista morreu após atropelamento no mesmo local.",
     },
     "unused",
     "unused",
@@ -155,7 +155,7 @@ test("fallback de revisão manual também nunca ultrapassa 150 caracteres", asyn
 
 test("rejeita a notícia inventada sobre São Gonçalo, Covid e ocupação de UTI", () => {
   const sources = classify({
-    ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+    originalTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
     originalCaption: "A Vigilância Sanitária de Maceió encontrou camas enferrujadas, teto aberto e fiação exposta durante fiscalização no HGE.",
   });
   const invented = result(
@@ -170,15 +170,22 @@ test("rejeita a notícia inventada sobre São Gonçalo, Covid e ocupação de UT
 
 test("aceita edição forte e fiel da manchete do HGE em capitalização normal", () => {
   const sources = classify({
-    ocrTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+    originalTitle: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
     originalCaption: "A Vigilância Sanitária de Maceió encontrou irregularidades graves durante fiscalização no Hospital Geral do Estado (HGE) e notificou o hospital.",
   });
   const edited = result(
     sources,
     "Vigilância Sanitária encontra irregularidades graves no HGE durante fiscalização e notifica hospital",
+    "Durante uma fiscalização no Hospital Geral do Estado (HGE), a Vigilância Sanitária de Maceió encontrou irregularidades graves e notificou o hospital.",
+  );
+  assert.equal(
+    cleanSourceCaption(
+      "Fato principal confirmado pela fiscalização.\n\nContato\n\n(82) 99999-9999\n\n#notícias",
+    ),
+    "Fato principal confirmado pela fiscalização.",
   );
   edited.sourceMode = "title_plus_caption";
-  edited.titleSources = ["originalTitle", "originalCaption"];
+  edited.usedSources = ["originalTitle", "originalCaption"];
   assert.deepEqual(validateCopy(edited, sources), []);
   assert.ok(edited.title.length <= 150);
 });
@@ -190,6 +197,27 @@ test("article_fallback usa somente conteúdo extraído do link", () => {
   assert.equal(classify({ originalCaption: "Veja mais", articleBody: "O corpo da matéria informa a decisão judicial." }).sourceMode, "article_fallback");
 });
 
+test("título incompleto sem legenda usa a transcrição como apoio", () => {
+  const sources = classify({
+    originalTitle: "Prefeitura anuncia medidas após",
+    transcript: "A Prefeitura anunciou medidas após a vistoria técnica na ponte do Centro.",
+  });
+  assert.equal(sources.sourceMode, "article_fallback");
+  assert.deepEqual(
+    validateCopy(
+      {
+        title: "Após vistoria técnica, Prefeitura anuncia medidas para a ponte do Centro",
+        caption: "A Prefeitura anunciou medidas para a ponte do Centro depois de realizar uma vistoria técnica.",
+        sourceMode: "article_fallback",
+        usedSources: ["originalTitle", "transcription"],
+        warnings: [],
+      },
+      sources,
+    ),
+    [],
+  );
+});
+
 test("título do OCR usa a transcrição para gerar a legenda quando não há legenda original", async () => {
   const originalFetch = globalThis.fetch;
   let request;
@@ -199,16 +227,14 @@ test("título do OCR usa a transcrição para gerar a legenda quando não há le
       title: "Prefeitura anuncia reforma da ponte após vistoria técnica",
       caption: "A Prefeitura anunciou a reforma da ponte após uma vistoria técnica realizada nesta quarta-feira.",
       sourceMode: "title_only",
-      titleSources: ["originalTitle"],
-      preservedFacts: ["reforma da ponte"],
+      usedSources: ["originalTitle", "transcription"],
       warnings: [],
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
     const generated = await generateCopy(
       {
-        ocr_text: "PREFEITURA ANUNCIA REFORMA DA PONTE APÓS VISTORIA TÉCNICA",
-        ocr_confidence: 0.95,
+        original_title: "PREFEITURA ANUNCIA REFORMA DA PONTE APÓS VISTORIA TÉCNICA",
         transcript: "A Prefeitura anunciou a reforma da ponte após uma vistoria técnica realizada nesta quarta-feira.",
       },
       "key",
@@ -216,7 +242,8 @@ test("título do OCR usa a transcrição para gerar a legenda quando não há le
     );
     assert.equal(generated.sourceMode, "title_only");
     assert.match(generated.caption, /vistoria técnica realizada nesta quarta-feira/);
-    assert.match(request.messages[1].content, /FONTE AUTORIZADA PARA A LEGENDA:\ntranscript/);
+    assert.match(request.messages[1].content, /FONTE PRINCIPAL DA LEGENDA:\ntranscription/);
+    assert.doesNotMatch(request.messages[1].content, /OCR BRUTO/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -229,8 +256,7 @@ test("sem título e sem legenda, a transcrição gera título e legenda", async 
       title: "Defesa Civil interdita ponte após vistoria técnica em Pilar",
       caption: "A Defesa Civil interditou a ponte após uma vistoria técnica realizada no município de Pilar.",
       sourceMode: "article_fallback",
-      titleSources: ["transcript"],
-      preservedFacts: ["ponte interditada em Pilar"],
+      usedSources: ["transcription"],
       warnings: [],
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   try {
@@ -242,7 +268,7 @@ test("sem título e sem legenda, a transcrição gera título e legenda", async 
       "model",
     );
     assert.equal(generated.sourceMode, "article_fallback");
-    assert.deepEqual(generated.titleSources, ["transcript"]);
+    assert.deepEqual(generated.usedSources, ["transcription"]);
     assert.match(generated.title, /Defesa Civil/);
     assert.match(generated.caption, /município de Pilar/);
   } finally {
@@ -272,16 +298,14 @@ test("corrige somente a legenda, preserva o título aprovado e recupera datas om
           title: "Vigilância Sanitária encontra irregularidades no HGE durante fiscalização",
           caption: "A Vigilância Sanitária de Maceió encontrou irregularidades durante fiscalização no HGE.",
           sourceMode: "title_plus_caption",
-          titleSources: ["originalTitle", "originalCaption"],
-          preservedFacts: [],
+          usedSources: ["originalTitle", "originalCaption"],
           warnings: [],
         }
       : {
           title: "Vigilância Sanitária encontra irregularidades no HGE durante fiscalização",
-          caption: "Na quarta-feira (15), a Vigilância Sanitária de Maceió informou que encontrou irregularidades durante fiscalização realizada no HGE na quinta-feira (9) e na sexta-feira (10).",
+          caption: "Irregularidades foram encontradas no HGE durante fiscalização realizada na quinta-feira (9) e na sexta-feira (10), segundo informou a Vigilância Sanitária de Maceió na quarta-feira (15).",
           sourceMode: "title_plus_caption",
-          titleSources: ["originalTitle", "originalCaption"],
-          preservedFacts: [],
+          usedSources: ["originalTitle", "originalCaption"],
           warnings: [],
         };
     return new Response(
@@ -292,9 +316,8 @@ test("corrige somente a legenda, preserva o título aprovado e recupera datas om
   try {
     const generated = await generateCopy(
       {
-        ocr_text: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
-        ocr_confidence: 0.99,
-        source_caption:
+        original_title: "VIGILÂNCIA SANITÁRIA NOTIFICA HGE APÓS FLAGRAR IRREGULARIDADES EM FISCALIZAÇÃO",
+        clean_original_caption:
           "Na quarta-feira (15), a Vigilância Sanitária de Maceió informou que encontrou irregularidades durante fiscalização realizada no HGE na quinta-feira (9) e na sexta-feira (10).",
       },
       "key",
@@ -347,14 +370,13 @@ test("remove mês inventado da resposta sem descartar a legenda melhorada", asyn
       title: "Fiscalização encontra irregularidades em hospital nos dias 9 e 10",
       caption: "A fiscalização encontrou irregularidades no hospital nos dias 9 e 10 de março.",
       sourceMode: "caption_only",
-      titleSources: ["originalCaption"],
-      preservedFacts: [],
+      usedSources: ["originalCaption"],
       warnings: [],
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   try {
     const generated = await generateCopy(
       {
-        source_caption:
+        clean_original_caption:
           "Nos dias 9 e 10, uma fiscalização encontrou irregularidades no hospital.",
       },
       "key",
@@ -382,22 +404,26 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
       title: "Defesa Civil interdita ponte após vistoria em Pilar",
       caption: "Defesa Civil interdita ponte após vistoria em Pilar.",
       sourceMode: "caption_only",
-      titleSources: ["originalCaption"],
-      preservedFacts: ["ponte interditada"],
+      usedSources: ["originalCaption"],
       warnings: [],
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
-    await generateCopy({ source_caption: "Defesa Civil interdita ponte após vistoria em Pilar." }, "key", "model");
+    await generateCopy({ clean_original_caption: "Defesa Civil interdita ponte após vistoria em Pilar." }, "key", "model");
     assert.equal(request.temperature, 0);
     assert.equal(request.top_p, 1);
     assert.equal(request.stream, false);
     assert.equal(request.provider.require_parameters, true);
-    assert.equal("frequency_penalty" in request, false);
-    assert.equal("presence_penalty" in request, false);
+    assert.equal(request.frequency_penalty, 0);
+    assert.equal(request.presence_penalty, 0);
+    assert.deepEqual(request.reasoning, { effort: "none" });
     assert.equal(request.response_format.json_schema.strict, true);
     assert.equal(request.response_format.json_schema.schema.additionalProperties, false);
-    assert.match(request.messages[0].content, /Colisão não é atropelamento/);
+    assert.deepEqual(
+      Object.keys(request.response_format.json_schema.schema.properties).sort(),
+      ["caption", "sourceMode", "title", "usedSources", "warnings"],
+    );
+    assert.match(request.messages[0].content, /Nunca use OCR bruto/);
     assert.match(request.messages[1].content, /TÍTULO ORIGINAL:/);
   } finally {
     globalThis.fetch = originalFetch;
@@ -413,8 +439,7 @@ test("faz uma única correção e mantém originais quando a repetição falha",
       title: "Motorista causa atropelamento e morre após fuga",
       caption: "Motorista causa atropelamento e morre após fuga.",
       sourceMode: "title_only",
-      titleSources: ["originalTitle"],
-      preservedFacts: [],
+      usedSources: ["originalTitle"],
       warnings: [],
     }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
   };

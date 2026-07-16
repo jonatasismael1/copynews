@@ -51,6 +51,7 @@ export function NewsDetailPage() {
   const { profile } = useAuth();
   const { data: lookups } = useLookups();
   const { data, isLoading, refetch } = useNewsItem(id);
+  const [originalTitle, setOriginalTitle] = useState("");
   const [title, setTitle] = useState("");
   const [caption, setCaption] = useState("");
   const [status, setStatus] = useState<NewsStatus>("processing");
@@ -69,6 +70,7 @@ export function NewsDetailPage() {
 
   function signature() {
     return JSON.stringify([
+      originalTitle,
       title,
       caption,
       status,
@@ -82,6 +84,7 @@ export function NewsDetailPage() {
   useEffect(() => {
     if (!data) return;
     const nextTitle = data.generated_title ?? "";
+    const nextOriginalTitle = data.original_title ?? "";
     const nextCaption = data.generated_caption ?? "";
     const nextStatus = data.status as NewsStatus;
     const nextAssigned = data.assigned_to ?? "";
@@ -90,6 +93,7 @@ export function NewsDetailPage() {
     const nextSchedule = toMaceioInput(data.scheduled_at);
     // Query hydration is the single source of the initial editable draft.
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOriginalTitle(nextOriginalTitle);
     setTitle(nextTitle);
     setCaption(nextCaption);
     setStatus(nextStatus);
@@ -98,6 +102,7 @@ export function NewsDetailPage() {
     setDestinationPageId(nextDestination);
     setScheduledAt(nextSchedule);
     lastSaved.current = JSON.stringify([
+      nextOriginalTitle,
       nextTitle,
       nextCaption,
       nextStatus,
@@ -123,6 +128,7 @@ export function NewsDetailPage() {
     // persist is deliberately driven only by editable field values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    originalTitle,
     title,
     caption,
     status,
@@ -173,6 +179,7 @@ export function NewsDetailPage() {
     setSaving(true);
     const savedSignature = signature();
     const values = {
+      original_title: originalTitle || null,
       generated_title: title,
       generated_caption: caption,
       status,
@@ -599,9 +606,38 @@ export function NewsDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-5 md:grid-cols-2">
-          <Source title="Legenda original" value={data.source_caption} />
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Título Original</p>
+              {originalTitle && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9"
+                  aria-label="Copiar Título Original"
+                  title="Copiar Título Original"
+                  onClick={() => copy(originalTitle)}
+                >
+                  <Clipboard size={16} />
+                </Button>
+              )}
+            </div>
+            <Textarea
+              className="mt-2 min-h-24 text-xs leading-relaxed"
+              value={originalTitle}
+              placeholder="Não disponível"
+              onChange={(event) => setOriginalTitle(event.target.value)}
+            />
+            <p className="mt-1 text-right text-xs text-muted-foreground">
+              {originalTitle.length} caracteres · salvamento automático
+            </p>
+          </div>
+          <Source
+            title="Legenda Original"
+            value={data.clean_original_caption || data.original_caption || data.source_caption}
+          />
           <Source title="Transcrição" value={data.transcript} />
-          <Source title="Texto detectado por OCR" value={data.ocr_text} />
+          <Source title="OCR bruto (auditoria)" value={data.raw_ocr_text || data.ocr_text} />
           <Source title="Alertas da IA" value={data.ai_warnings?.join("\n")} />
         </CardContent>
       </Card>

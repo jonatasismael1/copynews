@@ -66,7 +66,7 @@ Deno.serve(
     const { data: news, error } = await client
       .from("news_items")
       .select(
-        "generated_title,generated_caption,source_caption,transcript,ocr_text",
+        "generated_title,generated_caption,original_title,original_caption,clean_original_caption,transcript",
       )
       .eq("id", body.news_item_id)
       .single();
@@ -88,12 +88,12 @@ Deno.serve(
           model:
             Deno.env.get("OPENROUTER_REWRITE_MODEL") ||
             Deno.env.get("OPENROUTER_MODEL") ||
-            "openai/gpt-4.1-mini",
+            "x-ai/grok-4.3",
           messages: [
             {
               role: "system",
               content:
-                "Você é editor jornalístico. Reescreva somente o campo solicitado, preserve rigorosamente fatos, nomes, números, locais, datas, acusações e nível de certeza. Não invente. Para títulos, faça uma edição real, direta e forte, use capitalização jornalística normal mesmo que o OCR esteja em caixa alta e nunca ultrapasse 150 caracteres. Retorne apenas o novo texto.",
+                "Você é editor jornalístico. Reescreva somente o campo solicitado usando exclusivamente as fontes fornecidas. Preserve rigorosamente fatos, nomes, instituições, números, valores, locais, datas, horários, consequências, críticas, acusações, atribuições, tipo do acontecimento e nível de certeza. Não invente, complete, suavize nem agrave. Para títulos, use primeiro o Título Original, faça uma edição direta em capitalização jornalística normal e nunca ultrapasse 150 caracteres. Para legendas, reescreva primeiro a Legenda Original Limpa, melhorando fluidez e organização sem omitir fatos; use a transcrição apenas quando a legenda estiver ausente ou insuficiente. O título pode servir como contexto factual. Retorne somente o JSON definido.",
             },
             {
               role: "user",
@@ -102,20 +102,45 @@ Deno.serve(
                 current,
                 instruction: body.instruction,
                 sources: {
-                  caption: news.source_caption,
-                  transcript: news.transcript,
-                  ocr: news.ocr_text,
+                  originalTitle: news.original_title,
+                  originalCaption:
+                    news.clean_original_caption || news.original_caption,
+                  transcription: news.transcript,
                 },
               }),
             },
           ],
           temperature: 0,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          reasoning: { effort: "none" },
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "copy_news_field_revision",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: { text: { type: "string" } },
+                required: ["text"],
+                additionalProperties: false,
+              },
+            },
+          },
+          provider: { require_parameters: true },
         }),
       },
     );
     if (!response.ok) throw new Error(`Falha da IA: ${response.status}`);
     const result = await response.json();
-    const preview = result.choices?.[0]?.message?.content?.trim();
+    const content = result.choices?.[0]?.message?.content;
+    let preview: string;
+    try {
+      preview = JSON.parse(content || "{}").text?.trim() || "";
+    } catch {
+      throw new Error("Resposta inválida da IA");
+    }
     if (!preview) throw new Error("Resposta inválida da IA");
     if (body.field === "title" && preview.length > 150)
       throw new Error("O título revisado ultrapassou 150 caracteres");

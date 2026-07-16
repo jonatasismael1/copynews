@@ -6,7 +6,13 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { acquireMedia, extractMetadata } from "./adapters.mjs";
-import { generateCopy, readFrames, transcribeAudio } from "./openrouter.mjs";
+import {
+  cleanSourceCaption,
+  generateCopy,
+  normalizeHeadlineCase,
+  readFrames,
+  transcribeAudio,
+} from "./openrouter.mjs";
 import { buildSourceContext } from "./source-context.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
 const required = [
@@ -157,6 +163,16 @@ async function updateNews(newsId, values) {
       code: "NEWS_DELETED",
     });
 }
+async function editorialSources(newsId) {
+  const { data, error } = await db
+    .from("news_items")
+    .select("original_title,original_caption,clean_original_caption")
+    .eq("id", newsId)
+    .single();
+  if (error)
+    throw Object.assign(new Error(error.message), { code: "DATABASE_READ" });
+  return data;
+}
 async function processJob(job) {
   busy = true;
   const dir = join(tmpdir(), `copy-news-${job.id}`);
@@ -177,8 +193,19 @@ async function processJob(job) {
     }
     if (!results.metadata) {
       results.metadata = await extractMetadata(job.news_items.source_url);
+      results.original_caption = results.metadata.caption || null;
+      results.clean_original_caption = cleanSourceCaption(
+        results.metadata.caption,
+      ) || null;
+      results.original_title = normalizeHeadlineCase(
+        results.metadata.title || "",
+        results.clean_original_caption || "",
+      ) || null;
       await updateNews(job.news_items.id, {
         source_caption: results.metadata.caption,
+        original_caption: results.original_caption,
+        clean_original_caption: results.clean_original_caption,
+        original_title: results.original_title,
         source_author: results.metadata.author,
       });
       await update(job.id, {
@@ -212,8 +239,19 @@ async function processJob(job) {
             const refreshed = await extractMetadata(job.news_items.source_url);
             if (refreshed.caption || refreshed.mediaItems?.length) {
               results.metadata = refreshed;
+              results.original_caption = refreshed.caption || null;
+              results.clean_original_caption = cleanSourceCaption(
+                refreshed.caption,
+              ) || null;
+              results.original_title = normalizeHeadlineCase(
+                refreshed.title || "",
+                results.clean_original_caption || "",
+              ) || null;
               await updateNews(job.news_items.id, {
                 source_caption: refreshed.caption,
+                original_caption: results.original_caption,
+                clean_original_caption: results.clean_original_caption,
+                original_title: results.original_title,
                 source_author: refreshed.author,
               });
             }
@@ -311,6 +349,9 @@ async function processJob(job) {
             Date.now() + ttl * 60_000,
           ).toISOString(),
           source_caption: results.metadata.caption,
+          original_caption: results.original_caption,
+          clean_original_caption: results.clean_original_caption,
+          original_title: results.original_title,
           source_author: results.metadata.author,
         });
         await update(job.id, {
@@ -484,9 +525,16 @@ async function processJob(job) {
             )
           : { text: "", confidence: 0 };
       }
+      if (!results.original_title && results.ocr.title)
+        results.original_title = normalizeHeadlineCase(
+          results.ocr.title,
+          results.clean_original_caption || "",
+        );
       await updateNews(job.news_items.id, {
+        raw_ocr_text: results.ocr.text || "",
         ocr_text: results.ocr.text || "",
         ocr_confidence: results.ocr.confidence,
+        original_title: results.original_title || null,
       });
       await update(job.id, {
         current_step: "generate_copy",
@@ -495,12 +543,19 @@ async function processJob(job) {
       });
     }
     if (!results.copy) {
+      const persistedEditorialSources = await editorialSources(
+        job.news_items.id,
+      );
       results.copy = await generateCopy(
-        buildSourceContext(results),
+        buildSourceContext({
+          ...results,
+          ...persistedEditorialSources,
+          editorial_sources_loaded: true,
+        }),
         process.env.OPENROUTER_API_KEY,
         process.env.OPENROUTER_REWRITE_MODEL ||
           process.env.OPENROUTER_MODEL ||
-          "openai/gpt-4.1-mini",
+          "x-ai/grok-4.3",
       );
       if (results.transcription_empty) {
         const sourceKind = results.media_kind || "video";
@@ -513,7 +568,7 @@ async function processJob(job) {
             ? "A origem é uma imagem estática; o texto foi produzido a partir da legenda e do conteúdo visual."
             : sourceKind === "carousel"
               ? "Não foi identificada fala utilizável no carrossel; o texto foi produzido a partir da legenda e dos itens visuais."
-              : "Não foi identificada fala no vídeo; o texto foi produzido a partir da legenda e/ou do OCR.",
+            : "Não foi identificada fala no vídeo; o texto foi produzido a partir das fontes editoriais disponíveis.",
           ...results.copy.warnings,
         ];
       }
