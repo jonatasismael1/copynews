@@ -35,6 +35,7 @@ test("título completo usa title_only, preserva fatos e recebe edição de estru
       result(
         sources,
         "Prefeitura de Maceió inaugura nesta terça-feira nova escola no bairro Pontal",
+        "Nesta terça-feira, a Prefeitura de Maceió inaugurou a unidade escolar no bairro Pontal.",
       ),
       sources,
     ),
@@ -53,6 +54,18 @@ test("remove rodapé promocional da legenda sem retirar o conteúdo jornalístic
       "Primeiro fato confirmado.\n\nSegundo fato confirmado.\n\nAcesse a matéria completa em nosso site\n\n📲(82) 99999-9999",
     ),
     "Primeiro fato confirmado.\n\nSegundo fato confirmado.",
+  );
+  assert.equal(
+    cleanSourceCaption(
+      "Fato principal confirmado.\n\n🔄 Acesse a matéria completa em nosso site\n\nEnvie sugestões pelo WhatsApp",
+    ),
+    "Fato principal confirmado.",
+  );
+  assert.equal(
+    cleanSourceCaption(
+      "Fato principal confirmado.\n\n7 Segundos\n\n🚀 Inovação em jornalismo!\n\n📲 (82) 99999-9999",
+    ),
+    "Fato principal confirmado.",
   );
 });
 
@@ -81,7 +94,17 @@ test("preserva siglas ao normalizar manchetes que vieram em caixa alta", () => {
 test("título incompleto usa somente a legenda para complementar", () => {
   const sources = classify({ originalTitle: "Motorista é preso após colisão", originalCaption: "O motorista colidiu com uma motocicleta em Arapiraca." });
   assert.equal(sources.sourceMode, "title_plus_caption");
-  assert.deepEqual(validateCopy(result(sources, "Motorista é preso após colisão com motocicleta em Arapiraca"), sources), []);
+  assert.deepEqual(
+    validateCopy(
+      result(
+        sources,
+        "Motorista é preso após colisão com motocicleta em Arapiraca",
+        "Em Arapiraca, o motorista foi preso depois de colidir com uma motocicleta.",
+      ),
+      sources,
+    ),
+    [],
+  );
 });
 
 test("ausência de título gera caption_only", () => {
@@ -119,9 +142,34 @@ test("contradição entre título e legenda exige manual_review sem mistura", ()
   assert.ok(sources.contradictions.length >= 1);
 });
 
-test("título seguro abaixo de 80 caracteres é aceito", () => {
+test("título curto também precisa ser realmente reescrito", () => {
   const sources = classify({ originalTitle: "TRE rejeita pedido em Alagoas" });
-  assert.deepEqual(validateCopy(result(sources, sources.originalTitle), sources), []);
+  assert.ok(
+    validateCopy(result(sources, sources.originalTitle), sources).some((item) =>
+      /copiado literalmente/.test(item),
+    ),
+  );
+  assert.deepEqual(
+    validateCopy(result(sources, "Em Alagoas, TRE rejeita pedido"), sources),
+    [],
+  );
+});
+
+test("legenda curta também precisa ser realmente reescrita", () => {
+  const sources = classify({
+    originalTitle: "Defesa Civil interdita ponte em Pilar",
+    originalCaption: "A ponte foi interditada após uma vistoria técnica.",
+  });
+  assert.ok(
+    validateCopy(
+      result(
+        sources,
+        "Após vistoria, Defesa Civil interdita ponte em Pilar",
+        sources.originalCaption,
+      ),
+      sources,
+    ).some((item) => /Legenda foi copiada literalmente/.test(item)),
+  );
 });
 
 test("título acima de 150 caracteres é reprovado", () => {
@@ -226,7 +274,7 @@ test("título do OCR usa a transcrição para gerar a legenda quando não há le
   globalThis.fetch = async (_url, options) => {
     request = JSON.parse(options.body);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
-      title: "Prefeitura anuncia reforma da ponte após vistoria técnica",
+      title: "Após vistoria técnica, Prefeitura anuncia reforma da ponte",
       caption: "A Prefeitura anunciou a reforma da ponte após uma vistoria técnica realizada nesta quarta-feira.",
       sourceMode: "title_only",
       usedSources: ["originalTitle", "transcription"],
@@ -451,9 +499,9 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
     assert.equal(request.top_p, 1);
     assert.equal(request.stream, false);
     assert.equal(request.provider.require_parameters, true);
-    assert.equal(request.frequency_penalty, 0);
-    assert.equal(request.presence_penalty, 0);
-    assert.deepEqual(request.reasoning, { effort: "none" });
+    assert.equal(request.frequency_penalty, undefined);
+    assert.equal(request.presence_penalty, undefined);
+    assert.equal(request.reasoning, undefined);
     assert.equal(request.response_format.json_schema.strict, true);
     assert.equal(request.response_format.json_schema.schema.additionalProperties, false);
     assert.deepEqual(
@@ -487,6 +535,46 @@ test("faz uma única correção e mantém originais quando a repetição falha",
     assert.equal(generated.title, originalTitle);
     assert.equal(generated.sourceMode, "manual_review");
     assert.ok(generated.warnings.some((item) => /revisão manual/.test(item)));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("mantém a legenda reescrita quando somente o título falha duas vezes", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  const originalTitle = "Retorno de secretário da Saúde reacende debate em Alagoas";
+  const originalCaption =
+    "O retorno do secretário da Saúde voltou a gerar repercussão entre a população de Alagoas.";
+  const rewrittenCaption =
+    "Em Alagoas, a volta do secretário da Saúde ao cargo provocou nova repercussão entre os moradores.";
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        title: originalTitle,
+        caption: rewrittenCaption,
+        sourceMode: "title_plus_caption",
+        usedSources: ["originalTitle", "originalCaption"],
+        warnings: [],
+      }) } }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  try {
+    const generated = await generateCopy(
+      {
+        original_title: originalTitle,
+        clean_original_caption: originalCaption,
+      },
+      "key",
+      "model",
+    );
+    assert.equal(calls, 2);
+    assert.equal(generated.title, originalTitle);
+    assert.equal(generated.caption, rewrittenCaption);
+    assert.notEqual(generated.caption, originalCaption);
+    assert.equal(generated.sourceMode, "manual_review");
   } finally {
     globalThis.fetch = originalFetch;
   }
