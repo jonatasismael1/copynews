@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  ArrowLeft,
   Check,
+  ChevronDown,
   Clipboard,
   Download,
+  Edit3,
   ExternalLink,
   Archive,
-  History,
   LoaderCircle,
+  MoreHorizontal,
   Palette,
   RefreshCw,
   Share2,
@@ -17,10 +20,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input, Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { useLookups, useNewsItem } from "@/hooks/use-data";
 import { supabase } from "@/lib/supabase";
 import { statusLabels, type NewsStatus } from "@/lib/constants";
@@ -77,6 +88,12 @@ export function NewsDetailPage() {
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [preparedMedia, setPreparedMedia] = useState<File[]>([]);
   const [preparingMedia, setPreparingMedia] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [mobileEditor, setMobileEditor] = useState<{
+    field: "highlight" | "title" | "caption" | "originalTitle";
+    label: string;
+    value: string;
+  } | null>(null);
   const [revision, setRevision] = useState<{
     field: "title" | "caption";
     instruction: string;
@@ -84,13 +101,13 @@ export function NewsDetailPage() {
   } | null>(null);
   const lastSaved = useRef("");
 
-  function signature() {
+  function signature(nextStatus = status) {
     return JSON.stringify([
       originalTitle,
       title,
       caption,
       highlight,
-      status,
+      nextStatus,
       assignedTo,
       categoryId,
       destinationPageId,
@@ -219,13 +236,13 @@ export function NewsDetailPage() {
         ? [highlight]
         : [];
 
-  async function persist(showToast: boolean) {
+  async function persist(showToast: boolean, nextStatus = status) {
     if (!data || saving) return;
-    if (status === "scheduled" && !scheduledAt) {
+    if (nextStatus === "scheduled" && !scheduledAt) {
       if (showToast) toast.error("Informe a data do agendamento.");
       return;
     }
-    if (status === "published" && !hasPublication) {
+    if (nextStatus === "published" && !hasPublication) {
       if (showToast)
         toast.error(
           "Registre uma publicação vinculada antes de marcar como publicada.",
@@ -233,20 +250,20 @@ export function NewsDetailPage() {
       return;
     }
     setSaving(true);
-    const savedSignature = signature();
+    const savedSignature = signature(nextStatus);
     const values = {
       original_title: originalTitle || null,
       generated_title: title,
       generated_caption: caption,
       highlight: highlight.trim().length >= 2 ? highlight.trim() : null,
-      status,
+      status: nextStatus,
       ...(profile?.role === "admin"
         ? { assigned_to: assignedTo || null }
         : {}),
       category_id: categoryId || null,
       destination_page_id: destinationPageId || null,
       scheduled_at:
-        status === "scheduled" && scheduledAt
+        nextStatus === "scheduled" && scheduledAt
           ? new Date(`${scheduledAt}:00-03:00`).toISOString()
           : null,
     };
@@ -259,6 +276,7 @@ export function NewsDetailPage() {
       toast.error(error.message);
       return;
     }
+    if (nextStatus !== status) setStatus(nextStatus);
     lastSaved.current = savedSignature;
     setSavedAt(new Date());
     await refetch();
@@ -268,6 +286,25 @@ export function NewsDetailPage() {
   async function copy(text: string) {
     await navigator.clipboard.writeText(text);
     toast.success("Copiado para a área de transferência");
+  }
+
+  function openMobileEditor(
+    field: "highlight" | "title" | "caption" | "originalTitle",
+    label: string,
+    value: string,
+  ) {
+    setMobileEditor({ field, label, value });
+  }
+
+  function saveMobileEditor() {
+    if (!mobileEditor) return;
+    if (mobileEditor.field === "highlight") setHighlight(mobileEditor.value);
+    if (mobileEditor.field === "title") setTitle(mobileEditor.value);
+    if (mobileEditor.field === "caption") setCaption(mobileEditor.value);
+    if (mobileEditor.field === "originalTitle")
+      setOriginalTitle(mobileEditor.value);
+    setMobileEditor(null);
+    toast.success(`${mobileEditor.label} atualizado`);
   }
 
   async function signedDownload() {
@@ -397,9 +434,109 @@ export function NewsDetailPage() {
     navigate("/noticias", { replace: true });
   }
 
+  const originalCaption =
+    data.clean_original_caption ||
+    data.original_caption ||
+    data.source_caption ||
+    "";
+  const thumbnailUrl = (data.publications ?? []).find(
+    (publication: { thumbnail_url?: string | null }) =>
+      publication.thumbnail_url,
+  )?.thumbnail_url;
+  const historyItems = [
+    ...(data.news_versions ?? []).map((item: Record<string, string>) => ({
+      at: item.created_at,
+      text: `${item.field === "title" ? "Título" : "Legenda"} alterado (${item.change_type})`,
+    })),
+    ...(data.status_history ?? []).map((item: Record<string, string>) => ({
+      at: item.created_at,
+      text: `Status: ${item.from_status ? statusLabels[item.from_status as NewsStatus] : "inicial"} → ${statusLabels[item.to_status as NewsStatus]}`,
+    })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 10);
+  const nextPrimaryStatus: NewsStatus =
+    status === "approved" && hasPublication ? "published" : "approved";
+  const primaryStatusLabel =
+    status === "published"
+      ? "Publicado"
+      : status === "approved"
+        ? hasPublication
+          ? "Publicar"
+          : "Aprovada"
+        : "Aprovar";
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto max-w-5xl space-y-3 pb-20 md:space-y-6 md:pb-0">
+      <div className="-mx-3 border-b bg-background px-3 py-3 md:hidden">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-11 shrink-0"
+            onClick={() => navigate(-1)}
+            aria-label="Voltar"
+          >
+            <ArrowLeft />
+          </Button>
+          <div className="min-w-0 flex-1">
+            <Badge className="mb-1.5">{statusLabels[status]}</Badge>
+            <h1 className="line-clamp-2 font-display text-base font-bold leading-snug">
+              {title || "Notícia em processamento"}
+            </h1>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-11 shrink-0"
+            onClick={() => setMoreOpen(true)}
+            aria-label="Mais ações"
+          >
+            <MoreHorizontal />
+          </Button>
+        </div>
+      </div>
+
+      <section className="rounded-2xl border bg-card p-3 md:hidden">
+        <div className="flex gap-3">
+          {thumbnailUrl && (
+            <img
+              src={thumbnailUrl}
+              alt=""
+              className="size-20 shrink-0 rounded-xl object-cover"
+            />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="line-clamp-3 font-display text-lg font-bold leading-snug">
+              {title || "Notícia em processamento"}
+            </p>
+            <p className="mt-2 truncate text-xs text-muted-foreground">
+              {data.source_author ||
+                data.profiles?.name ||
+                data.source_platform ||
+                "Origem não identificada"}
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          <Badge className="shrink-0">{statusLabels[status]}</Badge>
+          {data.source_platform && (
+            <Badge variant="outline" className="shrink-0">
+              {data.source_platform}
+            </Badge>
+          )}
+          {data.categories && (
+            <Badge variant="outline" className="shrink-0">
+              {data.categories.name}
+            </Badge>
+          )}
+          <Badge variant="outline" className="shrink-0">
+            {new Date(data.created_at).toLocaleDateString("pt-BR")}
+          </Badge>
+        </div>
+      </section>
+
+      <div className="hidden flex-col gap-4 md:flex md:flex-row md:items-start md:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{statusLabels[status]}</Badge>
@@ -434,7 +571,7 @@ export function NewsDetailPage() {
             ),
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {(saving || savedAt) && (
             <span className="text-xs text-muted-foreground" aria-live="polite">
               {saving
@@ -546,28 +683,35 @@ export function NewsDetailPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
-            <CardTitle>Destaque</CardTitle>
-            <p className="mt-1 text-xs font-normal text-muted-foreground">
-              Escolha uma das opções geradas pela IA.
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => copy(highlight)}
-            aria-label="Copiar Destaque"
-            disabled={!highlight}
-          >
-            <Clipboard />
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <ResponsiveSection
+        title="Destaque"
+        summary={`${Math.max(highlightOptions.length, 1)} opção${highlightOptions.length === 1 ? "" : "ões"} · ${highlight.length} caracteres`}
+        defaultOpen
+        actions={
+          <>
+            <CopyAction
+              label="Copiar destaque"
+              value={highlight}
+              onCopy={copy}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11 md:hidden"
+              onClick={() =>
+                openMobileEditor("highlight", "Destaque", highlight)
+              }
+              aria-label="Editar destaque"
+            >
+              <Edit3 size={18} />
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 md:space-y-4">
           {highlightOptions.length > 1 && (
             <div
-              className="grid gap-3 sm:grid-cols-3"
+              className="flex gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible md:gap-3"
               role="radiogroup"
               aria-label="Opções de destaque"
             >
@@ -579,7 +723,7 @@ export function NewsDetailPage() {
                     type="button"
                     role="radio"
                     aria-checked={selected}
-                    className={`rounded-2xl border p-4 text-left transition ${
+                    className={`min-h-11 min-w-[10rem] flex-1 rounded-xl border p-3 text-left transition sm:min-w-0 md:rounded-2xl md:p-4 ${
                       selected
                         ? "border-primary bg-primary/10 ring-2 ring-primary/20"
                         : "bg-background hover:border-primary/50"
@@ -599,109 +743,204 @@ export function NewsDetailPage() {
             </div>
           )}
           <Input
+            className="hidden md:block"
             value={highlight}
             maxLength={50}
             placeholder="Selecione ou ajuste o destaque"
             onChange={(event) => setHighlight(event.target.value)}
           />
-          <p className="mt-2 text-right text-xs text-muted-foreground">
+          <p className="hidden text-right text-xs text-muted-foreground md:block">
             {highlight.length}/50 caracteres
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </ResponsiveSection>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-3 md:gap-6 lg:grid-cols-2">
         {(
           [
             ["title", "Título", title, setTitle],
             ["caption", "Legenda", caption, setCaption],
           ] as const
         ).map(([field, label, value, setter]) => (
-          <Card key={field}>
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>{label}</CardTitle>
-              <div className="flex">
+          <ResponsiveSection
+            key={field}
+            title={label}
+            summary={`${value.length} caracteres`}
+            defaultOpen
+            actions={
+              <>
+                <CopyAction
+                  label={`Copiar ${label.toLocaleLowerCase("pt-BR")}`}
+                  value={value}
+                  onCopy={copy}
+                />
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => copy(value)}
-                  aria-label={`Copiar ${label}`}
-                >
-                  <Clipboard />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
+                  className="size-11"
                   onClick={() => setRevision({ field, instruction: "" })}
                   aria-label={`Alterar ${label} com IA`}
                 >
-                  <Sparkles />
+                  <Sparkles size={18} />
                 </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                className={field === "caption" ? "min-h-64" : "min-h-28"}
-                value={value}
-                onChange={(event) => setter(event.target.value)}
-              />
-              <p className="mt-2 text-right text-xs text-muted-foreground">
-                {value.length} caracteres
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <History />
-            Fontes e rastreabilidade
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-5 md:grid-cols-2">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold">Título Original</p>
-              {originalTitle && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-9"
-                  aria-label="Copiar Título Original"
-                  title="Copiar Título Original"
-                  onClick={() => copy(originalTitle)}
+                  className="size-11 md:hidden"
+                  onClick={() =>
+                    openMobileEditor(field, label, value)
+                  }
+                  aria-label={`Editar ${label.toLocaleLowerCase("pt-BR")}`}
                 >
-                  <Clipboard size={16} />
+                  <Edit3 size={18} />
                 </Button>
-              )}
+              </>
+            }
+          >
+              <ExpandableText
+                value={value}
+                lines={field === "caption" ? 6 : 4}
+                className="md:hidden"
+              />
+              <Textarea
+                className={cn(
+                  "hidden md:block",
+                  field === "caption" ? "min-h-64" : "min-h-28",
+                )}
+                value={value}
+                onChange={(event) => setter(event.target.value)}
+              />
+              <p className="mt-2 hidden text-right text-xs text-muted-foreground md:block">
+                {value.length} caracteres
+              </p>
+          </ResponsiveSection>
+        ))}
+      </div>
+
+      <ResponsiveSection
+        title="Fontes e rastreabilidade"
+        summary={`${[originalTitle, originalCaption, data.transcript, data.raw_ocr_text || data.ocr_text, data.ai_warnings?.join("\n")].filter(Boolean).length} registros`}
+        actions={
+          <div className="flex md:hidden">
+            <CopyAction
+              label="Copiar título original"
+              value={originalTitle}
+              onCopy={copy}
+            />
+            <CopyAction
+              label="Copiar legenda original"
+              value={originalCaption}
+              onCopy={copy}
+            />
+          </div>
+        }
+      >
+        <div className="grid gap-3 md:grid-cols-2 md:gap-5">
+          <div>
+            <div className="flex min-h-11 items-center justify-between gap-2">
+              <p className="text-sm font-semibold">Título Original</p>
+              <div className="flex">
+                <CopyAction
+                  label="Copiar título original"
+                  value={originalTitle}
+                  onCopy={copy}
+                  className="hidden md:inline-flex"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 md:hidden"
+                  onClick={() =>
+                    openMobileEditor(
+                      "originalTitle",
+                      "Título Original",
+                      originalTitle,
+                    )
+                  }
+                  aria-label="Editar título original"
+                >
+                  <Edit3 size={18} />
+                </Button>
+              </div>
             </div>
+            <ExpandableText
+              value={originalTitle}
+              lines={4}
+              className="md:hidden"
+            />
             <Textarea
-              className="mt-2 min-h-24 text-xs leading-relaxed"
+              className="mt-2 hidden min-h-24 text-xs leading-relaxed md:block"
               value={originalTitle}
               placeholder="Não disponível"
               onChange={(event) => setOriginalTitle(event.target.value)}
             />
             <p className="mt-1 text-right text-xs text-muted-foreground">
-              {originalTitle.length} caracteres · salvamento automático
+              {originalTitle.length} caracteres
+              <span className="hidden md:inline"> · salvamento automático</span>
             </p>
           </div>
-          <Source
-            title="Legenda Original"
-            value={data.clean_original_caption || data.original_caption || data.source_caption}
-          />
+          <Source title="Legenda Original" value={originalCaption} />
           <Source title="Transcrição" value={data.transcript} />
-          <Source title="OCR bruto (auditoria)" value={data.raw_ocr_text || data.ocr_text} />
+          <Source
+            title="OCR bruto (auditoria)"
+            value={data.raw_ocr_text || data.ocr_text}
+          />
           <Source title="Alertas da IA" value={data.ai_warnings?.join("\n")} />
-        </CardContent>
-      </Card>
+        </div>
+      </ResponsiveSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Fluxo editorial</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <ResponsiveSection
+        title="Detalhes"
+        summary={`${data.source_platform || "Origem"} · ${new Date(data.created_at).toLocaleDateString("pt-BR")}`}
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">{statusLabels[status]}</Badge>
+            {data.profiles?.name && (
+              <Badge variant="outline">{data.profiles.name}</Badge>
+            )}
+            {data.source_platform && (
+              <Badge variant="outline">{data.source_platform}</Badge>
+            )}
+            <Badge variant="outline">
+              {new Date(data.created_at).toLocaleString("pt-BR")}
+            </Badge>
+          </div>
+          <a
+            className="inline-flex max-w-full items-center gap-1 break-all text-xs text-primary hover:underline"
+            href={data.source_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Abrir fonte original
+            <ExternalLink className="shrink-0" size={13} />
+          </a>
+          {(data.publications ?? []).map(
+            (publication: {
+              id: string;
+              published_url: string;
+              platform: string;
+            }) => (
+              <a
+                key={publication.id}
+                className="flex w-fit items-center gap-1 text-xs font-medium text-primary hover:underline"
+                href={publication.published_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver publicação no {publication.platform}
+                <ExternalLink size={13} />
+              </a>
+            ),
+          )}
+        </div>
+      </ResponsiveSection>
+
+      <ResponsiveSection
+        title="Fluxo editorial"
+        summary={`${statusLabels[status]} · ${data.profiles?.name || "Não atribuído"}`}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-4">
           <Field label="Status">
             <select
               className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
@@ -782,72 +1021,274 @@ export function NewsDetailPage() {
               />
             </Field>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </ResponsiveSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Histórico editorial</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {data.news_versions?.length || data.status_history?.length ? (
-            <div className="space-y-3">
-              {[
-                ...(data.news_versions ?? []).map(
-                  (item: Record<string, string>) => ({
-                    at: item.created_at,
-                    text: `${item.field === "title" ? "Título" : "Legenda"} alterado (${item.change_type})`,
-                  }),
-                ),
-                ...(data.status_history ?? []).map(
-                  (item: Record<string, string>) => ({
-                    at: item.created_at,
-                    text: `Status: ${item.from_status ? statusLabels[item.from_status as NewsStatus] : "inicial"} → ${statusLabels[item.to_status as NewsStatus]}`,
-                  }),
-                ),
-              ]
-                .sort((a, b) => b.at.localeCompare(a.at))
-                .slice(0, 10)
-                .map((item) => (
-                  <div
-                    key={`${item.at}-${item.text}`}
-                    className="flex gap-3 border-b pb-3 text-sm last:border-0"
-                  >
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(item.at).toLocaleString("pt-BR")}
-                    </span>
-                    <span>{item.text}</span>
-                  </div>
-                ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              As mudanças de texto e status aparecerão aqui.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <ResponsiveSection
+        title="Histórico editorial"
+        summary={`${historyItems.length} alteração${historyItems.length === 1 ? "" : "ões"}${historyItems[0] ? ` · ${new Date(historyItems[0].at).toLocaleDateString("pt-BR")}` : ""}`}
+      >
+        {historyItems.length ? (
+          <div className="space-y-3">
+            {historyItems.map((item) => (
+              <div
+                key={`${item.at}-${item.text}`}
+                className="flex flex-col gap-1 border-b pb-3 text-sm last:border-0 sm:flex-row sm:gap-3"
+              >
+                <span className="text-xs text-muted-foreground">
+                  {new Date(item.at).toLocaleString("pt-BR")}
+                </span>
+                <span>{item.text}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            As mudanças de texto e status aparecerão aqui.
+          </p>
+        )}
+      </ResponsiveSection>
 
-      {revision && (
-        <div
-          className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center"
-          onClick={() => setRevision(null)}
+      <div className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 grid grid-cols-3 gap-2 rounded-2xl border bg-background/95 p-2 shadow-xl backdrop-blur md:hidden">
+        <Button
+          variant="outline"
+          className="min-w-0 px-2"
+          onClick={() => setRevision({ field: "caption", instruction: "" })}
+          disabled={!editorReady}
         >
-          <Card
-            className="max-h-[88dvh] w-full overflow-y-auto rounded-b-none p-1 sm:max-w-lg sm:rounded-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <CardHeader>
-              <CardTitle>
-                Alterar {revision.field === "title" ? "título" : "legenda"} com
-                IA
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                A IA criará uma prévia. O texto só será substituído após sua
-                confirmação.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <Sparkles size={18} />
+          Reescrever
+        </Button>
+        <Button
+          className="min-w-0 px-2"
+          onClick={() => persist(true, nextPrimaryStatus)}
+          disabled={
+            saving ||
+            !canManageRecord ||
+            status === "published" ||
+            (status === "approved" && !hasPublication)
+          }
+        >
+          <Check size={18} />
+          {primaryStatusLabel}
+        </Button>
+        <Button
+          variant="outline"
+          className="min-w-0 px-2"
+          onClick={() => setMoreOpen(true)}
+        >
+          <MoreHorizontal size={18} />
+          Mais
+        </Button>
+      </div>
+
+      <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
+        <DialogContent aria-describedby="more-actions-description">
+          <div className="border-b p-5 pr-16">
+            <DialogTitle>Mais ações</DialogTitle>
+            <DialogDescription id="more-actions-description">
+              Todas as ações secundárias da notícia.
+            </DialogDescription>
+          </div>
+          <div className="grid gap-2 p-4">
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={() => {
+                void persist(true);
+                setMoreOpen(false);
+              }}
+              disabled={saving}
+            >
+              <Check />
+              Salvar agora
+            </Button>
+            <Button
+              variant="outline"
+              className="justify-start"
+              onClick={() => {
+                void signedDownload();
+                setMoreOpen(false);
+              }}
+              disabled={!data.temporary_media_path || preparingMedia}
+            >
+              {preparingMedia ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Download />
+              )}
+              {isAppleMobile() ? "Salvar na galeria" : "Baixar mídia"}
+            </Button>
+            {editorReady && editorUrl && (
+              <Button variant="outline" className="justify-start" asChild>
+                <a href={editorUrl} target="_blank" rel="noreferrer">
+                  <Palette />
+                  Abrir editor
+                </a>
+              </Button>
+            )}
+            {editorReady && !editorUrl && (
+              <Button variant="outline" className="justify-start" asChild>
+                <Link to="/configuracoes">
+                  <Palette />
+                  Configurar editor
+                </Link>
+              </Button>
+            )}
+            {editorReady && canManageRecord && (
+              <Button
+                variant="outline"
+                className="justify-start"
+                onClick={() => {
+                  void shareNews();
+                  setMoreOpen(false);
+                }}
+                disabled={saving}
+              >
+                <Share2 />
+                Compartilhar
+              </Button>
+            )}
+            {canManageRecord && (
+              <>
+                <Button
+                  variant="outline"
+                  className="justify-start"
+                  onClick={() => {
+                    void archiveNews();
+                    setMoreOpen(false);
+                  }}
+                  disabled={saving}
+                >
+                  <Archive />
+                  Arquivar
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="justify-start"
+                  onClick={() => {
+                    void deleteNews();
+                    setMoreOpen(false);
+                  }}
+                  disabled={saving}
+                >
+                  <Trash2 />
+                  Excluir notícia
+                </Button>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(mobileEditor)}
+        onOpenChange={(open) => {
+          if (!open) setMobileEditor(null);
+        }}
+      >
+        <DialogContent
+          className="inset-0 max-h-none rounded-none sm:inset-auto sm:max-h-[88dvh] sm:rounded-2xl"
+          showClose={false}
+          aria-describedby="mobile-editor-description"
+        >
+          {mobileEditor && (
+            <div className="flex min-h-dvh flex-col sm:min-h-0">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background p-3">
+                <DialogClose asChild>
+                  <Button variant="ghost">Cancelar</Button>
+                </DialogClose>
+                <DialogTitle className="truncate">
+                  Editar {mobileEditor.label.toLocaleLowerCase("pt-BR")}
+                </DialogTitle>
+                <Button onClick={saveMobileEditor}>Salvar</Button>
+              </div>
+              <DialogDescription
+                id="mobile-editor-description"
+                className="sr-only"
+              >
+                Edite o conteúdo completo e salve para aplicar.
+              </DialogDescription>
+              <div className="flex-1 space-y-3 p-4">
+                {mobileEditor.field === "highlight" ? (
+                  <Input
+                    autoFocus
+                    maxLength={50}
+                    value={mobileEditor.value}
+                    onChange={(event) =>
+                      setMobileEditor({
+                        ...mobileEditor,
+                        value: event.target.value,
+                      })
+                    }
+                  />
+                ) : (
+                  <Textarea
+                    autoFocus
+                    className="min-h-[55dvh] resize-none"
+                    value={mobileEditor.value}
+                    onChange={(event) =>
+                      setMobileEditor({
+                        ...mobileEditor,
+                        value: event.target.value,
+                      })
+                    }
+                  />
+                )}
+                <div className="flex items-center justify-between">
+                  <CopyAction
+                    label={`Copiar ${mobileEditor.label.toLocaleLowerCase("pt-BR")}`}
+                    value={mobileEditor.value}
+                    onCopy={copy}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {mobileEditor.value.length}
+                    {mobileEditor.field === "highlight" ? "/50" : ""} caracteres
+                  </span>
+                </div>
+                {(mobileEditor.field === "title" ||
+                  mobileEditor.field === "caption") && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setRevision({
+                        field: mobileEditor.field as "title" | "caption",
+                        instruction: "",
+                      });
+                      setMobileEditor(null);
+                    }}
+                  >
+                    <Sparkles />
+                    Ajustar com IA
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(revision)}
+        onOpenChange={(open) => {
+          if (!open) setRevision(null);
+        }}
+      >
+        <DialogContent aria-describedby="revision-description">
+          {revision && (
+            <>
+              <div className="border-b p-5 pr-16">
+                <DialogTitle>
+                  Alterar {revision.field === "title" ? "título" : "legenda"} com
+                  IA
+                </DialogTitle>
+                <DialogDescription id="revision-description">
+                  A IA criará uma prévia. O texto só será substituído após sua
+                  confirmação.
+                </DialogDescription>
+              </div>
+              <div className="space-y-4 p-5">
               {!revision.preview ? (
                 <>
                   <div className="flex flex-wrap gap-2">
@@ -909,10 +1350,11 @@ export function NewsDetailPage() {
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -939,32 +1381,163 @@ function toMaceioInput(value?: string | null) {
 }
 
 function Source({ title, value }: { title: string; value?: string | null }) {
+  const text = value || "";
   return (
     <div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex min-h-11 items-center justify-between gap-2">
         <p className="text-sm font-semibold">{title}</p>
-        {value && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-9"
-            aria-label={`Copiar ${title}`}
-            title={`Copiar ${title}`}
-            onClick={async () => {
-              await navigator.clipboard.writeText(value);
-              toast.success(`${title} copiada`);
-            }}
-          >
-            <Clipboard size={16} />
-          </Button>
-        )}
+        <CopyAction
+          label={`Copiar ${title.toLocaleLowerCase("pt-BR")}`}
+          value={text}
+          onCopy={async (content) => {
+            await navigator.clipboard.writeText(content);
+            toast.success(`${title} copiada`);
+          }}
+        />
       </div>
-      <p className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
-        {value || "Não disponível"}
+      <ExpandableText value={text} lines={6} className="md:hidden" />
+      <p className="mt-2 hidden max-h-44 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground md:block">
+        {text || "Não disponível"}
       </p>
       <p className="mt-1 text-right text-xs text-muted-foreground">
-        {(value || "").length} caracteres
+        {text.length} caracteres
       </p>
+    </div>
+  );
+}
+
+function ResponsiveSection({
+  title,
+  summary,
+  defaultOpen = false,
+  actions,
+  children,
+}: {
+  title: string;
+  summary?: string;
+  defaultOpen?: boolean;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const contentId = useId();
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex min-h-14 items-center gap-1 p-2 pl-3 md:min-h-0 md:p-5">
+        <button
+          type="button"
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:hidden"
+          aria-expanded={open}
+          aria-controls={contentId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display text-base font-semibold tracking-tight md:text-lg">
+              {title}
+            </h2>
+            {summary && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {summary}
+              </p>
+            )}
+          </div>
+          <ChevronDown
+            size={18}
+            className={cn(
+              "shrink-0 text-muted-foreground transition-transform md:hidden",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+        <div className="hidden min-w-0 flex-1 md:block">
+          <h2 className="font-display text-lg font-semibold tracking-tight">
+            {title}
+          </h2>
+          {summary && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {summary}
+            </p>
+          )}
+        </div>
+        {actions && <div className="flex shrink-0">{actions}</div>}
+      </div>
+      <div
+        id={contentId}
+        className={cn(
+          "border-t border-border/70",
+          open ? "block" : "hidden",
+          "md:block",
+        )}
+      >
+        <CardContent className="p-3 md:p-5">{children}</CardContent>
+      </div>
+    </Card>
+  );
+}
+
+function CopyAction({
+  label,
+  value,
+  onCopy,
+  className,
+}: {
+  label: string;
+  value?: string | null;
+  onCopy: (value: string) => void | Promise<void>;
+  className?: string;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn("size-11 md:size-10", className)}
+      aria-label={label}
+      title={label}
+      disabled={!value}
+      onClick={() => {
+        if (value) void onCopy(value);
+      }}
+    >
+      <Clipboard size={18} />
+    </Button>
+  );
+}
+
+function ExpandableText({
+  value,
+  lines,
+  className,
+}: {
+  value?: string | null;
+  lines: 4 | 6;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const text = value || "";
+  const canExpand = text.length > (lines === 4 ? 180 : 320);
+  return (
+    <div className={className}>
+      <p
+        className={cn(
+          "whitespace-pre-wrap rounded-xl bg-muted/60 p-3 text-sm leading-relaxed text-foreground",
+          !expanded && lines === 4 && "line-clamp-4",
+          !expanded && lines === 6 && "line-clamp-6",
+          !text && "text-muted-foreground",
+        )}
+      >
+        {text || "Não disponível"}
+      </p>
+      {canExpand && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-1 min-h-11 px-2 text-primary"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+        >
+          {expanded ? "Ver menos" : "Ver mais"}
+        </Button>
+      )}
     </div>
   );
 }

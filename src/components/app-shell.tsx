@@ -27,10 +27,20 @@ const items = [
   ["/configuracoes", "Configurações", Settings],
 ] as const;
 
+const mobileLabels: Record<(typeof items)[number][0], string> = {
+  "/": "Visão",
+  "/noticias": "Notícias",
+  "/criar": "Criar",
+  "/publicacoes": "Posts",
+  "/usuarios": "Usuários",
+  "/configuracoes": "Ajustes",
+};
+
 export function AppShell() {
   const [open, setOpen] = useState(false);
   const { profile, signOut } = useAuth();
   const location = useLocation();
+  const isCreatePage = location.pathname === "/criar";
   const visibleItems = items.filter(
     ([path]) => path !== "/usuarios" || profile?.role === "admin",
   );
@@ -120,7 +130,12 @@ export function AppShell() {
         />
       )}
       <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:ml-72 lg:pb-0">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background/90 px-3 backdrop-blur-xl sm:px-7">
+        <header
+          className={cn(
+            "sticky top-0 z-30 h-16 items-center justify-between border-b bg-background/90 px-3 backdrop-blur-xl sm:px-7 lg:flex",
+            isCreatePage ? "hidden" : "flex",
+          )}
+        >
           <Button
             variant="ghost"
             size="icon"
@@ -159,7 +174,7 @@ export function AppShell() {
         </div>
       </main>
       <nav className="fixed inset-x-2 bottom-[calc(.5rem+env(safe-area-inset-bottom))] z-30 flex min-h-16 items-center justify-around rounded-2xl border bg-background/95 px-1 shadow-xl backdrop-blur lg:hidden">
-        {visibleItems.slice(0, 5).map(([path, label, Icon]) => (
+        {visibleItems.slice(0, 5).map(([path, , Icon]) => (
           <NavLink
             key={path}
             to={path}
@@ -172,7 +187,7 @@ export function AppShell() {
             }
           >
             <Icon size={19} />
-            <span className="max-w-16 truncate">{label.split(" ")[0]}</span>
+            <span>{mobileLabels[path]}</span>
           </NavLink>
         ))}
       </nav>
