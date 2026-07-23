@@ -212,6 +212,12 @@ export function NewsDetailPage() {
     editorType === "video"
       ? profile?.canva_video_url
       : profile?.canva_image_url;
+  const highlightOptions: string[] =
+    data.highlight_options?.length > 1
+      ? (data.highlight_options as string[])
+      : highlight
+        ? [highlight]
+        : [];
 
   async function persist(showToast: boolean) {
     if (!data || saving) return;
@@ -541,96 +547,13 @@ export function NewsDetailPage() {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Fluxo editorial</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Status">
-            <select
-              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-              value={status}
-              onChange={(event) => setStatus(event.target.value as NewsStatus)}
-            >
-              {statuses.map((value) => (
-                <option
-                  key={value}
-                  value={value}
-                  disabled={value === "published" && !hasPublication}
-                >
-                  {statusLabels[value]}
-                  {value === "published" && !hasPublication
-                    ? " (registre publicação)"
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Responsável">
-            <select
-              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-              value={assignedTo}
-              onChange={(event) => setAssignedTo(event.target.value)}
-              disabled={profile?.role !== "admin"}
-            >
-              <option value="">Não atribuído</option>
-              {lookups?.profiles.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            {profile?.role !== "admin" && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                Somente administradores podem trocar o responsável.
-              </p>
-            )}
-          </Field>
-          <Field label="Categoria">
-            <select
-              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-              value={categoryId}
-              onChange={(event) => setCategoryId(event.target.value)}
-            >
-              <option value="">Sem categoria</option>
-              {lookups?.categories.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Página de destino">
-            <select
-              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-              value={destinationPageId}
-              onChange={(event) => setDestinationPageId(event.target.value)}
-            >
-              <option value="">Sem página</option>
-              {lookups?.pages.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Tom editorial automático">
-            <Input value={data.editorial_tone || "Em processamento"} readOnly />
-          </Field>
-          {status === "scheduled" && (
-            <Field label="Agendar para">
-              <Input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(event) => setScheduledAt(event.target.value)}
-              />
-            </Field>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Destaque</CardTitle>
+          <div>
+            <CardTitle>Destaque</CardTitle>
+            <p className="mt-1 text-xs font-normal text-muted-foreground">
+              Escolha uma das opções geradas pela IA.
+            </p>
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -641,11 +564,44 @@ export function NewsDetailPage() {
             <Clipboard />
           </Button>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {highlightOptions.length > 1 && (
+            <div
+              className="grid gap-3 sm:grid-cols-3"
+              role="radiogroup"
+              aria-label="Opções de destaque"
+            >
+              {highlightOptions.map((option: string, index: number) => {
+                const selected = option === highlight;
+                return (
+                  <button
+                    key={`${option}-${index}`}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      selected
+                        ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                        : "bg-background hover:border-primary/50"
+                    }`}
+                    onClick={() => setHighlight(option)}
+                  >
+                    <span className="block text-xs font-semibold text-muted-foreground">
+                      Opção {index + 1}
+                    </span>
+                    <span className="mt-2 block font-semibold">{option}</span>
+                    <span className="mt-2 block text-xs text-muted-foreground">
+                      {option.length} caracteres
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <Input
             value={highlight}
             maxLength={50}
-            placeholder="Gerado automaticamente pela IA"
+            placeholder="Selecione ou ajuste o destaque"
             onChange={(event) => setHighlight(event.target.value)}
           />
           <p className="mt-2 text-right text-xs text-muted-foreground">
@@ -738,6 +694,94 @@ export function NewsDetailPage() {
           <Source title="Transcrição" value={data.transcript} />
           <Source title="OCR bruto (auditoria)" value={data.raw_ocr_text || data.ocr_text} />
           <Source title="Alertas da IA" value={data.ai_warnings?.join("\n")} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Fluxo editorial</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Status">
+            <select
+              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value as NewsStatus)}
+            >
+              {statuses.map((value) => (
+                <option
+                  key={value}
+                  value={value}
+                  disabled={value === "published" && !hasPublication}
+                >
+                  {statusLabels[value]}
+                  {value === "published" && !hasPublication
+                    ? " (registre publicação)"
+                    : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Responsável">
+            <select
+              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+              value={assignedTo}
+              onChange={(event) => setAssignedTo(event.target.value)}
+              disabled={profile?.role !== "admin"}
+            >
+              <option value="">Não atribuído</option>
+              {lookups?.profiles.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {profile?.role !== "admin" && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Somente administradores podem trocar o responsável.
+              </p>
+            )}
+          </Field>
+          <Field label="Categoria">
+            <select
+              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+              value={categoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+            >
+              <option value="">Sem categoria</option>
+              {lookups?.categories.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Página de destino">
+            <select
+              className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+              value={destinationPageId}
+              onChange={(event) => setDestinationPageId(event.target.value)}
+            >
+              <option value="">Sem página</option>
+              {lookups?.pages.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Tom editorial automático">
+            <Input value={data.editorial_tone || "Em processamento"} readOnly />
+          </Field>
+          {status === "scheduled" && (
+            <Field label="Agendar para">
+              <Input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(event) => setScheduledAt(event.target.value)}
+              />
+            </Field>
+          )}
         </CardContent>
       </Card>
 

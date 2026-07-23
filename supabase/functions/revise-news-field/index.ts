@@ -105,6 +105,13 @@ Deno.serve(
     const original = body.field === "title"
       ? news.original_title
       : cleanCaption(news.clean_original_caption);
+    const model =
+      Deno.env.get("OPENROUTER_REWRITE_MODEL") ||
+      Deno.env.get("OPENROUTER_MODEL") ||
+      "openai/gpt-5.6-terra";
+    const generationParameters = /^openai\/gpt-5\.[4-9]/i.test(model)
+      ? { reasoning: { effort: "medium" } }
+      : { temperature: 0, top_p: 1 };
     let preview = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await fetch(
@@ -119,15 +126,12 @@ Deno.serve(
             "X-Title": "Copy News",
           },
           body: JSON.stringify({
-          model:
-            Deno.env.get("OPENROUTER_REWRITE_MODEL") ||
-            Deno.env.get("OPENROUTER_MODEL") ||
-            "x-ai/grok-4.3",
+          model,
           messages: [
             {
               role: "system",
               content:
-                "Você é editor jornalístico. Reescreva somente o campo solicitado usando exclusivamente as fontes fornecidas. É obrigatório mudar perceptivelmente a redação: reorganize a estrutura, a ordem das informações ou use equivalentes jornalísticos seguros; nunca devolva o texto literalmente igual. Preserve rigorosamente fatos, nomes, instituições, números, valores, locais, datas, horários, consequências, críticas, acusações, atribuições, tipo do acontecimento e nível de certeza. Não invente, complete, suavize nem agrave. Para títulos, use primeiro o Título Original, faça uma edição direta em capitalização jornalística normal e nunca ultrapasse 150 caracteres. Para legendas, reescreva primeiro a Legenda Original Limpa, melhorando fluidez e organização sem omitir fatos; use a transcrição apenas quando a legenda estiver ausente ou insuficiente. O título pode servir como contexto factual. Retorne somente o JSON definido.",
+                "Você é editor jornalístico. Reescreva somente o campo solicitado usando exclusivamente as fontes fornecidas. É obrigatório mudar perceptivelmente a redação: reorganize a estrutura, a ordem das informações ou use equivalentes jornalísticos seguros; nunca devolva o texto literalmente igual. Preserve rigorosamente fatos, nomes, instituições, números, valores, locais, datas, horários, consequências, críticas, acusações, atribuições, tipo do acontecimento e nível de certeza. Não invente, complete, suavize nem agrave. Para títulos, use primeiro o Título Original, faça uma edição direta em capitalização jornalística normal e nunca ultrapasse 150 caracteres. Para legendas, faça uma reescrita integral, nunca um resumo: preserve a sequência narrativa, os detalhes, os créditos de mídia, as arrobas e todas as citações diretas literalmente. Mantenha extensão semelhante à Legenda Original Limpa, normalmente entre 80% e 110%; use a transcrição apenas quando a legenda estiver ausente ou insuficiente. O título pode servir como contexto factual. Retorne somente o JSON definido.",
             },
             {
               role: "user",
@@ -149,8 +153,7 @@ Deno.serve(
               }),
             },
           ],
-          temperature: 0,
-          top_p: 1,
+          ...generationParameters,
           response_format: {
             type: "json_schema",
             json_schema: {

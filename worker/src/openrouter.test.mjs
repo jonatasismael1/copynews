@@ -182,13 +182,47 @@ test("destaque aceita tema editorial ou cidade citada, mas bloqueia local invent
     "Após vistoria, ponte é interditada pela Defesa Civil em Penedo",
     "Uma vistoria técnica levou a Defesa Civil a interditar a ponte em Penedo.",
   );
-  assert.deepEqual(validateCopy({ ...base, highlight: "Penedo" }, sources), []);
-  assert.deepEqual(validateCopy({ ...base, highlight: "Investigação" }, sources), []);
-  assert.ok(
-    validateCopy({ ...base, highlight: "Arapiraca" }, sources).some((item) =>
-      /Destaque não sustentado/.test(item),
+  assert.deepEqual(
+    validateCopy(
+      { ...base, highlights: ["Penedo", "Investigação", "Notícia"] },
+      sources,
     ),
+    [],
   );
+  assert.ok(
+    validateCopy(
+      { ...base, highlights: ["Penedo", "Investigação", "Arapiraca"] },
+      sources,
+    ).some((item) => /Destaque não sustentado/.test(item)),
+  );
+});
+
+test("legenda longa preserva extensão, crédito e citação direta", () => {
+  const quote =
+    "Infelizmente, Deus recolheu minha mãe juntamente com minha sobrinha.";
+  const originalCaption = `📹 Vídeo reprodução: @weverton_franciscoo
+
+A tragédia envolvendo a van do Tratamento Fora do Domicílio continua comovendo o Sertão de Pernambuco. Horas após o acidente que tirou a vida de sete pessoas, Weverton Francisco usou as redes sociais para falar sobre a perda da mãe e da sobrinha.
+
+Em um vídeo emocionado, ele lamentou as mortes registradas na colisão da madrugada desta quinta-feira (23), na PE-360, entre Floresta e Ibimirim.
+
+“${quote}”
+
+Ele agradeceu as mensagens de apoio e pediu orações por todas as famílias atingidas. O acidente segue sendo investigado pelas autoridades competentes.`;
+  const sources = classify({
+    originalTitle: "Filho de vítima relata perdas após acidente com van",
+    originalCaption,
+  });
+  const shortened = result(
+    sources,
+    "Filho relata dor após acidente com van no Sertão",
+    "Weverton Francisco lamentou a perda da mãe e da sobrinha após o acidente. Sete pessoas morreram.",
+  );
+  const violations = validateCopy(shortened, sources).join(" ");
+
+  assert.match(violations, /curta demais/i);
+  assert.match(violations, /@weverton_franciscoo/i);
+  assert.match(violations, /Citação direta removida/i);
 });
 
 test("título acima de 150 caracteres é reprovado", () => {
@@ -529,7 +563,7 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
         "caption",
         "category_suggestion",
         "editorial_tone",
-        "highlight",
+        "highlights",
         "sourceMode",
         "title",
         "usedSources",
@@ -538,6 +572,37 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
     );
     assert.match(request.messages[0].content, /Nunca use OCR bruto/);
     assert.match(request.messages[1].content, /TÍTULO ORIGINAL:/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("usa controles compatíveis com GPT-5.6 no OpenRouter", async () => {
+  const originalFetch = globalThis.fetch;
+  let request;
+  globalThis.fetch = async (_url, options) => {
+    request = JSON.parse(options.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      title: "Após vistoria, Defesa Civil interdita ponte em Pilar",
+      caption: "Uma vistoria levou a Defesa Civil a interditar a ponte localizada em Pilar.",
+      highlights: ["Pilar", "Interdição", "Notícia"],
+      sourceMode: "caption_only",
+      usedSources: ["originalCaption"],
+      warnings: [],
+    }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    await generateCopy(
+      {
+        clean_original_caption:
+          "Defesa Civil interdita ponte após vistoria em Pilar.",
+      },
+      "key",
+      "openai/gpt-5.6-terra",
+    );
+    assert.equal(request.temperature, undefined);
+    assert.equal(request.top_p, undefined);
+    assert.deepEqual(request.reasoning, { effort: "medium" });
   } finally {
     globalThis.fetch = originalFetch;
   }

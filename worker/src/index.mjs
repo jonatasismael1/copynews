@@ -750,7 +750,7 @@ async function processJob(job) {
         process.env.OPENROUTER_API_KEY,
         process.env.OPENROUTER_REWRITE_MODEL ||
           process.env.OPENROUTER_MODEL ||
-          "x-ai/grok-4.3",
+          "openai/gpt-5.6-terra",
       );
       if (results.transcription_empty) {
         const sourceKind = results.media_kind || "video";
@@ -771,6 +771,7 @@ async function processJob(job) {
         generated_title: results.copy.title,
         generated_caption: results.copy.caption,
         highlight: results.copy.highlight,
+        highlight_options: results.copy.highlights,
         editorial_tone: results.copy.editorial_tone,
         summary: results.copy.summary,
         category_id: categoryIdForSuggestion(
