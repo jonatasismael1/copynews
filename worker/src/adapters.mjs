@@ -13,6 +13,16 @@ export function isInstagramReelUrl(value) {
   }
 }
 
+export function isYouTubeUrl(value) {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "youtu.be" || host.endsWith(".youtube.com") ||
+      host === "youtube.com";
+  } catch {
+    return false;
+  }
+}
+
 export function isVideoMediaItem(item) {
   const value = `${item?.type || ""} ${item?.filename || ""}`.toLowerCase();
   return /\bvideo\b/.test(value) || /\.(mp4|mov|m4v|webm)(?:$|[?#])/i.test(value);
@@ -313,6 +323,29 @@ async function instagramMetadata(sourceUrl) {
 export async function extractMetadata(sourceUrl) {
   const url = new URL(sourceUrl);
   try {
+    if (isYouTubeUrl(sourceUrl)) {
+      const response = await fetch(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(sourceUrl)}&format=json`,
+        { signal: AbortSignal.timeout(10_000) },
+      );
+      if (response.ok) {
+        const payload = await response.json();
+        return {
+          title: payload.title || null,
+          caption: payload.title || null,
+          author: payload.author_name || null,
+          provider: "youtube-oembed",
+          mediaItems: payload.thumbnail_url
+            ? [{
+                url: payload.thumbnail_url,
+                type: "image",
+                filename: "youtube-thumbnail.jpg",
+                auditOnly: true,
+              }]
+            : [],
+        };
+      }
+    }
     if (url.hostname.includes("tiktok")) {
       const response = await fetch(
         `https://www.tiktok.com/oembed?url=${encodeURIComponent(sourceUrl)}`,

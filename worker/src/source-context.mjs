@@ -20,6 +20,11 @@ export function buildSourceContext(results) {
     article_body: text(results.metadata?.articleBody),
     transcript: text(results.transcript),
     editorial_tone: text(results.editorial_tone),
+    available_categories: Array.isArray(results.available_categories)
+      ? results.available_categories.filter(
+          (category) => typeof category === "string" && category.trim(),
+        )
+      : [],
     notes: text(results.notes),
   };
 

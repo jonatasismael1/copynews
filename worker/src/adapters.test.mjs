@@ -4,12 +4,46 @@ import {
   acquireMedia,
   extractMetadata,
   isInstagramReelUrl,
+  isYouTubeUrl,
   isVideoMediaItem,
   selectDownloadableMedia,
   parseArticleMetadata,
   parseInstagramEmbedImage,
   parseInstagramMetadata,
 } from "./adapters.mjs";
+
+test("identifica links do YouTube sem confundir outros domínios", () => {
+  assert.equal(isYouTubeUrl("https://youtu.be/abc123"), true);
+  assert.equal(isYouTubeUrl("https://www.youtube.com/watch?v=abc123"), true);
+  assert.equal(isYouTubeUrl("https://youtube.example/watch?v=abc123"), false);
+});
+
+test("usa o oEmbed do YouTube sem classificar o vídeo como matéria estática", async () => {
+  const original = global.fetch;
+  let requestedUrl = "";
+  global.fetch = async (url) => {
+    requestedUrl = String(url);
+    return new Response(
+      JSON.stringify({
+        title: "Defesa Civil interdita ponte",
+        author_name: "Portal Local",
+        thumbnail_url: "https://i.ytimg.com/vi/abc/hqdefault.jpg",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+  try {
+    const result = await extractMetadata(
+      "https://www.youtube.com/watch?v=abc123",
+    );
+    assert.match(requestedUrl, /youtube\.com\/oembed/);
+    assert.equal(result.provider, "youtube-oembed");
+    assert.equal(result.title, "Defesa Civil interdita ponte");
+    assert.equal(result.mediaItems[0].auditOnly, true);
+  } finally {
+    global.fetch = original;
+  }
+});
 
 test("identifica Reel e não confunde a capa JPG com o vídeo", () => {
   assert.equal(isInstagramReelUrl("https://www.instagram.com/reel/Da2vzBfSyxk/"), true);

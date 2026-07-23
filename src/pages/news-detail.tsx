@@ -24,6 +24,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLookups, useNewsItem } from "@/hooks/use-data";
 import { supabase } from "@/lib/supabase";
 import { statusLabels, type NewsStatus } from "@/lib/constants";
+import {
+  isAppleMobile,
+  prepareMediaFile,
+  savePreparedMedia,
+} from "@/lib/media-download";
 import { useAuth } from "@/providers/auth-provider";
 
 const allStatuses: NewsStatus[] = [
@@ -54,6 +59,7 @@ export function NewsDetailPage() {
   const [originalTitle, setOriginalTitle] = useState("");
   const [title, setTitle] = useState("");
   const [caption, setCaption] = useState("");
+  const [highlight, setHighlight] = useState("");
   const [status, setStatus] = useState<NewsStatus>("processing");
   const [assignedTo, setAssignedTo] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -61,6 +67,8 @@ export function NewsDetailPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [preparedMedia, setPreparedMedia] = useState<File | null>(null);
+  const [preparingMedia, setPreparingMedia] = useState(false);
   const [revision, setRevision] = useState<{
     field: "title" | "caption";
     instruction: string;
@@ -73,6 +81,7 @@ export function NewsDetailPage() {
       originalTitle,
       title,
       caption,
+      highlight,
       status,
       assignedTo,
       categoryId,
@@ -86,6 +95,7 @@ export function NewsDetailPage() {
     const nextTitle = data.generated_title ?? "";
     const nextOriginalTitle = data.original_title ?? "";
     const nextCaption = data.generated_caption ?? "";
+    const nextHighlight = data.highlight ?? "";
     const nextStatus = data.status as NewsStatus;
     const nextAssigned = data.assigned_to ?? "";
     const nextCategory = data.category_id ?? "";
@@ -96,6 +106,7 @@ export function NewsDetailPage() {
     setOriginalTitle(nextOriginalTitle);
     setTitle(nextTitle);
     setCaption(nextCaption);
+    setHighlight(nextHighlight);
     setStatus(nextStatus);
     setAssignedTo(nextAssigned);
     setCategoryId(nextCategory);
@@ -105,6 +116,7 @@ export function NewsDetailPage() {
       nextOriginalTitle,
       nextTitle,
       nextCaption,
+      nextHighlight,
       nextStatus,
       nextAssigned,
       nextCategory,
@@ -122,6 +134,29 @@ export function NewsDetailPage() {
   }, [data, refetch]);
 
   useEffect(() => {
+    if (!data?.temporary_media_path || !isAppleMobile()) return;
+    let cancelled = false;
+    supabase.functions
+      .invoke("temporary-media-url", { body: { news_item_id: data.id } })
+      .then(({ data: result, error }) => {
+        if (error || !result?.url) throw error || new Error("Mídia indisponível");
+        return prepareMediaFile(result.url, `copy-news-${data.id}`);
+      })
+      .then((file) => {
+        if (!cancelled) setPreparedMedia(file);
+      })
+      .catch(() => {
+        if (!cancelled) setPreparedMedia(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreparingMedia(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.id, data?.temporary_media_path]);
+
+  useEffect(() => {
     if (!data || signature() === lastSaved.current) return;
     const timer = setTimeout(() => persist(false), 1200);
     return () => clearTimeout(timer);
@@ -131,6 +166,7 @@ export function NewsDetailPage() {
     originalTitle,
     title,
     caption,
+    highlight,
     status,
     assignedTo,
     categoryId,
@@ -182,6 +218,7 @@ export function NewsDetailPage() {
       original_title: originalTitle || null,
       generated_title: title,
       generated_caption: caption,
+      highlight: highlight.trim().length >= 2 ? highlight.trim() : null,
       status,
       ...(profile?.role === "admin"
         ? { assigned_to: assignedTo || null }
@@ -214,12 +251,29 @@ export function NewsDetailPage() {
   }
 
   async function signedDownload() {
-    const { data: result, error } = await supabase.functions.invoke(
-      "temporary-media-url",
-      { body: { news_item_id: data.id } },
-    );
-    if (error) return toast.error("A mídia não está mais disponível");
-    window.open(result.url, "_blank");
+    setPreparingMedia(true);
+    try {
+      if (preparedMedia) {
+        await savePreparedMedia(preparedMedia);
+        return;
+      }
+      const { data: result, error } = await supabase.functions.invoke(
+        "temporary-media-url",
+        { body: { news_item_id: data.id } },
+      );
+      if (error || !result?.url) throw error || new Error("Mídia indisponível");
+      const file = await prepareMediaFile(result.url, `copy-news-${data.id}`);
+      setPreparedMedia(file);
+      await savePreparedMedia(file, result.url);
+    } catch (downloadError) {
+      if (
+        downloadError instanceof DOMException &&
+        downloadError.name === "AbortError"
+      ) return;
+      toast.error("Não foi possível salvar a mídia");
+    } finally {
+      setPreparingMedia(false);
+    }
   }
 
   async function shareNews() {
@@ -369,10 +423,10 @@ export function NewsDetailPage() {
           <Button
             variant="outline"
             onClick={signedDownload}
-            disabled={!data.temporary_media_path}
+            disabled={!data.temporary_media_path || preparingMedia}
           >
-            <Download />
-            Baixar mídia
+            {preparingMedia ? <LoaderCircle className="animate-spin" /> : <Download />}
+            {isAppleMobile() ? "Salvar na galeria" : "Baixar mídia"}
           </Button>
           <Button onClick={() => persist(true)} disabled={saving}>
             <Check />
@@ -543,6 +597,9 @@ export function NewsDetailPage() {
               ))}
             </select>
           </Field>
+          <Field label="Tom editorial automático">
+            <Input value={data.editorial_tone || "Em processamento"} readOnly />
+          </Field>
           {status === "scheduled" && (
             <Field label="Agendar para">
               <Input
@@ -552,6 +609,32 @@ export function NewsDetailPage() {
               />
             </Field>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Destaque</CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => copy(highlight)}
+            aria-label="Copiar Destaque"
+            disabled={!highlight}
+          >
+            <Clipboard />
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <Input
+            value={highlight}
+            maxLength={50}
+            placeholder="Gerado automaticamente pela IA"
+            onChange={(event) => setHighlight(event.target.value)}
+          />
+          <p className="mt-2 text-right text-xs text-muted-foreground">
+            {highlight.length}/50 caracteres
+          </p>
         </CardContent>
       </Card>
 
@@ -818,6 +901,9 @@ function Source({ title, value }: { title: string; value?: string | null }) {
       </div>
       <p className="mt-2 max-h-44 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
         {value || "Não disponível"}
+      </p>
+      <p className="mt-1 text-right text-xs text-muted-foreground">
+        {(value || "").length} caracteres
       </p>
     </div>
   );

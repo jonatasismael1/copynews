@@ -6,22 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
-import { useCreateNews, useLookups } from "@/hooks/use-data";
+import { useCreateNews } from "@/hooks/use-data";
 import { createNewsSchema, type CreateNewsInput } from "@/lib/schemas";
-
-const editorialTones = [
-  ["Informativo", "Notícias e atualizações"],
-  ["Analítico", "Contextualizar acontecimentos"],
-  ["Didático", "Explicar temas complexos"],
-  ["Humanizado", "Contar histórias e destacar personagens"],
-  ["Prestação de serviço", "Oferecer informações úteis ao público"],
-  ["Crítico", "Analisar com questionamento e rigor"],
-  ["Opinativo", "Apresentar uma perspectiva argumentada"],
-] as const;
 
 export function CreateNewsPage() {
   const navigate = useNavigate();
-  const { data } = useLookups();
   const mutation = useCreateNews();
   const {
     register,
@@ -30,7 +19,7 @@ export function CreateNewsPage() {
     formState: { errors },
   } = useForm<CreateNewsInput>({
     resolver: zodResolver(createNewsSchema),
-    defaultValues: { editorial_tone: "Informativo", transcribe_audio: false },
+    defaultValues: { transcribe_audio: true },
   });
 
   async function submit(values: CreateNewsInput) {
@@ -117,55 +106,10 @@ export function CreateNewsPage() {
               </span>
             </label>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label>
-                <span className="mb-2 block text-sm font-semibold">
-                  Categoria
-                </span>
-                <select
-                  className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  {...register("category_id")}
-                >
-                  <option value="">Sem categoria</option>
-                  {data?.categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="mb-2 block text-sm font-semibold">
-                  Página de destino
-                </span>
-                <select
-                  className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  {...register("destination_page_id")}
-                >
-                  <option value="">Definir depois</option>
-                  {data?.pages.map((page) => (
-                    <option key={page.id} value={page.id}>
-                      {page.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="sm:col-span-2">
-                <span className="mb-2 block text-sm font-semibold">
-                  Tom editorial
-                </span>
-                <select
-                  className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  {...register("editorial_tone")}
-                >
-                  {editorialTones.map(([tone, description]) => (
-                    <option key={tone} value={tone}>
-                      {tone} — {description}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <p className="rounded-xl bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+              Categoria, página de destino e tom editorial serão definidos
+              automaticamente a partir do conteúdo e das suas configurações.
+            </p>
             <label className="block">
               <span className="mb-2 block text-sm font-semibold">
                 Observações

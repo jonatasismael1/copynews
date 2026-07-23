@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
       const { data: news, error } = await admin
         .from("news_items")
         .select(
-          "id,public_slug,source_url,source_platform,source_author,source_caption,temporary_media_path,transcript,ocr_text,generated_title,generated_caption,summary,ai_confidence,ai_warnings,detected_facts,created_at,publications(platform,published_url,published_at)",
+          "id,public_slug,source_url,source_platform,source_author,source_caption,temporary_media_path,transcript,ocr_text,generated_title,generated_caption,highlight,editorial_tone,summary,ai_confidence,ai_warnings,detected_facts,created_at,publications(platform,published_url,published_at)",
         )
         .eq("public_slug", slug)
         .eq("share_enabled", true)

@@ -13,6 +13,8 @@ const optionalUuid = z.string().uuid().or(z.literal("")).nullable().optional();
 export const aiResultSchema = z.object({
   title: z.string().min(3),
   caption: z.string().min(3),
+  highlight: z.string().min(2).max(50),
+  editorial_tone: z.string().min(2).max(100),
   summary: z.string(),
   category_suggestion: z.string().nullable(),
   detected_facts: z.array(z.string()),
@@ -22,9 +24,6 @@ export const aiResultSchema = z.object({
 export const createNewsSchema = z.object({
   source_url: sourceUrlSchema,
   transcribe_audio: z.boolean().optional(),
-  category_id: z.string().uuid().optional().or(z.literal("")),
-  destination_page_id: z.string().uuid().optional().or(z.literal("")),
-  editorial_tone: z.string().max(100).optional(),
   notes: z.string().max(2000).optional(),
 });
 export const publicationSchema = z.object({

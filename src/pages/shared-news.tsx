@@ -5,10 +5,17 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
+import {
+  isAppleMobile,
+  prepareMediaFile,
+  savePreparedMedia,
+} from "@/lib/media-download";
 
 type SharedNews = {
   generated_title: string | null;
   generated_caption: string | null;
+  highlight: string | null;
+  editorial_tone: string | null;
   summary: string | null;
   source_url: string;
   source_author: string | null;
@@ -26,6 +33,8 @@ export function SharedNewsPage() {
   const { shareSlug } = useParams();
   const [data, setData] = useState<SharedNews | null>(null);
   const [error, setError] = useState("");
+  const [preparedMedia, setPreparedMedia] = useState<File | null>(null);
+  const [preparingMedia, setPreparingMedia] = useState(false);
   useEffect(() => {
     supabase.functions
       .invoke("share-news", { body: { action: "read", slug: shareSlug } })
@@ -36,9 +45,45 @@ export function SharedNewsPage() {
       .catch(() => setError("Este link não existe ou deixou de ser compartilhado."));
   }, [shareSlug]);
 
+  useEffect(() => {
+    if (!data?.download_url || !isAppleMobile()) return;
+    let cancelled = false;
+    prepareMediaFile(data.download_url, "copy-news")
+      .then((file) => {
+        if (!cancelled) setPreparedMedia(file);
+      })
+      .catch(() => {
+        if (!cancelled) setPreparedMedia(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreparingMedia(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.download_url]);
+
   async function copy(value: string, label: string) {
     await navigator.clipboard.writeText(value);
     toast.success(`${label} copiado`);
+  }
+
+  async function saveMedia() {
+    if (!data?.download_url) return;
+    setPreparingMedia(true);
+    try {
+      const file =
+        preparedMedia ||
+        (await prepareMediaFile(data.download_url, "copy-news"));
+      setPreparedMedia(file);
+      await savePreparedMedia(file, data.download_url);
+    } catch (saveError) {
+      if (saveError instanceof DOMException && saveError.name === "AbortError")
+        return;
+      toast.error("Não foi possível salvar a mídia");
+    } finally {
+      setPreparingMedia(false);
+    }
   }
 
   if (error)
@@ -51,10 +96,12 @@ export function SharedNewsPage() {
         <div className="rounded-3xl bg-sidebar p-6 text-white shadow-sm sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">Copy News</p>
           <h1 className="mt-3 font-display text-2xl font-bold leading-tight text-white sm:text-4xl">{data.generated_title || "Notícia compartilhada"}</h1>
+          {data.generated_title && <p className="mt-2 text-xs text-white/65">{data.generated_title.length} caracteres</p>}
+          {data.highlight && <p className="mt-4 inline-flex rounded-full bg-emerald-300 px-3 py-1 text-sm font-bold text-slate-950">{data.highlight} · {data.highlight.length} caracteres</p>}
           <div className="mt-5 flex flex-wrap gap-2">
             {data.generated_title && <Button onClick={() => copy(data.generated_title!, "Título")}><Clipboard /> Copiar título</Button>}
             {data.generated_caption && <Button variant="secondary" onClick={() => copy(data.generated_caption!, "Legenda")}><Clipboard /> Copiar legenda</Button>}
-            {data.download_url && <Button className="border-white/30 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950" variant="outline" asChild><a href={data.download_url}><Download /> Baixar mídia</a></Button>}
+            {data.download_url && <Button className="border-white/30 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950" variant="outline" onClick={saveMedia} disabled={preparingMedia}>{preparingMedia ? <LoaderCircle className="animate-spin" /> : <Download />} {isAppleMobile() ? "Salvar na galeria" : "Baixar mídia"}</Button>}
           </div>
         </div>
         <SharedField title="Legenda gerada" value={data.generated_caption} onCopy={copy} />
@@ -79,5 +126,5 @@ export function SharedNewsPage() {
 
 function SharedField({ title, value, onCopy }: { title: string; value: string | null; onCopy: (value: string, label: string) => void }) {
   if (!value) return null;
-  return <Card><CardHeader className="flex-row items-center justify-between gap-3"><CardTitle>{title}</CardTitle><Button size="icon" variant="ghost" aria-label={`Copiar ${title}`} onClick={() => onCopy(value, title)}><Clipboard size={17} /></Button></CardHeader><CardContent><p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{value}</p></CardContent></Card>;
+  return <Card><CardHeader className="flex-row items-center justify-between gap-3"><CardTitle>{title}</CardTitle><Button size="icon" variant="ghost" aria-label={`Copiar ${title}`} onClick={() => onCopy(value, title)}><Clipboard size={17} /></Button></CardHeader><CardContent><p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{value}</p><p className="mt-3 text-right text-xs text-muted-foreground">{value.length} caracteres</p></CardContent></Card>;
 }

@@ -62,6 +62,26 @@ function platform(host: string) {
   return "web";
 }
 
+async function automaticDestinationPage(client: ReturnType<typeof createClient>, userId: string) {
+  const { data: account } = await client
+    .from("connected_accounts")
+    .select("page_id")
+    .eq("user_id", userId)
+    .eq("status", "connected")
+    .order("last_sync_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  if (account?.page_id) return account.page_id;
+
+  const { data: pages } = await client
+    .from("pages")
+    .select("id")
+    .eq("is_active", true)
+    .order("created_at")
+    .limit(2);
+  return pages?.length === 1 ? pages[0].id : null;
+}
+
 Deno.serve(
   handler(async (req) => {
     const { client, user, profile } = await context(req);
@@ -69,6 +89,9 @@ Deno.serve(
       throw new Error("Forbidden");
     const body = await req.json();
     const url = new URL(String(body.source_url));
+    const sourcePlatform = platform(url.hostname);
+    const transcribeAudio =
+      sourcePlatform === "youtube" || body.transcribe_audio !== false;
     if (
       !supported.has(url.protocol) ||
       ["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||
@@ -83,15 +106,16 @@ Deno.serve(
       .is("archived_at", null)
       .limit(1)
       .maybeSingle();
+    const destinationPageId = await automaticDestinationPage(client, user.id);
     const { data: news, error } = await client
       .from("news_items")
       .insert({
         source_url: url.toString(),
-        source_platform: platform(url.hostname),
+        source_platform: sourcePlatform,
         assigned_to: user.id,
-        category_id: body.category_id || null,
-        destination_page_id: body.destination_page_id || null,
-        transcribe_audio: body.transcribe_audio === true,
+        category_id: null,
+        destination_page_id: destinationPageId,
+        transcribe_audio: transcribeAudio,
         created_by: user.id,
         status: "processing",
       })
@@ -106,9 +130,9 @@ Deno.serve(
         status: "queued",
         progress: 0,
         step_results: {
-          editorial_tone: body.editorial_tone || "Informativo",
           notes: body.notes || null,
-          transcribe_audio: body.transcribe_audio === true,
+          transcribe_audio: transcribeAudio,
+          automatic_destination_page: destinationPageId,
         },
       })
       .select("id")

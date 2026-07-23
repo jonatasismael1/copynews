@@ -34,8 +34,8 @@ test("título completo usa title_only, preserva fatos e recebe edição de estru
     validateCopy(
       result(
         sources,
-        "Prefeitura de Maceió inaugura nesta terça-feira nova escola no bairro Pontal",
-        "Nesta terça-feira, a Prefeitura de Maceió inaugurou a unidade escolar no bairro Pontal.",
+        "Nova escola no Pontal é inaugurada nesta terça-feira pela Prefeitura de Maceió",
+        "No bairro Pontal, uma nova unidade escolar foi entregue nesta terça-feira pela Prefeitura de Maceió.",
       ),
       sources,
     ),
@@ -169,6 +169,25 @@ test("legenda curta também precisa ser realmente reescrita", () => {
       ),
       sources,
     ).some((item) => /Legenda foi copiada literalmente/.test(item)),
+  );
+});
+
+test("destaque aceita tema editorial ou cidade citada, mas bloqueia local inventado", () => {
+  const sources = classify({
+    originalTitle: "Defesa Civil interdita ponte em Penedo",
+    originalCaption: "A interdição ocorreu após uma vistoria técnica.",
+  });
+  const base = result(
+    sources,
+    "Após vistoria, ponte é interditada pela Defesa Civil em Penedo",
+    "Uma vistoria técnica levou a Defesa Civil a interditar a ponte em Penedo.",
+  );
+  assert.deepEqual(validateCopy({ ...base, highlight: "Penedo" }, sources), []);
+  assert.deepEqual(validateCopy({ ...base, highlight: "Investigação" }, sources), []);
+  assert.ok(
+    validateCopy({ ...base, highlight: "Arapiraca" }, sources).some((item) =>
+      /Destaque não sustentado/.test(item),
+    ),
   );
 });
 
@@ -487,7 +506,7 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
     request = JSON.parse(options.body);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
       title: "Defesa Civil interdita ponte após vistoria em Pilar",
-      caption: "Defesa Civil interdita ponte após vistoria em Pilar.",
+      caption: "Após uma vistoria, a Defesa Civil decidiu interditar a ponte em Pilar.",
       sourceMode: "caption_only",
       usedSources: ["originalCaption"],
       warnings: [],
@@ -506,7 +525,16 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
     assert.equal(request.response_format.json_schema.schema.additionalProperties, false);
     assert.deepEqual(
       Object.keys(request.response_format.json_schema.schema.properties).sort(),
-      ["caption", "sourceMode", "title", "usedSources", "warnings"],
+      [
+        "caption",
+        "category_suggestion",
+        "editorial_tone",
+        "highlight",
+        "sourceMode",
+        "title",
+        "usedSources",
+        "warnings",
+      ],
     );
     assert.match(request.messages[0].content, /Nunca use OCR bruto/);
     assert.match(request.messages[1].content, /TÍTULO ORIGINAL:/);
@@ -515,7 +543,7 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
   }
 });
 
-test("faz uma única correção e mantém originais quando a repetição falha", async () => {
+test("não publica o original quando três tentativas de reescrita falham", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {
@@ -530,17 +558,17 @@ test("faz uma única correção e mantém originais quando a repetição falha",
   };
   try {
     const originalTitle = "Motorista é preso após colisão e deixa ferido em Maceió";
-    const generated = await generateCopy({ original_title: originalTitle }, "key", "model");
-    assert.equal(calls, 2);
-    assert.equal(generated.title, originalTitle);
-    assert.equal(generated.sourceMode, "manual_review");
-    assert.ok(generated.warnings.some((item) => /revisão manual/.test(item)));
+    await assert.rejects(
+      () => generateCopy({ original_title: originalTitle }, "key", "model"),
+      (error) => error.code === "AI_REWRITE_VALIDATION",
+    );
+    assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("mantém a legenda reescrita quando somente o título falha duas vezes", async () => {
+test("não publica título original mesmo quando a legenda foi reescrita", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   const originalTitle = "Retorno de secretário da Saúde reacende debate em Alagoas";
@@ -562,19 +590,19 @@ test("mantém a legenda reescrita quando somente o título falha duas vezes", as
     );
   };
   try {
-    const generated = await generateCopy(
-      {
-        original_title: originalTitle,
-        clean_original_caption: originalCaption,
-      },
-      "key",
-      "model",
+    await assert.rejects(
+      () =>
+        generateCopy(
+          {
+            original_title: originalTitle,
+            clean_original_caption: originalCaption,
+          },
+          "key",
+          "model",
+        ),
+      (error) => error.code === "AI_REWRITE_VALIDATION",
     );
-    assert.equal(calls, 2);
-    assert.equal(generated.title, originalTitle);
-    assert.equal(generated.caption, rewrittenCaption);
-    assert.notEqual(generated.caption, originalCaption);
-    assert.equal(generated.sourceMode, "manual_review");
+    assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }

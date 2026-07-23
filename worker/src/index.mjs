@@ -9,6 +9,7 @@ import {
   acquireMedia,
   extractMetadata,
   isInstagramReelUrl,
+  isYouTubeUrl,
   isVideoMediaItem,
   selectDownloadableMedia,
 } from "./adapters.mjs";
@@ -129,9 +130,9 @@ async function download(url, path) {
   };
 }
 
-async function downloadReelWithYtDlp(sourceUrl, dir) {
-  const output = join(dir, "instagram-reel.mp4");
-  const outputTemplate = join(dir, "instagram-reel.%(ext)s");
+async function downloadVideoWithYtDlp(sourceUrl, dir, basename = "source-video") {
+  const output = join(dir, `${basename}.mp4`);
+  const outputTemplate = join(dir, `${basename}.%(ext)s`);
   await run("yt-dlp", [
     "--no-playlist",
     "--no-part",
@@ -144,7 +145,7 @@ async function downloadReelWithYtDlp(sourceUrl, dir) {
     "--retries",
     "2",
     "--format",
-    "best[vcodec!=none][acodec!=none]/bestvideo+bestaudio/best[vcodec!=none]",
+    "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1][acodec^=mp4a]/best[ext=mp4]/best",
     "--remux-video",
     "mp4",
     "--output",
@@ -161,10 +162,10 @@ async function downloadReelWithYtDlp(sourceUrl, dir) {
       {
         localPath: output,
         type: "video",
-        filename: "instagram-reel.mp4",
+        filename: `${basename}.mp4`,
       },
     ],
-    filename: "instagram-reel.mp4",
+    filename: `${basename}.mp4`,
     fallbackProvider: "yt-dlp",
   };
 }
@@ -219,6 +220,29 @@ async function editorialSources(newsId) {
     throw Object.assign(new Error(error.message), { code: "DATABASE_READ" });
   return data;
 }
+const normalizeLookup = (value = "") =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+async function activeCategories() {
+  const { data, error } = await db
+    .from("categories")
+    .select("id,name")
+    .eq("is_active", true)
+    .order("name");
+  if (error)
+    throw Object.assign(new Error(error.message), { code: "DATABASE_READ" });
+  return data || [];
+}
+
+function categoryIdForSuggestion(categories, suggestion) {
+  const target = normalizeLookup(suggestion);
+  if (!target) return null;
+  return categories.find((category) => normalizeLookup(category.name) === target)?.id || null;
+}
 async function processJob(job) {
   busy = true;
   const dir = join(tmpdir(), `copy-news-${job.id}`);
@@ -271,19 +295,31 @@ async function processJob(job) {
           : null;
       } else {
         try {
-          acquired = await acquireMedia(job.news_items.source_url, {
-            cobaltUrl: process.env.COBALT_API_URL,
-            cobaltKey: process.env.COBALT_API_KEY,
-          });
+          acquired = isYouTubeUrl(job.news_items.source_url)
+            ? await downloadVideoWithYtDlp(
+                job.news_items.source_url,
+                dir,
+                "youtube-video",
+              )
+            : await acquireMedia(job.news_items.source_url, {
+                cobaltUrl: process.env.COBALT_API_URL,
+                cobaltKey: process.env.COBALT_API_KEY,
+              });
+          if (isYouTubeUrl(job.news_items.source_url))
+            log("media.youtube_video_acquired", {
+              jobId: job.id,
+              provider: "yt-dlp",
+            });
           if (
             isInstagramReelUrl(job.news_items.source_url) &&
             !acquired.mediaItems.some(isVideoMediaItem)
           ) {
             log("media.reel_cover_returned", { jobId: job.id });
             try {
-              acquired = await downloadReelWithYtDlp(
+              acquired = await downloadVideoWithYtDlp(
                 job.news_items.source_url,
                 dir,
+                "instagram-reel",
               );
               log("media.reel_video_recovered", {
                 jobId: job.id,
@@ -306,6 +342,24 @@ async function processJob(job) {
             code: error.code,
             message: error.message,
           });
+          if (isYouTubeUrl(job.news_items.source_url)) {
+            try {
+              acquired = await downloadVideoWithYtDlp(
+                job.news_items.source_url,
+                dir,
+                "youtube-video",
+              );
+              log("media.youtube_video_recovered", {
+                jobId: job.id,
+                provider: "yt-dlp",
+              });
+            } catch (fallbackError) {
+              log("media.youtube_video_unavailable", {
+                jobId: job.id,
+                message: fallbackError.message,
+              });
+            }
+          }
           if (!results.metadata.mediaItems?.length) {
             const refreshed = await extractMetadata(job.news_items.source_url);
             if (refreshed.caption || refreshed.mediaItems?.length) {
@@ -327,7 +381,7 @@ async function processJob(job) {
               });
             }
           }
-          if (results.metadata.mediaItems?.length) {
+          if (!acquired && results.metadata.mediaItems?.length) {
             acquired = {
               mediaItems: results.metadata.mediaItems.map((item) => ({
                 ...item,
@@ -339,6 +393,21 @@ async function processJob(job) {
             throw error;
           }
         }
+      }
+      if (
+        isYouTubeUrl(job.news_items.source_url) &&
+        acquired &&
+        !acquired.mediaItems.some(isVideoMediaItem)
+      ) {
+        acquired = await downloadVideoWithYtDlp(
+          job.news_items.source_url,
+          dir,
+          "youtube-video",
+        );
+        log("media.youtube_nonvideo_replaced", {
+          jobId: job.id,
+          provider: "yt-dlp",
+        });
       }
       for (const [index, item] of (acquired?.mediaItems || []).entries()) {
         try {
@@ -627,10 +696,12 @@ async function processJob(job) {
       const persistedEditorialSources = await editorialSources(
         job.news_items.id,
       );
+      const categories = await activeCategories();
       results.copy = await generateCopy(
         buildSourceContext({
           ...results,
           ...persistedEditorialSources,
+          available_categories: categories.map((category) => category.name),
           editorial_sources_loaded: true,
         }),
         process.env.OPENROUTER_API_KEY,
@@ -656,7 +727,13 @@ async function processJob(job) {
       await updateNews(job.news_items.id, {
         generated_title: results.copy.title,
         generated_caption: results.copy.caption,
+        highlight: results.copy.highlight,
+        editorial_tone: results.copy.editorial_tone,
         summary: results.copy.summary,
+        category_id: categoryIdForSuggestion(
+          categories,
+          results.copy.category_suggestion,
+        ),
         ai_confidence: results.copy.confidence,
         ai_warnings: results.copy.warnings,
         detected_facts: results.copy.detected_facts,

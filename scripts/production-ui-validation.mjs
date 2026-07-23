@@ -88,22 +88,18 @@ try {
   await page.getByText("Meta diária atualizada", { exact: true }).waitFor();
 
   await page.goto(`${base}/criar`, { waitUntil: "networkidle" });
-  const tone = page
-    .getByText("Tom editorial", { exact: true })
-    .locator("..")
-    .locator("select");
-  const tones = await tone.locator("option").allTextContents();
-  for (const expected of [
-    "Informativo",
-    "Analítico",
-    "Didático",
-    "Humanizado",
-    "Prestação de serviço",
-    "Crítico",
-    "Opinativo",
-  ])
-    if (!tones.some((value) => value.startsWith(expected)))
-      throw new Error(`Missing editorial tone: ${expected}`);
+  const transcription = page.locator('input[name="transcribe_audio"]');
+  if (!(await transcription.isChecked()))
+    throw new Error("Transcription is not enabled by default");
+  for (const removed of ["Categoria", "Página de destino", "Tom editorial"])
+    if ((await page.getByText(removed, { exact: true }).count()) > 0)
+      throw new Error(`Automatic field is still visible: ${removed}`);
+  await page
+    .getByText(
+      "Categoria, página de destino e tom editorial serão definidos automaticamente a partir do conteúdo e das suas configurações.",
+      { exact: true },
+    )
+    .waitFor();
   for (const removed of [
     "Autosave ativo",
     "Instagram, TikTok, YouTube e outras fontes suportadas pelo Cobalt.",
@@ -219,7 +215,8 @@ try {
         "PWA manifest, service worker and icons",
         "production login and 90-day dashboard",
         "user creation and goal update",
-        "seven editorial tones and removed helper copy",
+        "automatic category, destination and tone",
+        "transcription enabled by default",
         "direct news archive and delete controls",
         "discreet bulk action",
         "clickable source link and original-caption copy",

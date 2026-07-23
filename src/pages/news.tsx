@@ -262,6 +262,9 @@ export function NewsPage() {
                             {item.categories.name}
                           </Badge>
                         )}
+                        {item.highlight && (
+                          <Badge variant="secondary">{item.highlight}</Badge>
+                        )}
                       </div>
                       <h2 className="mt-3 truncate font-display text-base font-semibold">
                         {item.generated_title || "Notícia em processamento"}
@@ -358,6 +361,11 @@ export function NewsPage() {
                               {item.generated_title ||
                                 "Notícia em processamento"}
                             </h3>
+                            {item.highlight && (
+                              <Badge className="mt-2" variant="secondary">
+                                {item.highlight}
+                              </Badge>
+                            )}
                             <p className="mt-3 text-xs text-muted-foreground">
                               {item.profiles?.name || "Não atribuído"}
                             </p>

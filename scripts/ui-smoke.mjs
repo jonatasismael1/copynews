@@ -45,8 +45,12 @@ await page.screenshot({
 await page.goto(`${base}/criar`, { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Processar notícia" }).waitFor();
 const transcription = page.locator('input[name="transcribe_audio"]');
-if (await transcription.isChecked())
-  throw new Error("Transcription must be disabled by default");
+if (!(await transcription.isChecked()))
+  throw new Error("Transcription must be enabled by default");
+for (const removed of ["Categoria", "Página de destino", "Tom editorial"]) {
+  if ((await page.getByText(removed, { exact: true }).count()) > 0)
+    throw new Error(`Automatic field is still visible on creation: ${removed}`);
+}
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(400);
 await page.screenshot({
@@ -104,7 +108,8 @@ console.log(
       "indicadores clicáveis na ordem solicitada",
       "filtros do gráfico por dia e usuário",
       "relatório diário administrativo",
-      "transcrição desativada por padrão",
+      "transcrição ativada por padrão",
+      "categoria, destino e tom removidos da criação",
       "links individuais do Canva",
       "configuração segura do Instagram",
       "menu de exclusão visível no mobile",
