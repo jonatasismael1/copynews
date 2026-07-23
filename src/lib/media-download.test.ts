@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isAppleMobile, savePreparedMedia } from "./media-download";
+import {
+  isAppleMobile,
+  savePreparedMedia,
+  savePreparedMediaFiles,
+} from "./media-download";
 
 const originalUserAgent = Object.getOwnPropertyDescriptor(
   navigator,
@@ -48,6 +52,34 @@ describe("salvamento de mídia no iPhone", () => {
     expect(canShare).toHaveBeenCalledWith({ files: [file] });
     expect(share).toHaveBeenCalledWith({
       files: [file],
+      title: "Salvar mídia do Copy News",
+    });
+  });
+
+  it("envia todas as imagens do carrossel juntas para a galeria", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const canShare = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+    });
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: share,
+    });
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: canShare,
+    });
+    const files = [
+      new File(["one"], "copy-news-01.jpg", { type: "image/jpeg" }),
+      new File(["two"], "copy-news-02.jpg", { type: "image/jpeg" }),
+    ];
+
+    await expect(savePreparedMediaFiles(files)).resolves.toBe("shared");
+    expect(canShare).toHaveBeenCalledWith({ files });
+    expect(share).toHaveBeenCalledWith({
+      files,
       title: "Salvar mídia do Copy News",
     });
   });

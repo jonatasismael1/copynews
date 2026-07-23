@@ -26,8 +26,8 @@ import { supabase } from "@/lib/supabase";
 import { statusLabels, type NewsStatus } from "@/lib/constants";
 import {
   isAppleMobile,
-  prepareMediaFile,
-  savePreparedMedia,
+  prepareMediaFiles,
+  savePreparedMediaFiles,
 } from "@/lib/media-download";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -50,6 +50,14 @@ const writerStatuses: NewsStatus[] = [
   "archived",
 ];
 
+function mediaUrls(result: {
+  url?: string;
+  urls?: { url?: string }[];
+} | null) {
+  const urls = result?.urls?.map((item) => item.url).filter(Boolean) || [];
+  return urls.length ? (urls as string[]) : result?.url ? [result.url] : [];
+}
+
 export function NewsDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -67,7 +75,7 @@ export function NewsDetailPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [preparedMedia, setPreparedMedia] = useState<File | null>(null);
+  const [preparedMedia, setPreparedMedia] = useState<File[]>([]);
   const [preparingMedia, setPreparingMedia] = useState(false);
   const [revision, setRevision] = useState<{
     field: "title" | "caption";
@@ -134,19 +142,25 @@ export function NewsDetailPage() {
   }, [data, refetch]);
 
   useEffect(() => {
-    if (!data?.temporary_media_path || !isAppleMobile()) return;
+    if (
+      (!data?.temporary_media_path && !data?.temporary_media_paths?.length) ||
+      !isAppleMobile()
+    )
+      return;
     let cancelled = false;
     supabase.functions
       .invoke("temporary-media-url", { body: { news_item_id: data.id } })
       .then(({ data: result, error }) => {
-        if (error || !result?.url) throw error || new Error("Mídia indisponível");
-        return prepareMediaFile(result.url, `copy-news-${data.id}`);
+        const urls = mediaUrls(result);
+        if (error || !urls.length)
+          throw error || new Error("Mídia indisponível");
+        return prepareMediaFiles(urls, `copy-news-${data.id}`);
       })
-      .then((file) => {
-        if (!cancelled) setPreparedMedia(file);
+      .then((files) => {
+        if (!cancelled) setPreparedMedia(files);
       })
       .catch(() => {
-        if (!cancelled) setPreparedMedia(null);
+        if (!cancelled) setPreparedMedia([]);
       })
       .finally(() => {
         if (!cancelled) setPreparingMedia(false);
@@ -154,7 +168,7 @@ export function NewsDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [data?.id, data?.temporary_media_path]);
+  }, [data?.id, data?.temporary_media_path, data?.temporary_media_paths]);
 
   useEffect(() => {
     if (!data || signature() === lastSaved.current) return;
@@ -253,18 +267,20 @@ export function NewsDetailPage() {
   async function signedDownload() {
     setPreparingMedia(true);
     try {
-      if (preparedMedia) {
-        await savePreparedMedia(preparedMedia);
+      if (preparedMedia.length) {
+        await savePreparedMediaFiles(preparedMedia);
         return;
       }
       const { data: result, error } = await supabase.functions.invoke(
         "temporary-media-url",
         { body: { news_item_id: data.id } },
       );
-      if (error || !result?.url) throw error || new Error("Mídia indisponível");
-      const file = await prepareMediaFile(result.url, `copy-news-${data.id}`);
-      setPreparedMedia(file);
-      await savePreparedMedia(file, result.url);
+      const urls = mediaUrls(result);
+      if (error || !urls.length)
+        throw error || new Error("Mídia indisponível");
+      const files = await prepareMediaFiles(urls, `copy-news-${data.id}`);
+      setPreparedMedia(files);
+      await savePreparedMediaFiles(files, urls);
     } catch (downloadError) {
       if (
         downloadError instanceof DOMException &&

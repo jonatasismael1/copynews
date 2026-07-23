@@ -772,11 +772,28 @@ export async function generateCopy(context, apiKey, model) {
     result = await createCopy(violations, result);
     violations = validateCopy(result, sources);
   }
-  if (violations.length)
-    throw Object.assign(
-      new Error(`A IA não conseguiu produzir uma reescrita fiel e suficientemente diferente: ${violations.join("; ")}`),
-      { code: "AI_REWRITE_VALIDATION" },
+  if (violations.length) {
+    const similarityOnly = violations.every((violation) =>
+      /copiad[oa] literalmente|parecid[oa] demais/i.test(violation)
     );
+    if (!similarityOnly) {
+      return toLegacyResult(
+        fallbackCopy(sources, [
+          ...violations,
+          "O processamento foi concluído sem bloqueio com o texto factual da fonte. Você pode solicitar uma nova reescrita após a leitura.",
+        ]),
+      );
+    }
+    return toLegacyResult({
+      ...result,
+      caption: formatSocialParagraphs(result.caption),
+      warnings: [
+        ...result.warnings,
+        ...violations.map((violation) => `Revisão sugerida: ${violation}`),
+        "O conteúdo foi entregue sem bloqueio. Leia o resultado e solicite uma nova reescrita apenas se desejar.",
+      ],
+    });
+  }
   return toLegacyResult({ ...result, caption: formatSocialParagraphs(result.caption) });
 }
 

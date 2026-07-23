@@ -41,20 +41,31 @@ Deno.serve(async (req) => {
       const { data: news, error } = await admin
         .from("news_items")
         .select(
-          "id,public_slug,source_url,source_platform,source_author,source_caption,temporary_media_path,transcript,ocr_text,generated_title,generated_caption,highlight,editorial_tone,summary,ai_confidence,ai_warnings,detected_facts,created_at,publications(platform,published_url,published_at)",
+          "id,public_slug,source_url,source_platform,source_author,source_caption,temporary_media_path,temporary_media_paths,transcript,ocr_text,generated_title,generated_caption,highlight,editorial_tone,summary,ai_confidence,ai_warnings,detected_facts,created_at,publications(platform,published_url,published_at)",
         )
         .eq("public_slug", slug)
         .eq("share_enabled", true)
         .single();
       if (error || !news) throw new Error("Link compartilhado não encontrado");
-      let downloadUrl = null;
-      if (news.temporary_media_path) {
+      const paths = news.temporary_media_paths?.length
+        ? news.temporary_media_paths
+        : news.temporary_media_path
+          ? [news.temporary_media_path]
+          : [];
+      let downloadUrls: { url: string; index: number }[] = [];
+      if (paths.length) {
         const { data } = await admin.storage
           .from("temporary-media")
-          .createSignedUrl(news.temporary_media_path, 3600, { download: true });
-        downloadUrl = data?.signedUrl || null;
+          .createSignedUrls(paths, 3600, { download: true });
+        downloadUrls = (data || [])
+          .filter((item) => item.signedUrl)
+          .map((item, index) => ({ url: item.signedUrl, index }));
       }
-      return json({ ...news, download_url: downloadUrl });
+      return json({
+        ...news,
+        download_url: downloadUrls[0]?.url || null,
+        download_urls: downloadUrls,
+      });
     }
 
     const authorization = req.headers.get("Authorization");

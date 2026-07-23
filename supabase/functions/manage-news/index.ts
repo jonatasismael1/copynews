@@ -48,13 +48,25 @@ const adminClient = () =>
 
 async function removeRows(
   admin: ReturnType<typeof adminClient>,
-  rows: { id: string; temporary_media_path: string | null }[],
+  rows: {
+    id: string;
+    temporary_media_path: string | null;
+    temporary_media_paths: string[];
+  }[],
 ) {
   if (!rows.length) return { deleted: 0, media_cleanup_pending: false };
   const ids = rows.map((row) => row.id);
-  const paths = rows
-    .map((row) => row.temporary_media_path)
-    .filter((path): path is string => Boolean(path));
+  const paths = [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.temporary_media_paths?.length
+          ? row.temporary_media_paths
+          : [row.temporary_media_path].filter(
+              (path): path is string => Boolean(path),
+            ),
+      ),
+    ),
+  ];
   const { error } = await admin.from("news_items").delete().in("id", ids);
   if (error) throw error;
   let mediaCleanupPending = false;
@@ -84,7 +96,7 @@ Deno.serve(async (req) => {
       if (typeof body.news_id !== "string") throw new Error("Notícia ausente");
       const { data, error } = await admin
         .from("news_items")
-        .select("id,temporary_media_path,created_by,assigned_to")
+        .select("id,temporary_media_path,temporary_media_paths,created_by,assigned_to")
         .eq("id", body.news_id)
         .maybeSingle();
       if (error) throw error;
@@ -113,7 +125,7 @@ Deno.serve(async (req) => {
       while (hasMore) {
         const { data, error } = await admin
           .from("news_items")
-          .select("id,temporary_media_path")
+          .select("id,temporary_media_path,temporary_media_paths")
           .limit(200);
         if (error) throw error;
         const batch = await removeRows(admin, data || []);

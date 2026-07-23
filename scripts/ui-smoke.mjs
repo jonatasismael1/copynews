@@ -45,8 +45,8 @@ await page.screenshot({
 await page.goto(`${base}/criar`, { waitUntil: "networkidle" });
 await page.getByRole("heading", { name: "Processar notícia" }).waitFor();
 const transcription = page.locator('input[name="transcribe_audio"]');
-if (!(await transcription.isChecked()))
-  throw new Error("Transcription must be enabled by default");
+if (await transcription.isChecked())
+  throw new Error("Transcription must require explicit opt-in");
 for (const removed of ["Categoria", "Página de destino", "Tom editorial"]) {
   if ((await page.getByText(removed, { exact: true }).count()) > 0)
     throw new Error(`Automatic field is still visible on creation: ${removed}`);
@@ -108,7 +108,7 @@ console.log(
       "indicadores clicáveis na ordem solicitada",
       "filtros do gráfico por dia e usuário",
       "relatório diário administrativo",
-      "transcrição ativada por padrão",
+      "transcrição desativada por padrão",
       "categoria, destino e tom removidos da criação",
       "links individuais do Canva",
       "configuração segura do Instagram",

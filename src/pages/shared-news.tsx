@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import {
   isAppleMobile,
-  prepareMediaFile,
-  savePreparedMedia,
+  prepareMediaFiles,
+  savePreparedMediaFiles,
 } from "@/lib/media-download";
 
 type SharedNews = {
@@ -26,14 +26,20 @@ type SharedNews = {
   ai_warnings: string[];
   detected_facts: string[];
   download_url: string | null;
+  download_urls?: { url: string; index: number }[];
   publications: { platform: string; published_url: string; published_at: string }[];
 };
+
+function sharedMediaUrls(data: SharedNews | null) {
+  const urls = data?.download_urls?.map((item) => item.url).filter(Boolean) || [];
+  return urls.length ? urls : data?.download_url ? [data.download_url] : [];
+}
 
 export function SharedNewsPage() {
   const { shareSlug } = useParams();
   const [data, setData] = useState<SharedNews | null>(null);
   const [error, setError] = useState("");
-  const [preparedMedia, setPreparedMedia] = useState<File | null>(null);
+  const [preparedMedia, setPreparedMedia] = useState<File[]>([]);
   const [preparingMedia, setPreparingMedia] = useState(false);
   useEffect(() => {
     supabase.functions
@@ -46,14 +52,15 @@ export function SharedNewsPage() {
   }, [shareSlug]);
 
   useEffect(() => {
-    if (!data?.download_url || !isAppleMobile()) return;
+    const urls = sharedMediaUrls(data);
+    if (!urls.length || !isAppleMobile()) return;
     let cancelled = false;
-    prepareMediaFile(data.download_url, "copy-news")
-      .then((file) => {
-        if (!cancelled) setPreparedMedia(file);
+    prepareMediaFiles(urls, "copy-news")
+      .then((files) => {
+        if (!cancelled) setPreparedMedia(files);
       })
       .catch(() => {
-        if (!cancelled) setPreparedMedia(null);
+        if (!cancelled) setPreparedMedia([]);
       })
       .finally(() => {
         if (!cancelled) setPreparingMedia(false);
@@ -61,7 +68,7 @@ export function SharedNewsPage() {
     return () => {
       cancelled = true;
     };
-  }, [data?.download_url]);
+  }, [data]);
 
   async function copy(value: string, label: string) {
     await navigator.clipboard.writeText(value);
@@ -69,14 +76,15 @@ export function SharedNewsPage() {
   }
 
   async function saveMedia() {
-    if (!data?.download_url) return;
+    const urls = sharedMediaUrls(data);
+    if (!urls.length) return;
     setPreparingMedia(true);
     try {
-      const file =
-        preparedMedia ||
-        (await prepareMediaFile(data.download_url, "copy-news"));
-      setPreparedMedia(file);
-      await savePreparedMedia(file, data.download_url);
+      const files = preparedMedia.length
+        ? preparedMedia
+        : await prepareMediaFiles(urls, "copy-news");
+      setPreparedMedia(files);
+      await savePreparedMediaFiles(files, urls);
     } catch (saveError) {
       if (saveError instanceof DOMException && saveError.name === "AbortError")
         return;

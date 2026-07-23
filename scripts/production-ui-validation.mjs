@@ -89,8 +89,8 @@ try {
 
   await page.goto(`${base}/criar`, { waitUntil: "networkidle" });
   const transcription = page.locator('input[name="transcribe_audio"]');
-  if (!(await transcription.isChecked()))
-    throw new Error("Transcription is not enabled by default");
+  if (await transcription.isChecked())
+    throw new Error("Transcription must require explicit opt-in");
   for (const removed of ["Categoria", "Página de destino", "Tom editorial"])
     if ((await page.getByText(removed, { exact: true }).count()) > 0)
       throw new Error(`Automatic field is still visible: ${removed}`);
@@ -216,7 +216,7 @@ try {
         "production login and 90-day dashboard",
         "user creation and goal update",
         "automatic category, destination and tone",
-        "transcription enabled by default",
+        "transcription disabled by default",
         "direct news archive and delete controls",
         "discreet bulk action",
         "clickable source link and original-caption copy",

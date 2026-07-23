@@ -543,7 +543,7 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
   }
 });
 
-test("não publica o original quando três tentativas de reescrita falham", async () => {
+test("conclui sem bloquear quando três tentativas de reescrita falham", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {
@@ -558,17 +558,21 @@ test("não publica o original quando três tentativas de reescrita falham", asyn
   };
   try {
     const originalTitle = "Motorista é preso após colisão e deixa ferido em Maceió";
-    await assert.rejects(
-      () => generateCopy({ original_title: originalTitle }, "key", "model"),
-      (error) => error.code === "AI_REWRITE_VALIDATION",
+    const result = await generateCopy(
+      { original_title: originalTitle },
+      "key",
+      "model",
     );
+    assert.equal(result.sourceMode, "manual_review");
+    assert.equal(result.title, originalTitle);
+    assert.match(result.warnings.join(" "), /concluído sem bloqueio/i);
     assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("não publica título original mesmo quando a legenda foi reescrita", async () => {
+test("entrega a legenda para leitura mesmo quando o título continua igual", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   const originalTitle = "Retorno de secretário da Saúde reacende debate em Alagoas";
@@ -590,18 +594,17 @@ test("não publica título original mesmo quando a legenda foi reescrita", async
     );
   };
   try {
-    await assert.rejects(
-      () =>
-        generateCopy(
-          {
-            original_title: originalTitle,
-            clean_original_caption: originalCaption,
-          },
-          "key",
-          "model",
-        ),
-      (error) => error.code === "AI_REWRITE_VALIDATION",
+    const result = await generateCopy(
+      {
+        original_title: originalTitle,
+        clean_original_caption: originalCaption,
+      },
+      "key",
+      "model",
     );
+    assert.equal(result.title, originalTitle);
+    assert.equal(result.caption, rewrittenCaption);
+    assert.match(result.warnings.join(" "), /entregue sem bloqueio/i);
     assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;

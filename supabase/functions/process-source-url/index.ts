@@ -90,8 +90,7 @@ Deno.serve(
     const body = await req.json();
     const url = new URL(String(body.source_url));
     const sourcePlatform = platform(url.hostname);
-    const transcribeAudio =
-      sourcePlatform === "youtube" || body.transcribe_audio !== false;
+    const transcribeAudio = body.transcribe_audio === true;
     if (
       !supported.has(url.protocol) ||
       ["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||

@@ -43,14 +43,20 @@ Deno.serve(
     const admin = adminClient();
     const { data: expired, error } = await admin
       .from("news_items")
-      .select("id,temporary_media_path")
+      .select("id,temporary_media_path,temporary_media_paths")
       .not("temporary_media_path", "is", null)
       .lt("temporary_media_expires_at", new Date().toISOString())
       .limit(100);
     if (error) throw error;
-    const paths = (expired || [])
-      .map((x) => x.temporary_media_path)
-      .filter(Boolean);
+    const paths = [
+      ...new Set(
+        (expired || []).flatMap((item) =>
+          item.temporary_media_paths?.length
+            ? item.temporary_media_paths
+            : [item.temporary_media_path].filter(Boolean),
+        ),
+      ),
+    ];
     if (paths.length) {
       const { error: storageError } = await admin.storage
         .from("temporary-media")
@@ -60,6 +66,7 @@ Deno.serve(
         .from("news_items")
         .update({
           temporary_media_path: null,
+          temporary_media_paths: [],
           temporary_media_expires_at: null,
         })
         .in(

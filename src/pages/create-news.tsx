@@ -19,7 +19,7 @@ export function CreateNewsPage() {
     formState: { errors },
   } = useForm<CreateNewsInput>({
     resolver: zodResolver(createNewsSchema),
-    defaultValues: { transcribe_audio: true },
+    defaultValues: { transcribe_audio: false },
   });
 
   async function submit(values: CreateNewsInput) {
@@ -81,6 +81,14 @@ export function CreateNewsPage() {
                 <ClipboardPaste />
                 Colar texto copiado
               </Button>
+              <Button
+                className="mt-2 w-full"
+                size="lg"
+                disabled={mutation.isPending}
+              >
+                <Sparkles />
+                {mutation.isPending ? "Enviando..." : "Processar notícia"}
+              </Button>
               {errors.source_url && (
                 <p className="mt-1 text-xs text-destructive">
                   {errors.source_url.message}
@@ -119,10 +127,6 @@ export function CreateNewsPage() {
                 {...register("notes")}
               />
             </label>
-            <Button className="w-full" size="lg" disabled={mutation.isPending}>
-              <Sparkles />
-              {mutation.isPending ? "Enviando..." : "Processar notícia"}
-            </Button>
           </form>
         </CardContent>
       </Card>

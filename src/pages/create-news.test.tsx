@@ -11,7 +11,7 @@ vi.mock("@/hooks/use-data", () => ({
 }));
 
 describe("criação automática de notícia", () => {
-  it("ativa a transcrição e não pede classificações manuais", () => {
+  it("deixa a transcrição desativada, move o processamento e não pede classificações manuais", () => {
     render(
       <MemoryRouter>
         <CreateNewsPage />
@@ -19,7 +19,17 @@ describe("criação automática de notícia", () => {
     );
 
     expect(screen.getByRole("checkbox", { name: /Transcrever o áudio/i }))
-      .toBeChecked();
+      .not.toBeChecked();
+    const pasteButton = screen.getByRole("button", {
+      name: /Colar texto copiado/i,
+    });
+    const processButton = screen.getByRole("button", {
+      name: /Processar notícia/i,
+    });
+    expect(
+      pasteButton.compareDocumentPosition(processButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.queryByText("Categoria", { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText("Página de destino", { exact: true }))
       .not.toBeInTheDocument();

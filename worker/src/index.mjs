@@ -476,33 +476,54 @@ async function processJob(job) {
           step_results: results,
         });
       } else {
-        const extension = mediaExtension(
-          acquired?.filename || primary.source.filename,
-          primary.kind,
-          primary.contentType,
+        const downloadableMedia = mediaFiles.filter(
+          (item) => item.auditOnly !== true,
         );
-        const path = `${job.news_items.created_by}/${job.news_items.id}/${randomUUID()}${extension}`;
-        const buffer = await fs.readFile(primary.path);
-        const { error } = await db.storage
-          .from(bucket)
-          .upload(path, buffer, {
-            contentType: primary.contentType,
-            upsert: false,
-          });
-        if (error) throw error;
+        const uploadedPaths = [];
+        try {
+          for (const item of downloadableMedia) {
+            const extension = mediaExtension(
+              item.source.filename,
+              item.kind,
+              item.contentType,
+            );
+            const path = `${job.news_items.created_by}/${job.news_items.id}/${randomUUID()}${extension}`;
+            const buffer = await fs.readFile(item.path);
+            const { error } = await db.storage
+              .from(bucket)
+              .upload(path, buffer, {
+                contentType: item.contentType,
+                upsert: false,
+              });
+            if (error) throw error;
+            uploadedPaths.push(path);
+          }
+        } catch (error) {
+          if (uploadedPaths.length)
+            await db.storage.from(bucket).remove(uploadedPaths);
+          throw error;
+        }
+        const path = uploadedPaths[0];
         results.media_path = path;
+        results.media_paths = uploadedPaths;
         results.media_bytes = mediaFiles.reduce(
           (total, item) => total + item.bytes,
           0,
         );
-        results.media_kind = mediaFiles.length > 1 ? "carousel" : primary.kind;
+        results.media_kind =
+          downloadableMedia.length > 1 ? "carousel" : primary.kind;
         results.media_items = mediaFiles.map((item) => ({
           source: item.source,
           kind: item.kind,
           contentType: item.contentType,
+          storage_path:
+            item.auditOnly === true
+              ? null
+              : uploadedPaths[downloadableMedia.indexOf(item)],
         }));
         await updateNews(job.news_items.id, {
           temporary_media_path: path,
+          temporary_media_paths: uploadedPaths,
           temporary_media_expires_at: new Date(
             Date.now() + ttl * 60_000,
           ).toISOString(),
@@ -521,23 +542,37 @@ async function processJob(job) {
         });
       }
     } else if (results.media_path) {
-      const { data, error } = await db.storage
-        .from(bucket)
-        .download(results.media_path);
-      if (error) throw error;
-      const primaryItem = results.media_items?.[0] || {};
-      const primaryPath = join(
-        dir,
-        `source-0${extname(results.media_path) || mediaExtension("", primaryItem.kind, primaryItem.contentType)}`,
+      const storedItems = (results.media_items || []).filter(
+        (item) => item.storage_path,
       );
-      await fs.writeFile(primaryPath, Buffer.from(await data.arrayBuffer()));
-      mediaFiles.push({
-        path: primaryPath,
-        kind: primaryItem.kind || mediaKind("", data.type),
-        contentType: primaryItem.contentType || data.type,
-        source: primaryItem.source || {},
-      });
-      if ((results.media_items?.length || 0) > 1) {
+      const storedPaths = storedItems.length
+        ? storedItems.map((item) => item.storage_path)
+        : results.media_paths?.length
+          ? results.media_paths
+          : [results.media_path];
+      for (const [index, storagePath] of storedPaths.entries()) {
+        const { data, error } = await db.storage
+          .from(bucket)
+          .download(storagePath);
+        if (error) throw error;
+        const item = storedItems[index] || results.media_items?.[index] || {};
+        const localPath = join(
+          dir,
+          `source-${index}${extname(storagePath) || mediaExtension("", item.kind, item.contentType)}`,
+        );
+        await fs.writeFile(localPath, Buffer.from(await data.arrayBuffer()));
+        mediaFiles.push({
+          path: localPath,
+          kind: item.kind || mediaKind("", data.type),
+          contentType: item.contentType || data.type,
+          source: item.source || {},
+        });
+      }
+      if (
+        storedPaths.length === 1 &&
+        (results.media_items?.length || 0) > 1 &&
+        !storedItems.length
+      ) {
         const acquired = await acquireMedia(job.news_items.source_url, {
           cobaltUrl: process.env.COBALT_API_URL,
           cobaltKey: process.env.COBALT_API_KEY,
@@ -765,7 +800,9 @@ async function processJob(job) {
       code: error.code,
     });
     if (error.code === "NEWS_DELETED" && results.media_path) {
-      await db.storage.from(bucket).remove([results.media_path]);
+      await db.storage
+        .from(bucket)
+        .remove(results.media_paths?.length ? results.media_paths : [results.media_path]);
       log("job.deleted_media_cleaned", { jobId: job.id });
     }
     await db
@@ -794,16 +831,28 @@ async function processJob(job) {
 async function cleanup() {
   const { data } = await db
     .from("news_items")
-    .select("id,temporary_media_path")
+    .select("id,temporary_media_path,temporary_media_paths")
     .not("temporary_media_path", "is", null)
     .lt("temporary_media_expires_at", new Date().toISOString())
     .limit(100);
-  const paths = (data || []).map((x) => x.temporary_media_path).filter(Boolean);
+  const paths = [
+    ...new Set(
+      (data || []).flatMap((item) =>
+        item.temporary_media_paths?.length
+          ? item.temporary_media_paths
+          : [item.temporary_media_path].filter(Boolean),
+      ),
+    ),
+  ];
   if (paths.length) {
     await db.storage.from(bucket).remove(paths);
     await db
       .from("news_items")
-      .update({ temporary_media_path: null, temporary_media_expires_at: null })
+      .update({
+        temporary_media_path: null,
+        temporary_media_paths: [],
+        temporary_media_expires_at: null,
+      })
       .in(
         "id",
         data.map((x) => x.id),

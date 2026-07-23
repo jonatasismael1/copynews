@@ -21,26 +21,53 @@ export async function prepareMediaFile(url: string, basename = "copy-news") {
   return new File([blob], `${basename}.${extension}`, { type: mime });
 }
 
-export async function savePreparedMedia(file: File, sourceUrl?: string) {
+export async function prepareMediaFiles(
+  urls: string[],
+  basename = "copy-news",
+) {
+  return Promise.all(
+    urls.map((url, index) =>
+      prepareMediaFile(
+        url,
+        urls.length > 1
+          ? `${basename}-${String(index + 1).padStart(2, "0")}`
+          : basename,
+      ),
+    ),
+  );
+}
+
+export async function savePreparedMediaFiles(
+  files: File[],
+  sourceUrls: string[] = [],
+) {
+  if (!files.length) throw new Error("Nenhuma mídia disponível");
   if (
     isAppleMobile() &&
     navigator.share &&
-    (!navigator.canShare || navigator.canShare({ files: [file] }))
+    (!navigator.canShare || navigator.canShare({ files }))
   ) {
     await navigator.share({
-      files: [file],
+      files,
       title: "Salvar mídia do Copy News",
     });
     return "shared" as const;
   }
 
-  const objectUrl = URL.createObjectURL(file);
-  const anchor = document.createElement("a");
-  anchor.href = objectUrl;
-  anchor.download = file.name;
-  anchor.rel = "noopener";
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-  if (!file.size && sourceUrl) window.open(sourceUrl, "_blank", "noopener");
+  files.forEach((file, index) => {
+    const objectUrl = URL.createObjectURL(file);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = file.name;
+    anchor.rel = "noopener";
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+    if (!file.size && sourceUrls[index])
+      window.open(sourceUrls[index], "_blank", "noopener");
+  });
   return "downloaded" as const;
+}
+
+export async function savePreparedMedia(file: File, sourceUrl?: string) {
+  return savePreparedMediaFiles([file], sourceUrl ? [sourceUrl] : []);
 }
