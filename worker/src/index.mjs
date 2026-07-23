@@ -46,7 +46,15 @@ const log = (event, extra = {}) =>
 createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, workerId, busy }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        workerId,
+        busy,
+        commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+        deploymentId: process.env.RAILWAY_DEPLOYMENT_ID || null,
+      }),
+    );
     return;
   }
   res.writeHead(404);
