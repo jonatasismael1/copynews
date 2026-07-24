@@ -517,8 +517,11 @@ export function NewsDetailPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-3 pb-[calc(11rem+env(safe-area-inset-bottom))] md:space-y-6 md:pb-0">
-      <div className="-mx-3 border-b bg-background px-3 py-3 md:hidden">
-        <div className="flex items-center gap-2">
+      <section
+        className="-mx-3 border-b bg-background px-3 py-3 md:hidden"
+        data-testid="mobile-news-summary"
+      >
+        <div className="flex items-start gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -528,37 +531,21 @@ export function NewsDetailPage() {
           >
             <ArrowLeft />
           </Button>
-          <div className="min-w-0 flex-1">
-            <Badge className="mb-1.5">{statusLabels[status]}</Badge>
-            <h1 className="line-clamp-2 font-display text-base font-bold leading-snug">
-              {title || "Notícia em processamento"}
-            </h1>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-11 shrink-0"
-            onClick={() => setMoreOpen(true)}
-            aria-label="Mais ações"
-          >
-            <MoreHorizontal />
-          </Button>
-        </div>
-      </div>
-
-      <section className="rounded-2xl border bg-card p-3 md:hidden">
-        <div className="flex gap-3">
           {thumbnailUrl && (
             <img
               src={thumbnailUrl}
               alt=""
-              className="size-20 shrink-0 rounded-xl object-cover"
+              className="size-16 shrink-0 rounded-xl object-cover"
             />
           )}
           <div className="min-w-0 flex-1">
-            <p className="line-clamp-3 font-display text-lg font-bold leading-snug">
+            <Badge className="mb-1.5">{statusLabels[status]}</Badge>
+            <h1
+              className="font-display text-lg font-bold leading-snug"
+              data-testid="mobile-news-title"
+            >
               {title || "Notícia em processamento"}
-            </p>
+            </h1>
             <p className="mt-2 truncate text-xs text-muted-foreground">
               {data.source_author ||
                 data.profiles?.name ||
@@ -569,6 +556,15 @@ export function NewsDetailPage() {
               {new Date(data.created_at).toLocaleDateString("pt-BR")}
             </p>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-11 shrink-0"
+            onClick={() => setMoreOpen(true)}
+            aria-label="Mais ações"
+          >
+            <MoreHorizontal />
+          </Button>
         </div>
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {data.source_platform && (
@@ -1637,10 +1633,15 @@ function ExpandableText({
   return (
     <div className={className}>
       <p
+        data-testid={canExpand ? "scrollable-text" : undefined}
+        tabIndex={canExpand && !expanded ? 0 : undefined}
+        aria-label={canExpand && !expanded ? "Texto completo rolável" : undefined}
         className={cn(
           "whitespace-pre-wrap rounded-xl bg-muted/60 p-3 text-sm leading-relaxed text-foreground",
-          !expanded && lines === 4 && "line-clamp-4",
-          !expanded && lines === 6 && "line-clamp-6",
+          !expanded &&
+            "touch-pan-y overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+          !expanded && lines === 4 && "max-h-28",
+          !expanded && lines === 6 && "max-h-44",
           !text && "text-muted-foreground",
         )}
       >

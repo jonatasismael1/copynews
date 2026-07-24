@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -138,6 +139,14 @@ describe("detalhes da notícia no mobile", () => {
   it("mantém as ações principais compactas e os controles de cópia acessíveis", () => {
     renderPage();
 
+    const mobileSummary = screen.getByTestId("mobile-news-summary");
+    expect(within(mobileSummary).getByRole("button", { name: "Voltar" })).toBeInTheDocument();
+    expect(within(mobileSummary).getByTestId("mobile-news-title")).toHaveTextContent(
+      news.generated_title,
+    );
+    expect(within(mobileSummary).getByText("23/07/2026")).toBeInTheDocument();
+    expect(within(mobileSummary).getAllByText(news.generated_title)).toHaveLength(1);
+
     expect(screen.getByRole("button", { name: "Reescrever" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aprovar" })).toBeInTheDocument();
     expect(
@@ -171,6 +180,12 @@ describe("detalhes da notícia no mobile", () => {
     renderPage();
 
     expect(screen.getByText("Ver mais")).toBeInTheDocument();
+    const scrollableTexts = screen.getAllByTestId("scrollable-text");
+    expect(scrollableTexts.length).toBeGreaterThan(0);
+    scrollableTexts.forEach((text) => {
+      expect(text).toHaveClass("overflow-y-auto");
+      expect(text).not.toHaveClass("line-clamp-4", "line-clamp-6");
+    });
     fireEvent.click(screen.getByRole("button", { name: "Editar legenda" }));
 
     expect(
