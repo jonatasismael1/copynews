@@ -139,7 +139,7 @@ export function AppShell() {
       >
         <header
           className={cn(
-            "sticky top-0 z-30 h-16 items-center justify-between border-b bg-background/90 px-3 backdrop-blur-xl sm:px-7 lg:flex",
+            "sticky top-0 z-30 h-16 items-center justify-between border-b bg-background/90 px-3 backdrop-blur-xl sm:px-7",
             isCreatePage || isDesignEditor ? "hidden" : "flex",
           )}
         >
