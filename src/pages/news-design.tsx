@@ -987,7 +987,10 @@ export function NewsDesignPage() {
 
   return (
     <div className="flex h-dvh max-w-full flex-col overflow-hidden bg-[#121212] text-white">
-      <header className="relative z-30 flex shrink-0 items-center gap-1.5 border-b border-white/10 bg-[#121212]/95 px-2 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur sm:gap-2 sm:px-4">
+      <header
+        className="relative z-30 flex shrink-0 items-center gap-1.5 border-b border-white/10 bg-[#121212]/95 px-2 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur sm:gap-2 sm:px-4"
+        data-testid="design-editor-header"
+      >
         <Button
           variant="ghost"
           size="icon"
@@ -1082,7 +1085,10 @@ export function NewsDesignPage() {
       )}
 
       <main className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden md:grid md:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
-        <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,#303030_0,#171717_55%,#101010_100%)] p-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:p-6">
+        <section
+          className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,#303030_0,#171717_55%,#101010_100%)] p-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:p-6"
+          data-testid="design-preview-area"
+        >
           <div
             ref={previewRef}
             className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center"
@@ -1341,8 +1347,14 @@ export function NewsDesignPage() {
           </div>
         </section>
 
-        <aside className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[62dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]">
-          <div className="pointer-events-auto order-2 grid grid-cols-6 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:flex md:gap-1 md:overflow-x-auto md:border-b md:border-t-0 md:p-2">
+        <aside
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[62dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]"
+          data-testid="design-controls"
+        >
+          <div
+            className="pointer-events-auto order-2 grid grid-cols-6 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:flex md:gap-1 md:overflow-x-auto md:border-b md:border-t-0 md:p-2"
+            data-testid="design-toolbar"
+          >
             {tabs.map((item) => (
               <button
                 key={item.id}
@@ -1367,6 +1379,7 @@ export function NewsDesignPage() {
               "pointer-events-auto order-1 min-h-0 flex-1 overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#181818] p-4 pb-5 shadow-[0_-18px_40px_rgba(0,0,0,0.45)] md:order-2 md:block md:rounded-none md:border-t-0 md:shadow-none",
               !panelOpen && "max-md:hidden",
             )}
+            data-testid="design-properties-panel"
           >
             <div
               className="mb-3 flex items-center justify-between md:hidden"
