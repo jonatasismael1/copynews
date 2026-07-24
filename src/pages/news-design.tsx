@@ -1352,7 +1352,7 @@ export function NewsDesignPage() {
           data-testid="design-controls"
         >
           <div
-            className="pointer-events-auto order-2 grid grid-cols-6 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:flex md:gap-1 md:overflow-x-auto md:border-b md:border-t-0 md:p-2"
+            className="pointer-events-auto order-2 grid grid-cols-6 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:gap-1 md:border-b md:border-t-0 md:p-2"
             data-testid="design-toolbar"
           >
             {tabs.map((item) => (
@@ -1360,7 +1360,7 @@ export function NewsDesignPage() {
                 key={item.id}
                 type="button"
                 className={cn(
-                  "relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] font-bold transition md:min-h-11 md:shrink-0 md:flex-row md:px-3 md:text-xs",
+                  "relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] font-bold transition md:min-h-11 md:px-0 md:text-[11px]",
                   tab === item.id
                     ? "bg-transparent text-[#fb0039] after:absolute after:inset-x-3 after:top-0 after:h-0.5 after:rounded-full after:bg-[#fb0039] md:bg-white md:text-black md:after:hidden"
                     : "text-white/65 hover:bg-white/10 hover:text-white",
@@ -1368,7 +1368,7 @@ export function NewsDesignPage() {
                 onClick={() => openPanel(item.id)}
                 aria-expanded={panelOpen && tab === item.id}
               >
-                <item.icon size={18} />
+                <item.icon className="md:hidden" size={18} />
                 {item.label}
               </button>
             ))}
