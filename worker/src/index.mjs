@@ -57,6 +57,7 @@ createServer((req, res) => {
         busy,
         commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
         deploymentId: process.env.RAILWAY_DEPLOYMENT_ID || null,
+        capabilities: ["design-video-render-v1"],
       }),
     );
     return;
