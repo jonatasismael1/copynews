@@ -370,7 +370,7 @@ export function NewsDesignPage() {
     const observer = new ResizeObserver(update);
     observer.observe(previewRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [designLoading, newsLoading, templateLoading]);
 
   useEffect(() => {
     if (!(mediaElement instanceof HTMLVideoElement) || !mediaLayerRef.current)
