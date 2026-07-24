@@ -69,6 +69,15 @@ function mediaUrls(result: {
   return urls.length ? (urls as string[]) : result?.url ? [result.url] : [];
 }
 
+function isValidExternalUrl(value?: string | null) {
+  if (!value) return false;
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export function NewsDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -89,6 +98,8 @@ export function NewsDetailPage() {
   const [preparedMedia, setPreparedMedia] = useState<File[]>([]);
   const [preparingMedia, setPreparingMedia] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [revisionLoading, setRevisionLoading] = useState(false);
   const [mobileEditor, setMobileEditor] = useState<{
     field: "highlight" | "title" | "caption" | "originalTitle";
     label: string;
@@ -307,11 +318,17 @@ export function NewsDetailPage() {
     toast.success(`${mobileEditor.label} atualizado`);
   }
 
-  async function signedDownload() {
+  async function signedDownload(selectedIndex?: number) {
     setPreparingMedia(true);
     try {
       if (preparedMedia.length) {
-        await savePreparedMediaFiles(preparedMedia);
+        const selectedFiles =
+          selectedIndex === undefined
+            ? preparedMedia
+            : preparedMedia[selectedIndex]
+              ? [preparedMedia[selectedIndex]]
+              : [];
+        await savePreparedMediaFiles(selectedFiles);
         return;
       }
       const { data: result, error } = await supabase.functions.invoke(
@@ -323,7 +340,19 @@ export function NewsDetailPage() {
         throw error || new Error("Mídia indisponível");
       const files = await prepareMediaFiles(urls, `copy-news-${data.id}`);
       setPreparedMedia(files);
-      await savePreparedMediaFiles(files, urls);
+      const selectedFiles =
+        selectedIndex === undefined
+          ? files
+          : files[selectedIndex]
+            ? [files[selectedIndex]]
+            : [];
+      const selectedUrls =
+        selectedIndex === undefined
+          ? urls
+          : urls[selectedIndex]
+            ? [urls[selectedIndex]]
+            : [];
+      await savePreparedMediaFiles(selectedFiles, selectedUrls);
     } catch (downloadError) {
       if (
         downloadError instanceof DOMException &&
@@ -359,19 +388,24 @@ export function NewsDetailPage() {
   }
 
   async function revise() {
-    if (!revision) return;
-    const { data: result, error } = await supabase.functions.invoke(
-      "revise-news-field",
-      {
-        body: {
-          news_item_id: data.id,
-          field: revision.field,
-          instruction: revision.instruction,
+    if (!revision || revisionLoading) return;
+    setRevisionLoading(true);
+    try {
+      const { data: result, error } = await supabase.functions.invoke(
+        "revise-news-field",
+        {
+          body: {
+            news_item_id: data.id,
+            field: revision.field,
+            instruction: revision.instruction,
+          },
         },
-      },
-    );
-    if (error) toast.error("Não foi possível gerar a revisão");
-    else setRevision({ ...revision, preview: result.preview });
+      );
+      if (error) toast.error("Não foi possível gerar a revisão");
+      else setRevision({ ...revision, preview: result.preview });
+    } finally {
+      setRevisionLoading(false);
+    }
   }
 
   async function confirmRevision() {
@@ -465,9 +499,24 @@ export function NewsDetailPage() {
           ? "Publicar"
           : "Aprovada"
         : "Aprovar";
+  const mediaPaths = data.temporary_media_paths?.length
+    ? data.temporary_media_paths
+    : data.temporary_media_path
+      ? [data.temporary_media_path]
+      : [];
+  const mediaCount = Math.max(mediaPaths.length, preparedMedia.length);
+  const hasValidSource = isValidExternalUrl(data.source_url);
+
+  function requestDownload() {
+    if (mediaCount > 1) {
+      setDownloadOpen(true);
+      return;
+    }
+    void signedDownload();
+  }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 pb-20 md:space-y-6 md:pb-0">
+    <div className="mx-auto max-w-5xl space-y-3 pb-[calc(11rem+env(safe-area-inset-bottom))] md:space-y-6 md:pb-0">
       <div className="-mx-3 border-b bg-background px-3 py-3 md:hidden">
         <div className="flex items-center gap-2">
           <Button
@@ -516,10 +565,12 @@ export function NewsDetailPage() {
                 data.source_platform ||
                 "Origem não identificada"}
             </p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {new Date(data.created_at).toLocaleDateString("pt-BR")}
+            </p>
           </div>
         </div>
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          <Badge className="shrink-0">{statusLabels[status]}</Badge>
           {data.source_platform && (
             <Badge variant="outline" className="shrink-0">
               {data.source_platform}
@@ -530,9 +581,15 @@ export function NewsDetailPage() {
               {data.categories.name}
             </Badge>
           )}
-          <Badge variant="outline" className="shrink-0">
-            {new Date(data.created_at).toLocaleDateString("pt-BR")}
-          </Badge>
+          <Button
+            variant="outline"
+            className="min-h-11 shrink-0 border-primary/30 bg-primary/5 px-3 text-primary"
+            onClick={() => setRevision({ field: "caption", instruction: "" })}
+            disabled={!editorReady || saving || revisionLoading}
+          >
+            <Sparkles size={17} />
+            Reescrever
+          </Button>
         </div>
       </section>
 
@@ -581,8 +638,8 @@ export function NewsDetailPage() {
           )}
           <Button
             variant="outline"
-            onClick={signedDownload}
-            disabled={!data.temporary_media_path || preparingMedia}
+            onClick={requestDownload}
+            disabled={!mediaCount || preparingMedia}
           >
             {preparingMedia ? <LoaderCircle className="animate-spin" /> : <Download />}
             {isAppleMobile() ? "Salvar na galeria" : "Baixar mídia"}
@@ -1050,15 +1107,29 @@ export function NewsDetailPage() {
       </ResponsiveSection>
 
       <div className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 grid grid-cols-3 gap-2 rounded-2xl border bg-background/95 p-2 shadow-xl backdrop-blur md:hidden">
-        <Button
-          variant="outline"
-          className="min-w-0 px-2"
-          onClick={() => setRevision({ field: "caption", instruction: "" })}
-          disabled={!editorReady}
-        >
-          <Sparkles size={18} />
-          Reescrever
-        </Button>
+        {hasValidSource ? (
+          <Button variant="outline" className="min-w-0 px-2" asChild>
+            <a
+              href={data.source_url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Abrir fonte"
+            >
+              <ExternalLink size={18} />
+              Abrir fonte
+            </a>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="min-w-0 px-2"
+            disabled
+            title="Link original indisponível"
+          >
+            <ExternalLink size={18} />
+            Abrir fonte
+          </Button>
+        )}
         <Button
           className="min-w-0 px-2"
           onClick={() => persist(true, nextPrimaryStatus)}
@@ -1075,12 +1146,56 @@ export function NewsDetailPage() {
         <Button
           variant="outline"
           className="min-w-0 px-2"
-          onClick={() => setMoreOpen(true)}
+          onClick={requestDownload}
+          disabled={!mediaCount || preparingMedia}
         >
-          <MoreHorizontal size={18} />
-          Mais
+          {preparingMedia ? (
+            <LoaderCircle className="animate-spin" size={18} />
+          ) : (
+            <Download size={18} />
+          )}
+          Baixar
         </Button>
       </div>
+
+      <Dialog open={downloadOpen} onOpenChange={setDownloadOpen}>
+        <DialogContent aria-describedby="download-media-description">
+          <div className="border-b p-5 pr-16">
+            <DialogTitle>Baixar mídia</DialogTitle>
+            <DialogDescription id="download-media-description">
+              Escolha baixar o carrossel completo ou apenas um arquivo.
+            </DialogDescription>
+          </div>
+          <div className="grid gap-2 p-4">
+            <Button
+              className="justify-start"
+              onClick={() => {
+                void signedDownload();
+                setDownloadOpen(false);
+              }}
+              disabled={preparingMedia}
+            >
+              <Download />
+              Baixar tudo ({mediaCount})
+            </Button>
+            {Array.from({ length: mediaCount }, (_, index) => (
+              <Button
+                key={mediaPaths[index] || preparedMedia[index]?.name || index}
+                variant="outline"
+                className="justify-start"
+                onClick={() => {
+                  void signedDownload(index);
+                  setDownloadOpen(false);
+                }}
+                disabled={preparingMedia}
+              >
+                <Download />
+                Baixar arquivo {index + 1}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
         <DialogContent aria-describedby="more-actions-description">
@@ -1107,10 +1222,10 @@ export function NewsDetailPage() {
               variant="outline"
               className="justify-start"
               onClick={() => {
-                void signedDownload();
+                requestDownload();
                 setMoreOpen(false);
               }}
-              disabled={!data.temporary_media_path || preparingMedia}
+              disabled={!mediaCount || preparingMedia}
             >
               {preparingMedia ? (
                 <LoaderCircle className="animate-spin" />
@@ -1322,10 +1437,14 @@ export function NewsDetailPage() {
                   <Button
                     className="w-full"
                     onClick={revise}
-                    disabled={!revision.instruction}
+                    disabled={!revision.instruction || revisionLoading}
                   >
-                    <Sparkles />
-                    Gerar prévia
+                    {revisionLoading ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <Sparkles />
+                    )}
+                    {revisionLoading ? "Gerando..." : "Gerar prévia"}
                   </Button>
                 </>
               ) : (
