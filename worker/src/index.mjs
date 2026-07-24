@@ -22,6 +22,10 @@ import {
 } from "./openrouter.mjs";
 import { buildSourceContext } from "./source-context.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
+import {
+  buildVideoRenderArgs,
+  calculateMediaFrame,
+} from "./design-render.mjs";
 const required = [
   "SUPABASE_URL",
   "SUPABASE_SECRET_KEY",
@@ -97,6 +101,21 @@ async function run(cmd, args) {
     child.on("close", (code) =>
       code === 0
         ? resolve()
+        : reject(new Error(`${cmd} saiu com ${code}: ${stderr.slice(-500)}`)),
+    );
+  });
+}
+async function runCapture(cmd, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (data) => (stdout += data));
+    child.stderr.on("data", (data) => (stderr += data));
+    child.on("error", reject);
+    child.on("close", (code) =>
+      code === 0
+        ? resolve(stdout)
         : reject(new Error(`${cmd} saiu com ${code}: ${stderr.slice(-500)}`)),
     );
   });
@@ -829,6 +848,157 @@ async function processJob(job) {
     await fs.rm(dir, { recursive: true, force: true });
   }
 }
+
+async function claimDesignRender() {
+  const { data: rows, error } = await db
+    .from("news_designs")
+    .select("*")
+    .eq("status", "rendering")
+    .like("media_mime_type", "video/%")
+    .or(
+      `render_progress.lt.10,render_started_at.lt.${new Date(Date.now() - 20 * 60_000).toISOString()}`,
+    )
+    .order("render_started_at")
+    .limit(1);
+  if (error) throw error;
+  const design = rows?.[0];
+  if (!design) return null;
+  const { data, error: claimError } = await db
+    .from("news_designs")
+    .update({
+      render_progress: 10,
+      render_started_at: new Date().toISOString(),
+      error_message: null,
+    })
+    .eq("id", design.id)
+    .eq("status", "rendering")
+    .eq("render_progress", design.render_progress)
+    .eq("render_started_at", design.render_started_at)
+    .select()
+    .maybeSingle();
+  return claimError || !data ? null : data;
+}
+
+async function storageFile(bucketName, path, destination) {
+  const { data, error } = await db.storage.from(bucketName).download(path);
+  if (error || !data)
+    throw new Error(error?.message || `Arquivo ${path} indisponível`);
+  await fs.writeFile(destination, Buffer.from(await data.arrayBuffer()));
+}
+
+async function processDesignRender(design) {
+  busy = true;
+  const dir = join(tmpdir(), `copy-news-design-${design.id}`);
+  await fs.mkdir(dir, { recursive: true });
+  const source = join(dir, "source-video");
+  const overlay = join(dir, "overlay.png");
+  const output = join(dir, "output.mp4");
+  try {
+    log("design.render.started", { designId: design.id });
+    if (!design.media_asset_path || !design.overlay_asset_path)
+      throw new Error("A mídia ou a camada visual da arte está ausente");
+    await Promise.all([
+      storageFile("news-designs", design.media_asset_path, source),
+      storageFile("news-designs", design.overlay_asset_path, overlay),
+    ]);
+    await db
+      .from("news_designs")
+      .update({ render_progress: 30 })
+      .eq("id", design.id)
+      .eq("status", "rendering");
+
+    const probe = JSON.parse(
+      await runCapture("ffprobe", [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "json",
+        source,
+      ]),
+    );
+    const stream = probe.streams?.[0];
+    if (!stream?.width || !stream?.height)
+      throw new Error("Não foi possível identificar as dimensões do vídeo");
+    const frame = calculateMediaFrame(
+      stream.width,
+      stream.height,
+      design.config_json?.media,
+    );
+    await db
+      .from("news_designs")
+      .update({ render_progress: 45 })
+      .eq("id", design.id)
+      .eq("status", "rendering");
+    await run("ffmpeg", buildVideoRenderArgs(source, overlay, output, frame));
+    await db
+      .from("news_designs")
+      .update({ render_progress: 85 })
+      .eq("id", design.id)
+      .eq("status", "rendering");
+
+    const exportedPath =
+      `${design.organization_id}/${design.news_id}/${design.id}/export-${Date.now()}.mp4`;
+    const video = await fs.readFile(output);
+    const { error: uploadError } = await db.storage
+      .from("news-designs")
+      .upload(exportedPath, video, {
+        contentType: "video/mp4",
+        cacheControl: "31536000",
+        upsert: false,
+      });
+    if (uploadError) throw uploadError;
+    const { error: generatedError } = await db
+      .from("generated_media")
+      .insert({
+        organization_id: design.organization_id,
+        news_id: design.news_id,
+        design_id: design.id,
+        storage_path: exportedPath,
+        mime_type: "video/mp4",
+        width: 1080,
+        height: 1920,
+        created_by: design.updated_by,
+      });
+    if (generatedError) throw generatedError;
+    const { error: updateError } = await db
+      .from("news_designs")
+      .update({
+        exported_file_path: exportedPath,
+        export_format: "mp4",
+        status: "ready",
+        render_progress: 100,
+        error_message: null,
+      })
+      .eq("id", design.id)
+      .eq("status", "rendering");
+    if (updateError) throw updateError;
+    log("design.render.completed", {
+      designId: design.id,
+      exportedPath,
+      bytes: video.length,
+    });
+  } catch (error) {
+    log("design.render.failed", {
+      designId: design.id,
+      message: error.message,
+    });
+    await db
+      .from("news_designs")
+      .update({
+        status: "failed",
+        error_message: String(error.message).slice(0, 500),
+      })
+      .eq("id", design.id);
+  } finally {
+    busy = false;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function cleanup() {
   const { data } = await db
     .from("news_items")
@@ -866,6 +1036,10 @@ async function loop() {
     try {
       const job = await claim();
       if (job) await processJob(job);
+      else {
+        const design = await claimDesignRender();
+        if (design) await processDesignRender(design);
+      }
     } catch (error) {
       log("loop.error", { message: error.message });
     }

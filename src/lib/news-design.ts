@@ -7,11 +7,15 @@ export const TITLE_MAX_LINES = 5;
 export type DesignExportFormat = "png" | "jpg";
 export type DesignStatus = "draft" | "rendering" | "ready" | "failed";
 export type TextAlignment = "left" | "center" | "right";
+export type MediaFit = "cover" | "contain";
 
 export type MediaTransform = {
   zoom: number;
   offsetX: number;
   offsetY: number;
+  fit: MediaFit;
+  currentTime: number;
+  muted: boolean;
 };
 
 export type TitleLayout = {
@@ -58,6 +62,9 @@ export const DEFAULT_DESIGN_CONFIG: DesignConfig = {
     zoom: 1,
     offsetX: 0,
     offsetY: 0,
+    fit: "cover",
+    currentTime: 0,
+    muted: false,
   },
   title: {
     x: 102,
@@ -155,11 +162,11 @@ export function coverMedia(
       width: DESIGN_WIDTH,
       height: DESIGN_HEIGHT,
     };
-  const coverScale = Math.max(
-    DESIGN_WIDTH / sourceWidth,
-    DESIGN_HEIGHT / sourceHeight,
-  );
-  const scale = coverScale * transform.zoom;
+  const baseScale =
+    transform.fit === "contain"
+      ? Math.min(DESIGN_WIDTH / sourceWidth, DESIGN_HEIGHT / sourceHeight)
+      : Math.max(DESIGN_WIDTH / sourceWidth, DESIGN_HEIGHT / sourceHeight);
+  const scale = baseScale * transform.zoom;
   const width = sourceWidth * scale;
   const height = sourceHeight * scale;
   const maxOffsetX = Math.max(0, (width - DESIGN_WIDTH) / 2);
@@ -187,8 +194,14 @@ export function clampMediaPosition(
   height: number,
 ) {
   return {
-    x: Math.min(0, Math.max(DESIGN_WIDTH - width, x)),
-    y: Math.min(0, Math.max(DESIGN_HEIGHT - height, y)),
+    x:
+      width <= DESIGN_WIDTH
+        ? (DESIGN_WIDTH - width) / 2
+        : Math.min(0, Math.max(DESIGN_WIDTH - width, x)),
+    y:
+      height <= DESIGN_HEIGHT
+        ? (DESIGN_HEIGHT - height) / 2
+        : Math.min(0, Math.max(DESIGN_HEIGHT - height, y)),
   };
 }
 
@@ -218,8 +231,28 @@ export function validateDesignImage(file: File) {
   return null;
 }
 
+export function validateDesignMedia(file: File) {
+  const allowed = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+  ];
+  if (!allowed.includes(file.type))
+    return "Use uma imagem JPG, PNG ou WebP, ou um vídeo MP4, WebM ou MOV.";
+  const limit = file.type.startsWith("video/") ? 100 : 15;
+  if (file.size > limit * 1024 * 1024)
+    return `A mídia deve ter no máximo ${limit} MB.`;
+  return null;
+}
+
 export function extensionForMime(mime: string) {
   if (mime === "image/png") return "png";
   if (mime === "image/webp") return "webp";
+  if (mime === "video/mp4") return "mp4";
+  if (mime === "video/webm") return "webm";
+  if (mime === "video/quicktime") return "mov";
   return "jpg";
 }

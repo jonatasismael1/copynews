@@ -18,6 +18,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.temporary-media-url]
 verify_jwt = true
+[functions.prepare-design-media]
+verify_jwt = true
 [functions.retry-processing-step]
 verify_jwt = true
 [functions.cleanup-temporary-media]

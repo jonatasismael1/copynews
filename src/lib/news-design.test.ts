@@ -9,6 +9,7 @@ import {
   fitHeadline,
   mergeDesignConfig,
   validateDesignImage,
+  validateDesignMedia,
 } from "./news-design";
 
 const context = {
@@ -23,6 +24,7 @@ describe("template de arte", () => {
     ["quadrada", 1080, 1080],
   ])("mantém uma imagem %s cobrindo o canvas", (_name, width, height) => {
     const result = coverMedia(width, height, {
+      ...DEFAULT_DESIGN_CONFIG.media,
       zoom: 1,
       offsetX: 0,
       offsetY: 0,
@@ -91,5 +93,20 @@ describe("template de arte", () => {
         new File(["arquivo"], "noticia.svg", { type: "image/svg+xml" }),
       ),
     ).toContain("JPG, PNG ou WebP");
+    expect(
+      validateDesignMedia(
+        new File(["video"], "noticia.mp4", { type: "video/mp4" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("permite ajustar a mídia inteira sem deformar", () => {
+    const result = coverMedia(1920, 1080, {
+      ...DEFAULT_DESIGN_CONFIG.media,
+      fit: "contain",
+    });
+    expect(result.width / result.height).toBeCloseTo(1920 / 1080);
+    expect(result.width).toBeLessThanOrEqual(DESIGN_WIDTH);
+    expect(result.height).toBeLessThanOrEqual(DESIGN_HEIGHT);
   });
 });

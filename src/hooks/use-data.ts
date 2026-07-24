@@ -63,7 +63,7 @@ export type NewsDesignWithTemplate = NewsDesign & {
   generated_media: {
     id: string;
     storage_path: string;
-    mime_type: "image/png" | "image/jpeg";
+    mime_type: "image/png" | "image/jpeg" | "video/mp4";
     created_at: string;
   }[];
 };

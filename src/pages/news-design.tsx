@@ -10,12 +10,26 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Check,
+  FileText,
   Download,
+  GalleryVerticalEnd,
   ImagePlus,
   LoaderCircle,
+  Maximize2,
+  Move,
+  Palette,
+  Pause,
+  Play,
   RotateCcw,
   Save,
+  SkipBack,
   TriangleAlert,
+  Volume2,
+  VolumeX,
+  X,
+  ZoomIn,
+  ZoomOut,
+  type LucideIcon,
 } from "lucide-react";
 import Konva from "konva";
 import {
@@ -48,12 +62,12 @@ import {
   extensionForMime,
   fitHeadline,
   mergeDesignConfig,
-  validateDesignImage,
+  validateDesignMedia,
   type DesignConfig,
   type DesignExportFormat,
   type TextAlignment,
 } from "@/lib/news-design";
-import { savePreparedMedia } from "@/lib/media-download";
+import { prepareMediaFile, savePreparedMedia } from "@/lib/media-download";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/auth-provider";
@@ -67,22 +81,48 @@ type EditorTab =
   | "exportar";
 
 type MediaElement = HTMLImageElement | HTMLVideoElement;
+type MediaLoadError = {
+  code:
+    | "MEDIA_URL_MISSING"
+    | "MEDIA_UNSUPPORTED"
+    | "MEDIA_UNAVAILABLE"
+    | "MEDIA_CORS"
+    | "MEDIA_PROCESSING";
+  message: string;
+};
 
-const tabs: { id: EditorTab; label: string }[] = [
-  { id: "modelo", label: "Modelo" },
-  { id: "midia", label: "Mídia" },
-  { id: "titulo", label: "Título" },
-  { id: "categoria", label: "Categoria" },
-  { id: "marca", label: "Marca" },
-  { id: "exportar", label: "Exportar" },
+function formatMediaTime(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "00:00";
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.floor(value % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+const tabs: { id: EditorTab; label: string; icon: LucideIcon }[] = [
+  { id: "modelo", label: "Modelo", icon: GalleryVerticalEnd },
+  { id: "midia", label: "Mídia", icon: Play },
+  { id: "titulo", label: "Título", icon: FileText },
+  { id: "categoria", label: "Categoria", icon: Palette },
+  { id: "marca", label: "Marca", icon: ImagePlus },
+  { id: "exportar", label: "Exportar", icon: Download },
 ];
 
-function useLoadedMedia(url: string, mimeType?: string | null) {
+function useLoadedMedia(
+  url: string,
+  mimeType?: string | null,
+  retryVersion = 0,
+  initialTime = 0,
+  initialMuted = false,
+) {
   const [loaded, setLoaded] = useState<{
     url: string;
     element: MediaElement;
   } | null>(null);
-  const [errorUrl, setErrorUrl] = useState("");
+  const [error, setError] = useState<{
+    url: string;
+    detail: MediaLoadError;
+  } | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const isVideo =
     mimeType?.startsWith("video/") ||
     /\.(mp4|mov|webm)(?:\?|$)/i.test(url);
@@ -92,15 +132,37 @@ function useLoadedMedia(url: string, mimeType?: string | null) {
     if (isVideo) {
       const video = document.createElement("video");
       video.crossOrigin = "anonymous";
-      video.preload = "metadata";
+      video.preload = "auto";
       video.playsInline = true;
-      video.muted = true;
-      video.onloadeddata = () => setLoaded({ url, element: video });
-      video.onerror = () => setErrorUrl(url);
+      video.muted = initialMuted;
+      video.oncanplay = () => {
+        if (initialTime > 0 && Math.abs(video.currentTime - initialTime) > 0.25)
+          video.currentTime = Math.min(
+            initialTime,
+            Math.max(0, video.duration - 0.05),
+          );
+        videoRef.current = video;
+        setLoaded({ url, element: video });
+      };
+      video.onerror = () => {
+        const unsupported = video.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
+        setError({
+          url,
+          detail: {
+            code: unsupported ? "MEDIA_UNSUPPORTED" : "MEDIA_UNAVAILABLE",
+            message: unsupported
+              ? "O navegador não consegue reproduzir este formato de vídeo."
+              : "O vídeo está inacessível ou ainda está sendo processado.",
+          },
+        });
+      };
       video.src = url;
       video.load();
       return () => {
         video.pause();
+        if (videoRef.current === video) videoRef.current = null;
+        video.oncanplay = null;
+        video.onerror = null;
         video.removeAttribute("src");
         video.load();
       };
@@ -109,18 +171,46 @@ function useLoadedMedia(url: string, mimeType?: string | null) {
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.onload = () => setLoaded({ url, element: image });
-    image.onerror = () => setErrorUrl(url);
+    image.onerror = () =>
+      setError({
+        url,
+        detail: {
+          code: "MEDIA_CORS",
+          message:
+            "A imagem não pôde ser aberta. O arquivo pode estar inacessível ou bloqueado.",
+        },
+      });
     image.src = url;
     return () => {
       image.onload = null;
       image.onerror = null;
     };
-  }, [isVideo, url]);
+    // Initial playback settings are restored when a new source is created.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideo, retryVersion, url]);
 
   return {
     element: loaded?.url === url ? loaded.element : null,
-    error: errorUrl === url,
+    error: error?.url === url ? error.detail : null,
+    loading: Boolean(url) && loaded?.url !== url && error?.url !== url,
     isVideo,
+    videoControls: {
+      togglePlayback: async () => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (video.paused) await video.play();
+        else video.pause();
+      },
+      restart: () => {
+        if (videoRef.current) videoRef.current.currentTime = 0;
+      },
+      seek: (time: number) => {
+        if (videoRef.current) videoRef.current.currentTime = time;
+      },
+      setMuted: (muted: boolean) => {
+        if (videoRef.current) videoRef.current.muted = muted;
+      },
+    },
   };
 }
 
@@ -151,25 +241,6 @@ async function canvasBlob(
   return blob;
 }
 
-async function videoCoverBlob(video: HTMLVideoElement) {
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Não foi possível capturar a capa do vídeo.");
-  context.drawImage(video, 0, 0);
-  return new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(
-      (blob) =>
-        blob
-          ? resolve(blob)
-          : reject(new Error("Não foi possível capturar a capa do vídeo.")),
-      "image/jpeg",
-      0.92,
-    ),
-  );
-}
-
 export function NewsDesignPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -189,6 +260,15 @@ export function NewsDesignPage() {
   const [mediaUrl, setMediaUrl] = useState("");
   const [mediaMime, setMediaMime] = useState<string | null>(null);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [preparedMediaPath, setPreparedMediaPath] = useState<string | null>(
+    null,
+  );
+  const [mediaRetryVersion, setMediaRetryVersion] = useState(0);
+  const [sourceError, setSourceError] = useState<MediaLoadError | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [saving, setSaving] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [lastError, setLastError] = useState("");
@@ -203,11 +283,24 @@ export function NewsDesignPage() {
   const previewRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const mediaLayerRef = useRef<Konva.Layer>(null);
+  const overlayLayerRef = useRef<Konva.Layer>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const lastPinchDistance = useRef<number | null>(null);
+  const sheetTouchStart = useRef<number | null>(null);
 
-  const { element: mediaElement, error: mediaError, isVideo } =
-    useLoadedMedia(mediaUrl, mediaMime);
+  const {
+    element: mediaElement,
+    error: mediaError,
+    loading: mediaLoading,
+    isVideo,
+    videoControls,
+  } = useLoadedMedia(
+    mediaUrl,
+    mediaMime,
+    mediaRetryVersion,
+    config.media.currentTime,
+    config.media.muted,
+  );
   const { element: brandImage } = useLoadedMedia(
     "/brand/frances-news-vertical.png",
     "image/png",
@@ -261,11 +354,17 @@ export function NewsDesignPage() {
   useEffect(() => {
     if (!previewRef.current) return;
     const update = () => {
-      const available = Math.min(
-        previewRef.current?.clientWidth || 360,
-        window.innerWidth - 24,
+      const element = previewRef.current;
+      if (!element) return;
+      const availableWidth = Math.max(1, element.clientWidth - 8);
+      const availableHeight = Math.max(1, element.clientHeight - 8);
+      setPreviewScale(
+        Math.min(
+          0.46,
+          availableWidth / DESIGN_WIDTH,
+          availableHeight / DESIGN_HEIGHT,
+        ),
       );
-      setPreviewScale(Math.min(0.42, Math.max(0.22, available / DESIGN_WIDTH)));
     };
     update();
     const observer = new ResizeObserver(update);
@@ -280,9 +379,33 @@ export function NewsDesignPage() {
       () => undefined,
       mediaLayerRef.current,
     );
-    animation.start();
+    const video = mediaElement;
+    const draw = () => mediaLayerRef.current?.batchDraw();
+    const handlePlay = () => {
+      setVideoPlaying(true);
+      animation.start();
+    };
+    const handlePause = () => {
+      setVideoPlaying(false);
+      animation.stop();
+      draw();
+    };
+    const handleTime = () => setVideoCurrentTime(video.currentTime);
+    const handleDuration = () => setVideoDuration(video.duration || 0);
+    video.addEventListener("play", handlePlay);
+    video.addEventListener("pause", handlePause);
+    video.addEventListener("timeupdate", handleTime);
+    video.addEventListener("durationchange", handleDuration);
+    video.addEventListener("seeked", draw);
+    handleDuration();
+    draw();
     return () => {
       animation.stop();
+      video.removeEventListener("play", handlePlay);
+      video.removeEventListener("pause", handlePause);
+      video.removeEventListener("timeupdate", handleTime);
+      video.removeEventListener("durationchange", handleDuration);
+      video.removeEventListener("seeked", draw);
     };
   }, [mediaElement]);
 
@@ -315,51 +438,53 @@ export function NewsDesignPage() {
     let cancelled = false;
     async function loadSource() {
       setSourceLoading(true);
+      setSourceError(null);
       try {
-        if (savedDesign?.media_asset_path) {
-          const { data, error } = await supabase.storage
-            .from("news-designs")
-            .createSignedUrl(savedDesign.media_asset_path, 3600);
-          if (error) throw error;
-          if (!cancelled) setMediaUrl(data.signedUrl);
-          return;
-        }
-        const paths = news.temporary_media_paths?.length
-          ? news.temporary_media_paths
-          : news.temporary_media_path
-            ? [news.temporary_media_path]
-            : [];
-        if (!paths.length) return;
         const { data, error } = await supabase.functions.invoke(
-          "temporary-media-url",
+          "prepare-design-media",
           { body: { news_item_id: news.id } },
         );
-        if (error || !data?.url)
-          throw error || new Error("Mídia original indisponível.");
-        if (!cancelled) {
-          setMediaUrl(data.url);
-          const path = paths[0].toLowerCase();
-          setMediaMime(
-            path.endsWith(".mp4")
-              ? "video/mp4"
-              : path.endsWith(".webm")
-                ? "video/webm"
-                : path.endsWith(".mov")
-                  ? "video/quicktime"
-                  : path.endsWith(".png")
-                    ? "image/png"
-                    : path.endsWith(".webp")
-                      ? "image/webp"
-                      : "image/jpeg",
+        if (error || !data?.url) {
+          let detail = data as
+            | { error?: string; code?: MediaLoadError["code"] }
+            | null;
+          try {
+            detail = await (
+              error as unknown as { context?: Response }
+            )?.context?.clone().json();
+          } catch {
+            // Keep the SDK error if the function body is unavailable.
+          }
+          throw Object.assign(
+            new Error(
+              detail?.error ||
+                error?.message ||
+                "Não foi possível preparar a mídia original.",
+            ),
+            { code: detail?.code || "MEDIA_UNAVAILABLE" },
           );
         }
+        if (!cancelled) {
+          setMediaUrl(data.url);
+          setMediaMime(data.mime_type);
+          setPreparedMediaPath(data.path);
+        }
       } catch (error) {
-        if (!cancelled)
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Não foi possível carregar a mídia.",
-          );
+        if (!cancelled) {
+          const detail = error as Error & {
+            code?: MediaLoadError["code"];
+          };
+          setSourceError({
+            code: detail.code || "MEDIA_UNAVAILABLE",
+            message:
+              detail.message || "Não foi possível carregar a mídia original.",
+          });
+          console.error("Falha ao preparar mídia da arte", {
+            newsId: news.id,
+            code: detail.code,
+            message: detail.message,
+          });
+        }
       } finally {
         if (!cancelled) setSourceLoading(false);
       }
@@ -368,7 +493,7 @@ export function NewsDesignPage() {
     return () => {
       cancelled = true;
     };
-  }, [initialized, mediaFile, news, savedDesign]);
+  }, [initialized, mediaFile, mediaRetryVersion, news]);
 
   useEffect(
     () => () => {
@@ -377,6 +502,14 @@ export function NewsDesignPage() {
     },
     [mediaFile, mediaUrl],
   );
+
+  useEffect(() => {
+    if (savedDesign?.status !== "rendering") return;
+    const timer = window.setInterval(() => {
+      void refetchDesign();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [refetchDesign, savedDesign?.status]);
 
   const updateConfig = useCallback(
     (next: Partial<DesignConfig>) =>
@@ -394,7 +527,7 @@ export function NewsDesignPage() {
   function handleUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const validation = validateDesignImage(file);
+    const validation = validateDesignMedia(file);
     if (validation) {
       toast.error(validation);
       event.target.value = "";
@@ -402,6 +535,8 @@ export function NewsDesignPage() {
     }
     if (mediaUrl.startsWith("blob:")) URL.revokeObjectURL(mediaUrl);
     setMediaFile(file);
+    setPreparedMediaPath(null);
+    setSourceError(null);
     setMediaMime(file.type);
     setMediaUrl(URL.createObjectURL(file));
     setConfig((current) => ({
@@ -428,6 +563,11 @@ export function NewsDesignPage() {
   }
 
   async function persistMediaAsset(designId: string) {
+    if (preparedMediaPath && !mediaFile)
+      return {
+        path: preparedMediaPath,
+        mime: mediaMime || "image/jpeg",
+      };
     if (savedDesign?.media_asset_path && !mediaFile)
       return {
         path: savedDesign.media_asset_path,
@@ -437,16 +577,14 @@ export function NewsDesignPage() {
       return { path: null, mime: null };
 
     let blob: Blob;
-    if (mediaElement instanceof HTMLVideoElement) {
-      blob = await videoCoverBlob(mediaElement);
-    } else if (mediaFile) {
+    if (mediaFile) {
       blob = mediaFile;
     } else {
       const response = await fetch(mediaUrl);
       if (!response.ok) throw new Error("Não foi possível preservar a mídia.");
       blob = await response.blob();
     }
-    const mime = blob.type || "image/jpeg";
+    const mime = mediaMime || blob.type || "image/jpeg";
     const path = `${profile!.organization_id}/${news!.id}/${designId}/source.${extensionForMime(mime)}`;
     await uploadBlob(path, blob, mime);
     return { path, mime };
@@ -464,6 +602,7 @@ export function NewsDesignPage() {
     if (!title.trim()) {
       toast.error("Informe o título da arte.");
       setTab("titulo");
+      setPanelOpen(true);
       return null;
     }
     if (!fitted.fits) {
@@ -471,11 +610,13 @@ export function NewsDesignPage() {
         "O título ultrapassa cinco linhas. Encurte o texto antes de exportar.",
       );
       setTab("titulo");
+      setPanelOpen(true);
       return null;
     }
     if (!mediaElement) {
-      toast.error("Escolha uma imagem para a arte.");
+      toast.error("Escolha uma mídia para a arte.");
       setTab("midia");
+      setPanelOpen(true);
       return null;
     }
 
@@ -484,6 +625,22 @@ export function NewsDesignPage() {
     setLastError("");
     setLastFailedAction(null);
     const designId = savedDesign?.id || crypto.randomUUID();
+    const persistedConfig: DesignConfig = {
+      ...config,
+      media: {
+        ...config.media,
+        currentTime:
+          mediaElement instanceof HTMLVideoElement
+            ? mediaElement.currentTime
+            : 0,
+        muted:
+          mediaElement instanceof HTMLVideoElement
+            ? mediaElement.muted
+            : config.media.muted,
+      },
+    };
+    const videoExport =
+      exportRequested && mediaElement instanceof HTMLVideoElement;
     try {
       const { error: startError } = await supabase
         .from("news_designs")
@@ -495,13 +652,17 @@ export function NewsDesignPage() {
             template_id: template.id,
             title_text: title.trim(),
             category_text: category.trim(),
-            media_asset_path: savedDesign?.media_asset_path || null,
-            media_mime_type: savedDesign?.media_mime_type || mediaMime,
-            config_json: config,
+            media_asset_path:
+              preparedMediaPath || savedDesign?.media_asset_path || null,
+            media_mime_type: mediaMime || savedDesign?.media_mime_type,
+            config_json: persistedConfig,
             preview_path: savedDesign?.preview_path || null,
+            overlay_asset_path: savedDesign?.overlay_asset_path || null,
             exported_file_path: savedDesign?.exported_file_path || null,
             export_format: savedDesign?.export_format || null,
-            status: exportRequested ? "rendering" : "draft",
+            status: "draft",
+            render_progress: 0,
+            render_started_at: null,
             error_message: null,
             created_by: savedDesign?.created_by || profile.id,
             updated_by: profile.id,
@@ -512,6 +673,23 @@ export function NewsDesignPage() {
 
       const media = await persistMediaAsset(designId);
       setRenderProgress(35);
+      let overlayPath = savedDesign?.overlay_asset_path || null;
+      if (mediaElement instanceof HTMLVideoElement && mediaLayerRef.current) {
+        mediaLayerRef.current.hide();
+        stageRef.current.draw();
+        try {
+          const overlayBlob = await canvasBlob(
+            stageRef.current,
+            previewScale,
+            "png",
+          );
+          overlayPath = `${profile.organization_id}/${news.id}/${designId}/overlay.png`;
+          await uploadBlob(overlayPath, overlayBlob, "image/png");
+        } finally {
+          mediaLayerRef.current.show();
+          stageRef.current.draw();
+        }
+      }
       const previewBlob = await canvasBlob(
         stageRef.current,
         previewScale,
@@ -524,7 +702,7 @@ export function NewsDesignPage() {
 
       let exportedPath = savedDesign?.exported_file_path || null;
       let exportedBlob: Blob | null = null;
-      if (exportRequested) {
+      if (exportRequested && !videoExport) {
         exportedBlob = await canvasBlob(
           stageRef.current,
           previewScale,
@@ -545,13 +723,22 @@ export function NewsDesignPage() {
         category_text: category.trim(),
         media_asset_path: media.path,
         media_mime_type: media.mime,
-        config_json: config,
+        config_json: persistedConfig,
         preview_path: previewPath,
+        overlay_asset_path: overlayPath,
         exported_file_path: exportedPath,
         export_format: exportRequested
-          ? format
+          ? videoExport
+            ? "mp4"
+            : format
           : savedDesign?.export_format || null,
-        status: exportRequested ? "ready" : "draft",
+        status: videoExport
+          ? "rendering"
+          : exportRequested
+            ? "ready"
+            : "draft",
+        render_progress: videoExport ? 5 : 0,
+        render_started_at: videoExport ? new Date().toISOString() : null,
         error_message: null,
         created_by: savedDesign?.created_by || profile.id,
         updated_by: profile.id,
@@ -576,7 +763,7 @@ export function NewsDesignPage() {
           title_text: title.trim(),
           category_text: category.trim(),
           media_asset_path: media.path,
-          config_json: config,
+          config_json: persistedConfig,
           preview_path: previewPath,
           exported_file_path: exportedPath,
           created_by: profile.id,
@@ -609,9 +796,13 @@ export function NewsDesignPage() {
       }
 
       await refetchDesign();
-      setRenderProgress(100);
+      setRenderProgress(videoExport ? 5 : 100);
       toast.success(
-        exportRequested ? "Arte exportada em 1080 × 1920" : "Arte salva",
+        videoExport
+          ? "Vídeo enviado para renderização em 1080 × 1920"
+          : exportRequested
+            ? "Arte exportada em 1080 × 1920"
+            : "Arte salva",
       );
       return designId;
     } catch (error) {
@@ -648,6 +839,32 @@ export function NewsDesignPage() {
     toast.success("Arte definida para a publicação");
   }
 
+  async function downloadRenderedVideo() {
+    if (!savedDesign?.exported_file_path || !news) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.storage
+        .from("news-designs")
+        .createSignedUrl(savedDesign.exported_file_path, 600);
+      if (error || !data?.signedUrl)
+        throw error || new Error("Vídeo renderizado indisponível.");
+      const file = await prepareMediaFile(
+        data.signedUrl,
+        `copy-news-${news.id}`,
+      );
+      await savePreparedMedia(file, data.signedUrl);
+      toast.success("Vídeo pronto para salvar na galeria");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível baixar o vídeo.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function zoomBy(amount: number) {
     setConfig((current) => ({
       ...current,
@@ -656,6 +873,72 @@ export function NewsDesignPage() {
         zoom: Math.max(1, Math.min(3, current.media.zoom + amount)),
       },
     }));
+  }
+
+  function setMediaFit(fit: DesignConfig["media"]["fit"]) {
+    setConfig((current) => ({
+      ...current,
+      media: {
+        ...current.media,
+        fit,
+        zoom: 1,
+        offsetX: 0,
+        offsetY: 0,
+      },
+    }));
+  }
+
+  function centerMedia() {
+    setConfig((current) => ({
+      ...current,
+      media: { ...current.media, offsetX: 0, offsetY: 0 },
+    }));
+  }
+
+  function nudgeMedia(offsetX: number, offsetY: number) {
+    setConfig((current) => ({
+      ...current,
+      media: {
+        ...current.media,
+        offsetX: current.media.offsetX + offsetX,
+        offsetY: current.media.offsetY + offsetY,
+      },
+    }));
+  }
+
+  async function toggleVideoPlayback() {
+    if (!(mediaElement instanceof HTMLVideoElement)) return;
+    try {
+      await videoControls.togglePlayback();
+    } catch (error) {
+      console.error("Falha ao reproduzir vídeo no editor", error);
+      toast.error("O navegador bloqueou a reprodução deste vídeo.");
+    }
+  }
+
+  function restartVideo() {
+    videoControls.restart();
+    mediaLayerRef.current?.batchDraw();
+  }
+
+  function toggleVideoAudio() {
+    if (!(mediaElement instanceof HTMLVideoElement)) return;
+    const muted = !config.media.muted;
+    videoControls.setMuted(muted);
+    setConfig((current) => ({
+      ...current,
+      media: { ...current.media, muted },
+    }));
+  }
+
+  function openPanel(nextTab: EditorTab) {
+    setTab(nextTab);
+    setPanelOpen(true);
+  }
+
+  function retryMedia() {
+    setSourceError(null);
+    setMediaRetryVersion((version) => version + 1);
   }
 
   function handlePinch(event: Konva.KonvaEventObject<TouchEvent>) {
@@ -700,10 +983,11 @@ export function NewsDesignPage() {
     );
 
   const canEdit = profile?.role !== "viewer";
+  const activeMediaError = sourceError || mediaError;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-[#121212] text-white">
-      <header className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b border-white/10 bg-[#121212]/95 px-2 backdrop-blur sm:px-4">
+    <div className="flex h-dvh max-w-full flex-col overflow-hidden bg-[#121212] text-white">
+      <header className="relative z-30 flex shrink-0 items-center gap-1.5 border-b border-white/10 bg-[#121212]/95 px-2 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur sm:gap-2 sm:px-4">
         <Button
           variant="ghost"
           size="icon"
@@ -715,8 +999,14 @@ export function NewsDesignPage() {
         </Button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold">{template.name}</p>
-          <p className="text-xs text-white/60">
-            {savedDesign ? "Versão editável salva" : "Nova arte"} · 1080 × 1920
+          <p className="flex items-center gap-1.5 truncate text-[11px] text-white/60 sm:text-xs">
+            <span
+              className={cn(
+                "size-2 shrink-0 rounded-full",
+                savedDesign ? "bg-emerald-500" : "bg-white/35",
+              )}
+            />
+            {savedDesign ? "Versão atual salva" : "Nova arte"} · 1080 × 1920
           </p>
         </div>
         <Button
@@ -724,34 +1014,53 @@ export function NewsDesignPage() {
           className="min-h-11 text-white hover:bg-white/10 hover:text-white"
           onClick={resetTemplate}
           disabled={!canEdit || saving}
+          aria-label="Restaurar modelo"
         >
           <RotateCcw size={17} />
           <span className="hidden sm:inline">Restaurar</span>
         </Button>
         <Button
-          className="min-h-11 bg-white text-black hover:bg-white/90"
+          className="min-h-11 shrink-0 bg-white px-3 text-black hover:bg-white/90"
           onClick={() => void persistDesign(false)}
           disabled={!canEdit || saving}
         >
           {saving ? <LoaderCircle className="animate-spin" /> : <Save />}
-          <span className="hidden sm:inline">Salvar</span>
+          <span>Salvar</span>
         </Button>
-        {saving && (
+        {(saving || savedDesign?.status === "rendering") && (
           <div
             className="absolute inset-x-0 bottom-0 h-1 bg-white/10"
             role="progressbar"
             aria-label="Progresso da renderização"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={renderProgress}
+            aria-valuenow={
+              savedDesign?.status === "rendering"
+                ? savedDesign.render_progress
+                : renderProgress
+            }
           >
             <div
               className="h-full bg-gradient-to-r from-[#fb0039] to-[#d20836] transition-[width]"
-              style={{ width: `${renderProgress}%` }}
+              style={{
+                width: `${
+                  savedDesign?.status === "rendering"
+                    ? savedDesign.render_progress
+                    : renderProgress
+                }%`,
+              }}
             />
           </div>
         )}
       </header>
+
+      <input
+        ref={uploadRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+        className="sr-only"
+        onChange={handleUpload}
+      />
 
       {lastError && (
         <div
@@ -772,11 +1081,11 @@ export function NewsDesignPage() {
         </div>
       )}
 
-      <main className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_26rem]">
-        <section className="flex min-h-[45dvh] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,#303030_0,#171717_55%,#101010_100%)] p-3 sm:p-6">
+      <main className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden md:grid md:grid-cols-[minmax(0,1fr)_minmax(360px,400px)]">
+        <section className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,#303030_0,#171717_55%,#101010_100%)] p-3 pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:p-6">
           <div
             ref={previewRef}
-            className="relative flex h-full w-full items-center justify-center"
+            className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center"
           >
             <div
               className="touch-none overflow-hidden bg-black shadow-2xl shadow-black/60"
@@ -848,6 +1157,7 @@ export function NewsDesignPage() {
                     />
                   </Layer>
                   <Layer
+                    ref={overlayLayerRef}
                     listening={false}
                     scaleX={previewScale}
                     scaleY={previewScale}
@@ -974,39 +1284,113 @@ export function NewsDesignPage() {
                   </Layer>
               </Stage>
             </div>
-            {(sourceLoading || !brandImage) && (
-              <div className="absolute inset-0 grid place-items-center bg-black/20">
-                <LoaderCircle className="animate-spin" />
+            {(sourceLoading || mediaLoading || !brandImage) && (
+              <div
+                className="absolute inset-0 grid place-items-center bg-black/55 backdrop-blur-[1px]"
+                role="status"
+                aria-label="Preparando mídia"
+              >
+                <div className="space-y-3 text-center">
+                  <LoaderCircle className="mx-auto animate-spin text-[#fb0039]" />
+                  <div>
+                    <p className="text-sm font-bold">Preparando mídia</p>
+                    <p className="mt-1 text-xs text-white/55">
+                      Validando e carregando o arquivo original
+                    </p>
+                  </div>
+                  <div className="mx-auto h-1 w-32 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full w-2/3 animate-pulse rounded-full bg-[#fb0039]" />
+                  </div>
+                </div>
               </div>
             )}
-            {mediaError && (
-              <div className="absolute inset-x-4 top-4 rounded-xl bg-red-600 p-3 text-center text-sm">
-                Não foi possível abrir a mídia. Escolha outra imagem.
+            {activeMediaError && !sourceLoading && !mediaLoading && (
+              <div className="absolute inset-0 grid place-items-center bg-black/65 p-4">
+                <div
+                  className="w-full max-w-sm rounded-2xl border border-red-400/25 bg-[#241417] p-4 text-center shadow-2xl"
+                  role="alert"
+                >
+                  <TriangleAlert className="mx-auto text-red-300" />
+                  <p className="mt-2 text-sm font-bold">
+                    Não foi possível abrir a mídia
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-white/65">
+                    {activeMediaError.message}
+                  </p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    <Button
+                      variant="outline"
+                      className="border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                      onClick={retryMedia}
+                    >
+                      <RotateCcw />
+                      Tentar novamente
+                    </Button>
+                    <Button
+                      className="bg-white text-black hover:bg-white/90"
+                      onClick={() => uploadRef.current?.click()}
+                      disabled={!canEdit}
+                    >
+                      <ImagePlus />
+                      Escolher outra
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </section>
 
-        <aside className="flex min-h-0 flex-col border-l border-white/10 bg-[#181818] pb-[env(safe-area-inset-bottom)]">
-          <div className="flex gap-1 overflow-x-auto border-b border-white/10 p-2">
+        <aside className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[62dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]">
+          <div className="pointer-events-auto order-2 grid grid-cols-6 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:flex md:gap-1 md:overflow-x-auto md:border-b md:border-t-0 md:p-2">
             {tabs.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 className={cn(
-                  "min-h-11 shrink-0 rounded-xl px-3 text-xs font-bold transition",
+                  "relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] font-bold transition md:min-h-11 md:shrink-0 md:flex-row md:px-3 md:text-xs",
                   tab === item.id
-                    ? "bg-white text-black"
+                    ? "bg-transparent text-[#fb0039] after:absolute after:inset-x-3 after:top-0 after:h-0.5 after:rounded-full after:bg-[#fb0039] md:bg-white md:text-black md:after:hidden"
                     : "text-white/65 hover:bg-white/10 hover:text-white",
                 )}
-                onClick={() => setTab(item.id)}
+                onClick={() => openPanel(item.id)}
+                aria-expanded={panelOpen && tab === item.id}
               >
+                <item.icon size={18} />
                 {item.label}
               </button>
             ))}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div
+            className={cn(
+              "pointer-events-auto order-1 min-h-0 flex-1 overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#181818] p-4 pb-5 shadow-[0_-18px_40px_rgba(0,0,0,0.45)] md:order-2 md:block md:rounded-none md:border-t-0 md:shadow-none",
+              !panelOpen && "max-md:hidden",
+            )}
+          >
+            <div
+              className="mb-3 flex items-center justify-between md:hidden"
+              onTouchStart={(event) => {
+                sheetTouchStart.current = event.touches[0]?.clientY ?? null;
+              }}
+              onTouchEnd={(event) => {
+                const start = sheetTouchStart.current;
+                const end = event.changedTouches[0]?.clientY;
+                sheetTouchStart.current = null;
+                if (start != null && end != null && end - start > 55)
+                  setPanelOpen(false);
+              }}
+            >
+              <span className="mx-auto h-1 w-12 rounded-full bg-white/35" />
+              <button
+                type="button"
+                className="grid size-11 shrink-0 place-items-center rounded-full text-white/65 hover:bg-white/10 hover:text-white"
+                onClick={() => setPanelOpen(false)}
+                aria-label="Fechar painel"
+              >
+                <X size={20} />
+              </button>
+            </div>
             {tab === "modelo" && (
               <ControlSection
                 title="Template aplicado"
@@ -1038,16 +1422,38 @@ export function NewsDesignPage() {
 
             {tab === "midia" && (
               <ControlSection
-                title="Enquadramento"
-                description="Arraste a imagem no preview e use o zoom. No celular, o gesto de pinça também funciona."
+                title="Mídia"
+                description="Arraste no preview ou use os controles. No celular, faça o gesto de pinça para ampliar."
               >
-                <input
-                  ref={uploadRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={handleUpload}
-                />
+                <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                  <p className="text-xs font-bold text-white/75">
+                    Pré-visualização
+                  </p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-black">
+                      {mediaElement instanceof HTMLImageElement ? (
+                        <img
+                          src={mediaUrl}
+                          alt=""
+                          className="size-full object-cover"
+                        />
+                      ) : isVideo ? (
+                        <Play className="text-[#fb0039]" />
+                      ) : (
+                        <ImagePlus className="text-white/35" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold">
+                        {isVideo ? "Vídeo original da notícia" : "Imagem original da notícia"}
+                      </p>
+                      <p className="mt-1 text-xs text-white/50">
+                        {dimensions.width || "—"} × {dimensions.height || "—"} ·{" "}
+                        {mediaMime || "formato não identificado"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <Button
                   variant="outline"
                   className="w-full border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
@@ -1055,27 +1461,102 @@ export function NewsDesignPage() {
                   disabled={!canEdit}
                 >
                   <ImagePlus />
-                  Trocar imagem
+                  Trocar mídia
                 </Button>
                 {isVideo && mediaElement instanceof HTMLVideoElement && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-white/70">
-                      Escolha o quadro da capa
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-black/25 p-3">
+                    <p className="text-xs font-bold text-white/75">
+                      Controles do vídeo
                     </p>
-                    <video
-                      src={mediaUrl}
-                      controls
-                      playsInline
-                      muted
-                      className="aspect-video w-full rounded-xl bg-black"
-                      onSeeked={() => mediaLayerRef.current?.batchDraw()}
-                    />
-                    <p className="text-xs text-white/50">
-                      A versão de imagem salva o quadro atual. A exportação MP4
-                      será adicionada na etapa de vídeo.
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-black"
+                        onClick={() => void toggleVideoPlayback()}
+                        aria-label={videoPlaying ? "Pausar vídeo" : "Reproduzir vídeo"}
+                      >
+                        {videoPlaying ? <Pause size={19} /> : <Play size={19} />}
+                      </button>
+                      <button
+                        type="button"
+                        className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/15"
+                        onClick={restartVideo}
+                        aria-label="Voltar vídeo ao início"
+                      >
+                        <SkipBack size={18} />
+                      </button>
+                      <input
+                        type="range"
+                        className="h-11 min-w-0 flex-1 accent-[#fb0039]"
+                        min={0}
+                        max={videoDuration || 0}
+                        step={0.05}
+                        value={Math.min(videoCurrentTime, videoDuration || 0)}
+                        onChange={(event) => {
+                          const time = Number(event.target.value);
+                          videoControls.seek(time);
+                          setVideoCurrentTime(time);
+                        }}
+                        aria-label="Posição do vídeo"
+                      />
+                      <button
+                        type="button"
+                        className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/15"
+                        onClick={toggleVideoAudio}
+                        aria-label={config.media.muted ? "Ativar áudio" : "Desativar áudio"}
+                      >
+                        {config.media.muted ? (
+                          <VolumeX size={18} />
+                        ) : (
+                          <Volume2 size={18} />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-right text-[11px] text-white/50">
+                      {formatMediaTime(videoCurrentTime)} /{" "}
+                      {formatMediaTime(videoDuration)}
                     </p>
                   </div>
                 )}
+                <div>
+                  <p className="mb-2 text-xs font-bold text-white/65">
+                    Enquadramento rápido
+                  </p>
+                  <div className="grid grid-cols-5 gap-2">
+                    <MediaAction
+                      label="Menos"
+                      icon={ZoomOut}
+                      onClick={() => zoomBy(-0.1)}
+                      disabled={!canEdit}
+                    />
+                    <MediaAction
+                      label="Mais"
+                      icon={ZoomIn}
+                      onClick={() => zoomBy(0.1)}
+                      disabled={!canEdit}
+                    />
+                    <MediaAction
+                      label="Centro"
+                      icon={Move}
+                      onClick={centerMedia}
+                      disabled={!canEdit}
+                    />
+                    <MediaAction
+                      label="Preencher"
+                      icon={Maximize2}
+                      onClick={() => setMediaFit("cover")}
+                      disabled={!canEdit}
+                      active={config.media.fit === "cover"}
+                    />
+                    <MediaAction
+                      label="Ajustar"
+                      icon={GalleryVerticalEnd}
+                      onClick={() => setMediaFit("contain")}
+                      disabled={!canEdit}
+                      active={config.media.fit === "contain"}
+                    />
+                  </div>
+                </div>
                 <RangeControl
                   label="Zoom"
                   value={config.media.zoom}
@@ -1091,6 +1572,43 @@ export function NewsDesignPage() {
                   }
                   disabled={!canEdit}
                 />
+                <div>
+                  <p className="mb-2 text-xs font-bold text-white/65">
+                    Posição
+                  </p>
+                  <div className="mx-auto grid w-40 grid-cols-3 gap-1">
+                    {[
+                      [-28, -28, "↖"],
+                      [0, -28, "↑"],
+                      [28, -28, "↗"],
+                      [-28, 0, "←"],
+                      [0, 0, "●"],
+                      [28, 0, "→"],
+                      [-28, 28, "↙"],
+                      [0, 28, "↓"],
+                      [28, 28, "↘"],
+                    ].map(([x, y, label]) => (
+                      <button
+                        key={String(label)}
+                        type="button"
+                        className="grid size-11 place-items-center rounded-lg border border-white/10 text-sm hover:bg-white/10"
+                        onClick={() =>
+                          Number(x) === 0 && Number(y) === 0
+                            ? centerMedia()
+                            : nudgeMedia(Number(x), Number(y))
+                        }
+                        disabled={!canEdit}
+                        aria-label={
+                          label === "●"
+                            ? "Centralizar mídia"
+                            : `Mover mídia ${label}`
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <Button
                   variant="ghost"
                   className="w-full text-white hover:bg-white/10 hover:text-white"
@@ -1341,23 +1859,25 @@ export function NewsDesignPage() {
                 title="Arquivo final"
                 description="A renderização sempre usa 1080 × 1920, independentemente do tamanho do preview."
               >
-                <div className="grid grid-cols-2 gap-2">
-                  {(["png", "jpg"] as DesignExportFormat[]).map((item) => (
-                    <Button
-                      key={item}
-                      variant="outline"
-                      className={cn(
-                        "border-white/15 uppercase text-white hover:bg-white/10 hover:text-white",
-                        format === item
-                          ? "bg-white text-black hover:bg-white/90 hover:text-black"
-                          : "bg-transparent",
-                      )}
-                      onClick={() => setFormat(item)}
-                    >
-                      {item}
-                    </Button>
-                  ))}
-                </div>
+                {!isVideo && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["png", "jpg"] as DesignExportFormat[]).map((item) => (
+                      <Button
+                        key={item}
+                        variant="outline"
+                        className={cn(
+                          "border-white/15 uppercase text-white hover:bg-white/10 hover:text-white",
+                          format === item
+                            ? "bg-white text-black hover:bg-white/90 hover:text-black"
+                            : "bg-transparent",
+                        )}
+                        onClick={() => setFormat(item)}
+                      >
+                        {item}
+                      </Button>
+                    ))}
+                  </div>
+                )}
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
                   <div className="flex justify-between">
                     <span className="text-white/55">Resolução</span>
@@ -1369,26 +1889,85 @@ export function NewsDesignPage() {
                   </div>
                   <div className="mt-2 flex justify-between">
                     <span className="text-white/55">Formato</span>
-                    <b className="uppercase">{format}</b>
+                    <b className="uppercase">{isVideo ? "mp4" : format}</b>
                   </div>
+                  {isVideo && (
+                    <div className="mt-2 flex justify-between">
+                      <span className="text-white/55">Áudio</span>
+                      <b>Original preservado</b>
+                    </div>
+                  )}
                 </div>
+                {isVideo && savedDesign?.status === "rendering" && (
+                  <div
+                    className="rounded-2xl border border-[#fb0039]/30 bg-[#fb0039]/10 p-4"
+                    role="status"
+                  >
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-bold">Renderizando vídeo</span>
+                      <span>{savedDesign.render_progress}%</span>
+                    </div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-[#fb0039] transition-[width]"
+                        style={{ width: `${savedDesign.render_progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <Button
                   className="w-full bg-gradient-to-r from-[#fb0039] to-[#d20836] text-white hover:opacity-90"
-                  onClick={() => void persistDesign(true)}
-                  disabled={!canEdit || saving || !fitted.fits}
+                  onClick={() =>
+                    void (isVideo &&
+                    savedDesign?.status === "ready" &&
+                    savedDesign.export_format === "mp4"
+                      ? downloadRenderedVideo()
+                      : persistDesign(true))
+                  }
+                  disabled={
+                    !canEdit ||
+                    saving ||
+                    !fitted.fits ||
+                    savedDesign?.status === "rendering"
+                  }
                 >
-                  {saving ? (
+                  {saving || savedDesign?.status === "rendering" ? (
                     <LoaderCircle className="animate-spin" />
                   ) : (
                     <Download />
                   )}
-                  Baixar arte
+                  {isVideo
+                    ? savedDesign?.status === "rendering"
+                      ? `Renderizando ${savedDesign.render_progress}%`
+                      : savedDesign?.status === "ready" &&
+                          savedDesign.export_format === "mp4"
+                        ? "Baixar vídeo"
+                        : "Renderizar vídeo"
+                    : "Baixar arte"}
                 </Button>
+                {isVideo &&
+                  savedDesign?.status === "ready" &&
+                  savedDesign.export_format === "mp4" && (
+                    <Button
+                      variant="ghost"
+                      className="w-full text-white hover:bg-white/10 hover:text-white"
+                      onClick={() => void persistDesign(true)}
+                      disabled={!canEdit || saving || !fitted.fits}
+                    >
+                      <RotateCcw />
+                      Renderizar nova versão
+                    </Button>
+                  )}
                 <Button
                   variant="outline"
                   className="w-full border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
                   onClick={() => void selectForPublication()}
-                  disabled={!canEdit || saving || !fitted.fits}
+                  disabled={
+                    !canEdit ||
+                    saving ||
+                    !fitted.fits ||
+                    savedDesign?.status === "rendering"
+                  }
                 >
                   <Check />
                   Usar na publicação
@@ -1399,6 +1978,38 @@ export function NewsDesignPage() {
         </aside>
       </main>
     </div>
+  );
+}
+
+function MediaAction({
+  label,
+  icon: Icon,
+  onClick,
+  disabled,
+  active,
+}: {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[10px] font-semibold transition",
+        active
+          ? "border-[#fb0039]/60 bg-[#fb0039]/10 text-[#ff416b]"
+          : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white",
+      )}
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+    >
+      <Icon size={18} />
+      <span className="max-w-full truncate">{label}</span>
+    </button>
   );
 }
 
