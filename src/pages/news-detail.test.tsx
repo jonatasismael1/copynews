@@ -66,6 +66,7 @@ vi.mock("@/hooks/use-data", () => ({
     data: { profiles: [], categories: [], pages: [] },
   }),
   useNewsItem: () => ({ data: currentNews, isLoading: false, refetch }),
+  useNewsDesign: () => ({ data: null, isLoading: false }),
 }));
 
 vi.mock("@/providers/auth-provider", () => ({
@@ -85,6 +86,11 @@ vi.mock("@/lib/supabase", () => ({
       update: () => ({ eq: vi.fn().mockResolvedValue({ error: null }) }),
     }),
     functions: { invoke: mocks.invoke },
+    storage: {
+      from: () => ({
+        createSignedUrl: vi.fn().mockResolvedValue({ data: null, error: null }),
+      }),
+    },
     rpc: vi.fn(),
   },
 }));

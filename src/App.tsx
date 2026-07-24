@@ -24,6 +24,11 @@ const NewsDetailPage = lazy(() =>
     default: module.NewsDetailPage,
   })),
 );
+const NewsDesignPage = lazy(() =>
+  import("@/pages/news-design").then((module) => ({
+    default: module.NewsDesignPage,
+  })),
+);
 const PublicationsPage = lazy(() =>
   import("@/pages/publications").then((module) => ({
     default: module.PublicationsPage,
@@ -100,6 +105,7 @@ export function App() {
         <Route index element={page(<DashboardPage />)} />
         <Route path="noticias" element={page(<NewsPage />)} />
         <Route path="noticias/:id" element={page(<NewsDetailPage />)} />
+        <Route path="noticias/:id/arte" element={page(<NewsDesignPage />)} />
         <Route path="criar" element={page(<CreateNewsPage />)} />
         <Route path="publicacoes" element={page(<PublicationsPage />)} />
         <Route path="usuarios" element={page(<UsersPage />)} />

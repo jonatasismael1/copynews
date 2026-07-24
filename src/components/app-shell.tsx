@@ -41,6 +41,7 @@ export function AppShell() {
   const { profile, signOut } = useAuth();
   const location = useLocation();
   const isCreatePage = location.pathname === "/criar";
+  const isDesignEditor = /^\/noticias\/[^/]+\/arte$/.test(location.pathname);
   const visibleItems = items.filter(
     ([path]) => path !== "/usuarios" || profile?.role === "admin",
   );
@@ -49,6 +50,7 @@ export function AppShell() {
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-[min(18rem,88vw)] border-r bg-sidebar p-4 transition-transform lg:w-72 lg:translate-x-0",
+          isDesignEditor && "hidden",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -129,11 +131,16 @@ export function AppShell() {
           aria-label="Fechar menu"
         />
       )}
-      <main className="pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:ml-72 lg:pb-0">
+      <main
+        className={cn(
+          "pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:ml-72 lg:pb-0",
+          isDesignEditor && "pb-0 lg:ml-0",
+        )}
+      >
         <header
           className={cn(
             "sticky top-0 z-30 h-16 items-center justify-between border-b bg-background/90 px-3 backdrop-blur-xl sm:px-7 lg:flex",
-            isCreatePage ? "hidden" : "flex",
+            isCreatePage || isDesignEditor ? "hidden" : "flex",
           )}
         >
           <Button
@@ -168,12 +175,20 @@ export function AppShell() {
         </header>
         <div
           key={location.pathname}
-          className="animate-in overflow-x-hidden p-3 sm:p-7"
+          className={cn(
+            "animate-in overflow-x-hidden p-3 sm:p-7",
+            isDesignEditor && "p-0 sm:p-0",
+          )}
         >
           <Outlet />
         </div>
       </main>
-      <nav className="fixed inset-x-2 bottom-[calc(.5rem+env(safe-area-inset-bottom))] z-30 flex min-h-16 items-center justify-around rounded-2xl border bg-background/95 px-1 shadow-xl backdrop-blur lg:hidden">
+      <nav
+        className={cn(
+          "fixed inset-x-2 bottom-[calc(.5rem+env(safe-area-inset-bottom))] z-30 flex min-h-16 items-center justify-around rounded-2xl border bg-background/95 px-1 shadow-xl backdrop-blur lg:hidden",
+          isDesignEditor && "hidden",
+        )}
+      >
         {visibleItems.slice(0, 5).map(([path, , Icon]) => (
           <NavLink
             key={path}

@@ -32,7 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { useLookups, useNewsItem } from "@/hooks/use-data";
+import { useLookups, useNewsDesign, useNewsItem } from "@/hooks/use-data";
 import { supabase } from "@/lib/supabase";
 import { statusLabels, type NewsStatus } from "@/lib/constants";
 import {
@@ -84,6 +84,7 @@ export function NewsDetailPage() {
   const { profile } = useAuth();
   const { data: lookups } = useLookups();
   const { data, isLoading, refetch } = useNewsItem(id);
+  const { data: newsDesign } = useNewsDesign(id);
   const [originalTitle, setOriginalTitle] = useState("");
   const [title, setTitle] = useState("");
   const [caption, setCaption] = useState("");
@@ -99,6 +100,7 @@ export function NewsDetailPage() {
   const [preparingMedia, setPreparingMedia] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [designPreviewUrl, setDesignPreviewUrl] = useState("");
   const [revisionLoading, setRevisionLoading] = useState(false);
   const [mobileEditor, setMobileEditor] = useState<{
     field: "highlight" | "title" | "caption" | "originalTitle";
@@ -197,6 +199,20 @@ export function NewsDetailPage() {
       cancelled = true;
     };
   }, [data?.id, data?.temporary_media_path, data?.temporary_media_paths]);
+
+  useEffect(() => {
+    if (!newsDesign?.preview_path) return;
+    let cancelled = false;
+    supabase.storage
+      .from("news-designs")
+      .createSignedUrl(newsDesign.preview_path, 3600)
+      .then(({ data: signed }) => {
+        if (!cancelled) setDesignPreviewUrl(signed?.signedUrl || "");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [newsDesign?.preview_path]);
 
   useEffect(() => {
     if (!data || signature() === lastSaved.current) return;
@@ -515,6 +531,40 @@ export function NewsDetailPage() {
     void signedDownload();
   }
 
+  async function downloadDesign() {
+    if (!newsDesign?.exported_file_path) return;
+    setPreparingMedia(true);
+    try {
+      const { data: signed, error } = await supabase.storage
+        .from("news-designs")
+        .createSignedUrl(newsDesign.exported_file_path, 900, {
+          download: true,
+        });
+      if (error || !signed?.signedUrl)
+        throw error || new Error("Arte indisponível");
+      const files = await prepareMediaFiles(
+        [signed.signedUrl],
+        `copy-news-arte-${data.id}`,
+      );
+      await savePreparedMediaFiles(files, [signed.signedUrl]);
+    } catch {
+      toast.error("Não foi possível baixar a arte");
+    } finally {
+      setPreparingMedia(false);
+    }
+  }
+
+  async function selectDesignForPublication() {
+    if (!newsDesign?.id || newsDesign.status !== "ready") return;
+    const { error } = await supabase
+      .from("news_items")
+      .update({ selected_design_id: newsDesign.id })
+      .eq("id", data.id);
+    if (error) return toast.error(error.message);
+    await refetch();
+    toast.success("Arte definida para a publicação");
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-3 pb-[calc(11rem+env(safe-area-inset-bottom))] md:space-y-6 md:pb-0">
       <section
@@ -586,6 +636,18 @@ export function NewsDetailPage() {
             <Sparkles size={17} />
             Reescrever
           </Button>
+          {editorReady && canManageRecord && (
+            <Button
+              variant="outline"
+              className="min-h-11 shrink-0 border-[#fb0039]/30 bg-[#fb0039]/5 px-3 text-[#d20836]"
+              asChild
+            >
+              <Link to={`/noticias/${data.id}/arte`}>
+                <Palette size={17} />
+                {newsDesign ? "Editar arte" : "Criar arte"}
+              </Link>
+            </Button>
+          )}
         </div>
       </section>
 
@@ -644,6 +706,17 @@ export function NewsDetailPage() {
             <Check />
             Salvar agora
           </Button>
+          {editorReady && canManageRecord && (
+            <Button
+              className="bg-gradient-to-r from-[#fb0039] to-[#d20836] text-white"
+              asChild
+            >
+              <Link to={`/noticias/${data.id}/arte`}>
+                <Palette />
+                {newsDesign ? "Editar arte" : "Criar arte"}
+              </Link>
+            </Button>
+          )}
           {editorReady && editorUrl && (
             <Button asChild>
               <a href={editorUrl} target="_blank" rel="noreferrer">
@@ -731,6 +804,96 @@ export function NewsDetailPage() {
                   </Button>
                 )}
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {editorReady && canManageRecord && (
+        <Card className="overflow-hidden border-[#fb0039]/20">
+          <CardContent className="flex items-center gap-3 p-3 md:p-5">
+            <div className="grid aspect-[9/16] h-24 shrink-0 place-items-center overflow-hidden rounded-xl bg-black">
+              {newsDesign?.preview_path && designPreviewUrl ? (
+                <img
+                  src={designPreviewUrl}
+                  alt="Prévia da arte da notícia"
+                  className="size-full object-cover"
+                />
+              ) : (
+                <img
+                  src="/brand/frances-news-vertical.png"
+                  alt=""
+                  className="size-full object-contain"
+                />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-display font-bold">Arte da notícia</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {newsDesign?.design_templates?.name ||
+                  "Francês News — Story padrão"}
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Badge
+                  variant={newsDesign?.status === "ready" ? "default" : "outline"}
+                >
+                  {newsDesign?.status === "ready"
+                    ? "Pronta"
+                    : newsDesign
+                      ? "Rascunho"
+                      : "Não criada"}
+                </Badge>
+                {data.selected_design_id === newsDesign?.id && (
+                  <Badge variant="outline">Em uso</Badge>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {newsDesign && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-11"
+                    onClick={() => void downloadDesign()}
+                    disabled={!newsDesign.exported_file_path || preparingMedia}
+                    aria-label="Baixar arte"
+                    title="Baixar arte"
+                  >
+                    {preparingMedia ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <Download />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-11"
+                    onClick={() => void selectDesignForPublication()}
+                    disabled={
+                      newsDesign.status !== "ready" ||
+                      data.selected_design_id === newsDesign.id
+                    }
+                    aria-label="Usar arte na publicação"
+                    title="Usar arte na publicação"
+                  >
+                    <Check />
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="outline"
+                className="min-h-11 border-[#fb0039]/30 text-[#d20836]"
+                asChild
+              >
+                <Link to={`/noticias/${data.id}/arte`}>
+                  <Palette />
+                  <span className="hidden sm:inline">
+                    {newsDesign ? "Editar" : "Criar"}
+                  </span>
+                </Link>
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -1230,6 +1393,17 @@ export function NewsDetailPage() {
               )}
               {isAppleMobile() ? "Salvar na galeria" : "Baixar mídia"}
             </Button>
+            {editorReady && canManageRecord && (
+              <Button variant="outline" className="justify-start" asChild>
+                <Link
+                  to={`/noticias/${data.id}/arte`}
+                  onClick={() => setMoreOpen(false)}
+                >
+                  <Palette />
+                  {newsDesign ? "Editar arte" : "Criar arte"}
+                </Link>
+              </Button>
+            )}
             {editorReady && editorUrl && (
               <Button variant="outline" className="justify-start" asChild>
                 <a href={editorUrl} target="_blank" rel="noreferrer">

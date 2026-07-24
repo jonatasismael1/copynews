@@ -88,7 +88,10 @@ Deno.serve(
         password: body.password,
         email_confirm: true,
         user_metadata: { name: body.name },
-        app_metadata: { role },
+        app_metadata: {
+          role,
+          organization_id: profile.organization_id,
+        },
       });
       if (error) throw error;
       const { error: profileError } = await admin
@@ -96,6 +99,7 @@ Deno.serve(
         .update({
           name: body.name,
           role,
+          organization_id: profile.organization_id,
           daily_goal: body.daily_goal ?? null,
         })
         .eq("id", data.user.id);

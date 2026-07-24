@@ -3,9 +3,11 @@ import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import type {
   NewsItem,
+  NewsDesign,
   ProcessingJob,
   Profile,
   Publication,
+  DesignTemplate,
 } from "@/lib/database.types";
 import type {
   CreateNewsInput,
@@ -52,6 +54,60 @@ export function useNewsItem(id?: string) {
         .single();
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+export type NewsDesignWithTemplate = NewsDesign & {
+  design_templates: DesignTemplate | null;
+  generated_media: {
+    id: string;
+    storage_path: string;
+    mime_type: "image/png" | "image/jpeg";
+    created_at: string;
+  }[];
+};
+
+export function useNewsDesign(newsId?: string) {
+  return useQuery({
+    queryKey: ["news-design", newsId],
+    enabled: Boolean(newsId),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("news_designs")
+        .select("*,design_templates(*),generated_media(*)")
+        .eq("news_id", newsId!)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as NewsDesignWithTemplate | null;
+    },
+  });
+}
+
+export function useDefaultDesignTemplate() {
+  return useQuery({
+    queryKey: ["design-template", "default"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("design_templates")
+        .select("*,design_template_layers(*)")
+        .eq("is_active", true)
+        .eq("is_default", true)
+        .single();
+      if (error) throw error;
+      return data as DesignTemplate & {
+        design_template_layers: {
+          id: string;
+          layer_key: string;
+          layer_type: string;
+          z_index: number;
+          config_json: Record<string, unknown>;
+          is_visible: boolean;
+          is_locked: boolean;
+        }[];
+      };
     },
   });
 }
