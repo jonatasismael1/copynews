@@ -4,12 +4,12 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none disabled:opacity-50 active:scale-[.98]",
+  "inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] text-sm font-semibold transition-[color,background-color,border-color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[.98]",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+          "bg-primary text-primary-foreground hover:bg-[var(--primary-hover)]",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         outline: "border border-border bg-background hover:bg-muted",
@@ -18,9 +18,9 @@ const buttonVariants = cva(
       },
       size: {
         default: "h-11 px-4",
-        sm: "h-9 rounded-lg px-3 text-xs",
+        sm: "min-h-9 h-9 rounded-[9px] px-3 text-xs",
         lg: "h-12 px-6",
-        icon: "size-10",
+        icon: "size-11 min-h-11",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

@@ -1,3 +1,62 @@
 @import "tailwindcss";
-@theme{--font-sans:Inter,ui-sans-serif,system-ui,sans-serif;--font-display:"Plus Jakarta Sans",Inter,ui-sans-serif,sans-serif;--color-background:hsl(var(--background));--color-foreground:hsl(var(--foreground));--color-card:hsl(var(--card));--color-card-foreground:hsl(var(--card-foreground));--color-primary:hsl(var(--primary));--color-primary-foreground:hsl(var(--primary-foreground));--color-secondary:hsl(var(--secondary));--color-secondary-foreground:hsl(var(--secondary-foreground));--color-muted:hsl(var(--muted));--color-muted-foreground:hsl(var(--muted-foreground));--color-border:hsl(var(--border));--color-input:hsl(var(--input));--color-destructive:hsl(var(--destructive));--color-sidebar:hsl(var(--sidebar))}
-:root{--background:42 36% 97%;--foreground:218 32% 12%;--card:0 0% 100%;--card-foreground:218 32% 12%;--primary:161 55% 29%;--primary-foreground:0 0% 100%;--secondary:40 22% 91%;--secondary-foreground:218 28% 18%;--muted:40 20% 93%;--muted-foreground:216 10% 43%;--border:38 20% 86%;--input:38 20% 82%;--destructive:0 70% 52%;--sidebar:216 28% 10%}.dark{--background:218 30% 7%;--foreground:40 30% 96%;--card:218 25% 10%;--card-foreground:40 30% 96%;--primary:158 48% 50%;--primary-foreground:218 30% 7%;--secondary:218 18% 17%;--secondary-foreground:40 30% 96%;--muted:218 18% 15%;--muted-foreground:215 13% 65%;--border:218 16% 20%;--input:218 16% 25%;--sidebar:218 32% 5%}*{border-color:hsl(var(--border))}html{font-family:var(--font-sans);background:hsl(var(--background));text-rendering:optimizeLegibility;-webkit-tap-highlight-color:transparent}body{margin:0;min-width:320px;min-height:100dvh;overscroll-behavior-y:none}button,a,input,textarea,select{font:inherit}.font-display{font-family:var(--font-display)}.animate-in{animation:enter .28s ease-out}@keyframes enter{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(max-width:640px){input,textarea,select{font-size:16px!important}button,a{touch-action:manipulation}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+@theme {
+  --font-sans: "Open Sans", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display: Sora, Inter, ui-sans-serif, system-ui, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--text-primary);
+  --color-primary: var(--primary);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--surface-subtle);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--surface-subtle);
+  --color-muted-foreground: var(--text-secondary);
+  --color-border: var(--border);
+  --color-input: var(--border-strong);
+  --color-destructive: var(--danger);
+  --color-sidebar: #101828;
+}
+
+:root {
+  --background: #f7f8f6;
+  --surface: #ffffff;
+  --surface-subtle: #f2f4f1;
+  --text-primary: #101828;
+  --text-secondary: #667085;
+  --text-tertiary: #98a2b3;
+  --primary: #207a5c;
+  --primary-hover: #176448;
+  --primary-subtle: #eaf5f0;
+  --border: #e4e7ec;
+  --border-strong: #d0d5dd;
+  --danger: #d92d20;
+  --danger-subtle: #fef3f2;
+  --warning: #b54708;
+  --warning-subtle: #fffaeb;
+  --info: #175cd3;
+  --info-subtle: #eff8ff;
+  --radius-card: 13px;
+  --radius-control: 11px;
+  --shadow-float: 0 12px 32px rgb(16 24 40 / 10%);
+}
+
+* { border-color: var(--border); }
+html { font-family: var(--font-sans); background: var(--background); color: var(--text-primary); text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent; }
+body { margin: 0; min-width: 320px; min-height: 100dvh; overscroll-behavior-y: none; }
+button, a, input, textarea, select { font: inherit; }
+button, a { transition-duration: 160ms; }
+.font-display { font-family: var(--font-display); }
+.animate-in { animation: enter 180ms ease-out; }
+.page-container { width: 100%; max-width: 1280px; margin-inline: auto; }
+.surface-shadow { box-shadow: var(--shadow-float); }
+
+@keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (max-width: 767px) {
+  input, textarea, select { font-size: 16px !important; }
+  button, a { touch-action: manipulation; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

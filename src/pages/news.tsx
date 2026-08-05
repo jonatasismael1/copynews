@@ -117,11 +117,11 @@ export function NewsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="page-container space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Fluxo editorial</p>
-          <h1 className="mt-1 font-display text-3xl font-bold">Notícias</h1>
+          <h1 className="mt-1 font-display text-[30px] font-bold leading-[1.15] tracking-[-.025em] sm:text-4xl">Notícias</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Gerencie cada etapa da produção.
           </p>
@@ -154,7 +154,7 @@ export function NewsPage() {
           </Button>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_200px_200px_auto]">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
         <div className="relative flex-1">
           <Search
             className="absolute left-3 top-3.5 text-muted-foreground"
@@ -245,9 +245,9 @@ export function NewsPage() {
             return (
               <Card
                 key={item.id}
-                className="max-w-full overflow-hidden transition hover:border-primary/30 hover:shadow-lg"
+                className="max-w-full overflow-hidden transition-colors hover:border-primary/30"
               >
-                  <CardContent className="flex min-w-0 flex-col gap-4 p-4 sm:flex-row sm:items-center">
+                  <CardContent className="flex min-w-0 flex-col gap-3 p-4 sm:flex-row sm:items-center">
                     <Link
                       to={`/noticias/${item.id}`}
                       className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-center"
@@ -266,7 +266,7 @@ export function NewsPage() {
                           <Badge variant="secondary">{item.highlight}</Badge>
                         )}
                       </div>
-                      <h2 className="mt-3 truncate font-display text-base font-semibold">
+                      <h2 className="mt-2 truncate font-display text-base font-semibold">
                         {item.generated_title || "Notícia em processamento"}
                       </h2>
                       <p className="mt-1 truncate text-xs text-muted-foreground">

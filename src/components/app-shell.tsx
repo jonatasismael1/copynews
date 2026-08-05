@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   BarChart3,
   FileText,
@@ -45,25 +45,37 @@ export function AppShell() {
   const visibleItems = items.filter(
     ([path]) => path !== "/usuarios" || profile?.role === "admin",
   );
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = "";
+    };
+  }, [open]);
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-[min(18rem,88vw)] border-r bg-sidebar p-4 transition-transform lg:w-72 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 w-[min(20rem,88vw)] border-r border-white/10 bg-sidebar p-4 text-white shadow-2xl transition-transform duration-200 lg:w-64 lg:translate-x-0 lg:shadow-none",
           isDesignEditor && "hidden",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex h-14 items-center justify-between px-2">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
+            <div className="grid size-9 place-items-center rounded-[10px] bg-primary text-primary-foreground">
               <BarChart3 size={20} />
             </div>
             <div>
               <p className="font-display text-lg font-bold leading-none">
                 Copy News
               </p>
-              <p className="mt-1 text-[10px] uppercase tracking-[.22em] text-muted-foreground">
+              <p className="mt-1 text-[10px] uppercase tracking-[.18em] text-slate-400">
                 Central editorial
               </p>
             </div>
@@ -78,7 +90,7 @@ export function AppShell() {
             <X />
           </Button>
         </div>
-        <nav className="mt-6 space-y-1">
+        <nav className="mt-5 space-y-1">
           {visibleItems.map(([path, label, Icon]) => (
             <NavLink
               key={path}
@@ -87,10 +99,11 @@ export function AppShell() {
               onClick={() => setOpen(false)}
               className={({ isActive }) =>
                 cn(
-                  "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition",
+                  "min-h-11 items-center gap-3 rounded-[10px] px-3 text-sm font-medium transition-colors",
+                  path === "/configuracoes" ? "flex" : "hidden lg:flex",
                   isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    ? "bg-primary/25 text-white"
+                    : "text-slate-300 hover:bg-white/8 hover:text-white",
                 )
               }
             >
@@ -99,7 +112,7 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
-        <div className="absolute inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] rounded-2xl border bg-background/70 p-3">
+        <div className="absolute inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] border-t border-white/10 pt-4">
           <div className="mb-3 flex min-w-0 items-center gap-3">
             <ProfileAvatar
               src={profile?.avatar_url}
@@ -108,7 +121,7 @@ export function AppShell() {
             />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{profile?.name}</p>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-xs text-slate-400">
                 {profile?.email}
               </p>
             </div>
@@ -116,7 +129,7 @@ export function AppShell() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start"
+            className="w-full justify-start text-slate-300 hover:bg-white/8 hover:text-white"
             onClick={signOut}
           >
             <LogOut />
@@ -126,20 +139,20 @@ export function AppShell() {
       </aside>
       {open && (
         <button
-          className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[1px] lg:hidden"
           onClick={() => setOpen(false)}
           aria-label="Fechar menu"
         />
       )}
       <main
         className={cn(
-          "pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:ml-72 lg:pb-0",
+          "pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:ml-64 lg:pb-0",
           isDesignEditor && "pb-0 lg:ml-0",
         )}
       >
         <header
           className={cn(
-            "sticky top-0 z-30 h-16 items-center justify-between border-b bg-background/90 px-3 backdrop-blur-xl sm:px-7",
+            "sticky top-0 z-30 h-14 items-center justify-between border-b bg-card/95 px-2 backdrop-blur-xl sm:px-6",
             isCreatePage || isDesignEditor ? "hidden" : "flex",
           )}
         >
@@ -162,6 +175,9 @@ export function AppShell() {
             </p>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            <Button asChild size="sm" className="hidden lg:inline-flex">
+              <Link to="/criar"><PlusCircle size={16} />Nova notícia</Link>
+            </Button>
             <PwaInstallButton compact />
             <span className="hidden text-sm text-muted-foreground sm:inline">
               Olá, <b className="text-foreground">{profile?.name?.split(" ")[0]}</b>
@@ -169,14 +185,14 @@ export function AppShell() {
             <ProfileAvatar
               src={profile?.avatar_url}
               name={profile?.name}
-              className="size-9"
+              className="size-8"
             />
           </div>
         </header>
         <div
           key={location.pathname}
           className={cn(
-            "animate-in overflow-x-hidden p-3 sm:p-7",
+            "animate-in overflow-x-hidden px-4 py-5 sm:px-6 sm:py-7",
             isDesignEditor && "p-0 sm:p-0",
           )}
         >
@@ -185,7 +201,7 @@ export function AppShell() {
       </main>
       <nav
         className={cn(
-          "fixed inset-x-2 bottom-[calc(.5rem+env(safe-area-inset-bottom))] z-30 flex min-h-16 items-center justify-around rounded-2xl border bg-background/95 px-1 shadow-xl backdrop-blur lg:hidden",
+          "fixed inset-x-0 bottom-0 z-30 flex h-[calc(68px+env(safe-area-inset-bottom))] items-start justify-around border-t bg-card/98 px-1 pt-1 shadow-[0_-4px_16px_rgb(16_24_40/4%)] backdrop-blur lg:hidden",
           isDesignEditor && "hidden",
         )}
       >
@@ -196,12 +212,12 @@ export function AppShell() {
             end={path === "/"}
             className={({ isActive }) =>
               cn(
-                "flex min-h-12 min-w-14 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-semibold",
+                "flex min-h-[60px] min-w-14 flex-col items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-xs font-medium",
                 isActive ? "text-primary" : "text-muted-foreground",
               )
             }
           >
-            <Icon size={19} />
+            <Icon size={22} />
             <span>{mobileLabels[path]}</span>
           </NavLink>
         ))}

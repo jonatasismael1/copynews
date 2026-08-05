@@ -576,9 +576,9 @@ export function NewsDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-3 pb-[calc(11rem+env(safe-area-inset-bottom))] md:space-y-6 md:pb-0">
+    <div className="mx-auto max-w-5xl space-y-3 pb-[calc(10rem+env(safe-area-inset-bottom))] md:space-y-5 md:pb-0">
       <section
-        className="-mx-3 border-b bg-background px-3 py-3 md:hidden"
+        className="-mx-4 border-b bg-background px-4 py-3 md:hidden"
         data-testid="mobile-news-summary"
       >
         <div className="flex items-start gap-2">
@@ -718,7 +718,7 @@ export function NewsDetailPage() {
           </Button>
           {editorReady && canManageRecord && (
             <Button
-              className="bg-gradient-to-r from-[#fb0039] to-[#d20836] text-white"
+              className="bg-[#d20836] text-white hover:bg-[#b9072e]"
               asChild
             >
               <Link to={`/noticias/${data.id}/arte`}>
@@ -1275,7 +1275,7 @@ export function NewsDetailPage() {
         )}
       </ResponsiveSection>
 
-      <div className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 grid grid-cols-3 gap-2 rounded-2xl border bg-background/95 p-2 shadow-xl backdrop-blur md:hidden">
+      <div className="fixed inset-x-0 bottom-[calc(68px+env(safe-area-inset-bottom))] z-40 grid grid-cols-3 gap-2 border-t bg-card/98 p-2 shadow-[0_-4px_16px_rgb(16_24_40/6%)] backdrop-blur md:hidden">
         {hasValidSource ? (
           <Button variant="outline" className="min-w-0 px-2" asChild>
             <a
@@ -1736,7 +1736,7 @@ function ResponsiveSection({
   const contentId = useId();
   return (
     <Card className="overflow-hidden">
-      <div className="flex min-h-14 items-center gap-1 p-2 pl-3 md:min-h-0 md:p-5">
+      <div className="flex min-h-14 items-center gap-1 p-2 pl-3 md:min-h-0 md:p-4">
         <button
           type="button"
           className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 md:hidden"
@@ -1782,7 +1782,7 @@ function ResponsiveSection({
           "md:block",
         )}
       >
-        <CardContent className="p-3 md:p-5">{children}</CardContent>
+        <CardContent className="p-3 md:p-4">{children}</CardContent>
       </div>
     </Card>
   );

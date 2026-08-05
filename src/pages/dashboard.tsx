@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MetricCard, SegmentedControl } from "@/components/ui/patterns";
 import { useAdminDailyResults, useDashboard } from "@/hooks/use-data";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -103,18 +104,18 @@ export function DashboardPage() {
   ] as const;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="page-container space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Pulso editorial</p>
-          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight">
+          <h1 className="mt-1 font-display text-[30px] font-bold leading-[1.15] tracking-[-.025em] sm:text-4xl">
             Visão geral
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Produção e distribuição no fuso America/Maceio.
           </p>
         </div>
-        <Button asChild>
+        <Button asChild className="hidden sm:inline-flex">
           <Link to="/criar">
             <Plus />
             Nova notícia
@@ -122,21 +123,7 @@ export function DashboardPage() {
         </Button>
       </div>
 
-      <div
-        className="flex w-fit rounded-xl border bg-card p-1"
-        aria-label="Filtrar período"
-      >
-        {([1, 7, 30, 90] as Period[]).map((days) => (
-          <Button
-            key={days}
-            size="sm"
-            variant={period === days ? "secondary" : "ghost"}
-            onClick={() => setPeriod(days)}
-          >
-            {days === 1 ? "Hoje" : days === 90 ? "3 meses" : `${days} dias`}
-          </Button>
-        ))}
-      </div>
+      <SegmentedControl value={period} onChange={setPeriod} label="Filtrar período" options={([1, 7, 30, 90] as Period[]).map((days) => ({ value: days, label: days === 1 ? "Hoje" : days === 90 ? "3 meses" : `${days} dias` }))} />
 
       {error && (
         <Card className="border-red-200 bg-red-50">
@@ -146,31 +133,14 @@ export function DashboardPage() {
         </Card>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {isLoading
           ? Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-32" />
+              <Skeleton key={index} className="h-28" />
             ))
-          : cards.map(([label, value, Icon, color, href]) => (
-              <Link key={label} to={href} className="group block rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary">
-                <Card className="h-full transition group-hover:border-primary/40 group-hover:shadow-md">
-                <CardContent className="flex items-center justify-between p-5">
-                  <div>
-                    <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="mt-2 font-display text-3xl font-bold">
-                      {value}
-                    </p>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {periodLabel}
-                    </p>
-                  </div>
-                  <div
-                    className={`grid size-11 place-items-center rounded-xl ${color}`}
-                  >
-                    <Icon size={20} />
-                  </div>
-                </CardContent>
-                </Card>
+          : cards.map(([label, value, Icon, , href]) => (
+              <Link key={label} to={href} className="group block rounded-[var(--radius-card)] focus:outline-none focus:ring-2 focus:ring-primary">
+                <MetricCard label={label} value={value} detail={periodLabel} icon={Icon} />
               </Link>
             ))}
       </div>

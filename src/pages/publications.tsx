@@ -142,12 +142,12 @@ export function PublicationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="page-container space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-primary">Distribuição</p>
           <div className="mt-1 flex items-center justify-between gap-3">
-            <h1 className="font-display text-3xl font-bold">Publicações</h1>
+            <h1 className="font-display text-[30px] font-bold leading-[1.15] tracking-[-.025em] sm:text-4xl">Publicações</h1>
             <Button
               variant="outline"
               className="shrink-0"
@@ -189,7 +189,7 @@ export function PublicationsPage() {
         onSynced={refetch}
       />
       <Card>
-        <CardContent className="space-y-3 p-4">
+        <CardContent className="space-y-3 p-3 sm:p-4">
           <div className="flex flex-wrap gap-2">
             {([
               ["today", "Hoje"],
@@ -226,7 +226,7 @@ export function PublicationsPage() {
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : visiblePublications.length === 0 ? (
           <Card>
-            <CardContent className="py-16 text-center">
+            <CardContent className="py-10 text-center">
               <h2 className="font-display text-lg font-semibold">
                 Nenhuma publicação registrada
               </h2>
@@ -249,7 +249,7 @@ export function PublicationsPage() {
             return (
               <Card key={publication.id} className="max-w-full overflow-hidden">
                 <CardContent className="min-w-0 p-4">
-                  <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-center">
+                      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-center">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap gap-2">
                         <Badge>{publication.platform}</Badge>
