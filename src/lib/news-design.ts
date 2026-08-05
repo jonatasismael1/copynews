@@ -135,7 +135,7 @@ export const DESIGN_TEMPLATES: Record<DesignFormat, DesignTemplateProfile> = {
       fontFamily: "Sora",
     },
     titleBox: { x: 70, y: 904, width: 940, minHeight: 270, maxHeight: 360 },
-    category: { y: 866, height: 58, minWidth: 330, maxWidth: 760, fontSize: 34 },
+    category: { y: 852, height: 72, minWidth: 540, maxWidth: 860, fontSize: 36 },
     overlayStartY: 690,
   },
   square: {
@@ -161,10 +161,14 @@ export const DESIGN_TEMPLATES: Record<DesignFormat, DesignTemplateProfile> = {
       fontFamily: "Sora",
     },
     titleBox: { x: 70, y: 730, width: 940, minHeight: 220, maxHeight: 286 },
-    category: { y: 694, height: 56, minWidth: 320, maxWidth: 740, fontSize: 32 },
+    category: { y: 682, height: 68, minWidth: 520, maxWidth: 820, fontSize: 34 },
     overlayStartY: 520,
   },
 };
+
+export function titleColorForSurface(surface: DesignTemplateProfile["surface"]) {
+  return surface === "box" ? "#050505" : "#ffffff";
+}
 
 export const DEFAULT_DESIGN_CONFIG: DesignConfig = {
   format: "story",

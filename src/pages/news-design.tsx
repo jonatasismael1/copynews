@@ -72,6 +72,7 @@ import {
   significantCrop,
   suggestDesignFormat,
   templateForFormat,
+  titleColorForSurface,
   validateDesignMedia,
   type DesignConfig,
   type DesignExportFormat,
@@ -348,7 +349,7 @@ async function renderCarouselSlide(
       context.fillStyle = stripe;
       context.fillRect(profile.titleBox.x + 20, titleBottom - 2, profile.titleBox.width - 40, 15);
     }
-    context.fillStyle = profile.surface === "box" ? "#050505" : "#ffffff";
+    context.fillStyle = titleColorForSurface(profile.surface);
     context.textAlign = titleConfig.align;
     context.textBaseline = "middle";
     const contentX = titleConfig.x + titleConfig.paddingX;
@@ -1574,17 +1575,6 @@ export function NewsDesignPage() {
     }));
   }
 
-  function nudgeMedia(offsetX: number, offsetY: number) {
-    setConfig((current) => ({
-      ...current,
-      media: {
-        ...current.media,
-        offsetX: current.media.offsetX + offsetX,
-        offsetY: current.media.offsetY + offsetY,
-      },
-    }));
-  }
-
   async function toggleVideoPlayback() {
     if (!(mediaElement instanceof HTMLVideoElement)) return;
     try {
@@ -1850,11 +1840,9 @@ export function NewsDesignPage() {
                         draggable={canEdit}
                         onClick={() => {
                           editLayer("media");
-                          if (isVideo) void toggleVideoPlayback();
                         }}
                         onTap={() => {
                           editLayer("media");
-                          if (isVideo) void toggleVideoPlayback();
                         }}
                         dragBoundFunc={(position) => {
                           const clamped = clampMediaPosition(
@@ -1916,9 +1904,25 @@ export function NewsDesignPage() {
                           y={Math.round(canvasHeight * 0.057)}
                           width={90}
                           height={Math.min(610, Math.round(canvasHeight * 0.45))}
-                          listening={false}
+                          listening={canEdit}
+                          onClick={() => openPanel("marca")}
+                          onTap={() => openPanel("marca")}
                         />
                       </>
+                    )}
+                    {selectedLayer === "media" && mediaElement && (
+                      <Rect
+                        x={10}
+                        y={10}
+                        width={canvasWidth - 20}
+                        height={canvasHeight - 20}
+                        stroke="#ffffff"
+                        strokeWidth={5}
+                        dash={[16, 12]}
+                        cornerRadius={10}
+                        opacity={0.9}
+                        listening={false}
+                      />
                     )}
                     {activeShowTitle && templateProfile.surface === "box" && <Rect
                       x={titleBoxX + 20}
@@ -1971,7 +1975,7 @@ export function NewsDesignPage() {
                       lineHeight={config.title.lineHeight}
                       align={config.title.align}
                       verticalAlign="middle"
-                      fill="#050505"
+                      fill={titleColorForSurface(templateProfile.surface)}
                       wrap="word"
                       onClick={() => editLayer("title")}
                       onTap={() => editLayer("title")}
@@ -2115,15 +2119,13 @@ export function NewsDesignPage() {
                 </div>
               </div>
             )}
-            {selectedLayer && (
+            {selectedLayer && !panelOpen && (
               <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-xl border border-white/15 bg-black/80 p-1 shadow-xl backdrop-blur md:hidden">
                 <span className="px-2 text-[11px] font-bold capitalize">{selectedLayer === "title" ? "Título" : selectedLayer === "category" ? "Destaque" : "Mídia"}</span>
                 {selectedLayer === "media" ? (
-                  <>
-                    <button type="button" className="grid size-11 place-items-center rounded-lg hover:bg-white/10" onClick={() => zoomBy(-0.1)} aria-label="Reduzir zoom"><ZoomOut size={18} /></button>
-                    <button type="button" className="grid size-11 place-items-center rounded-lg hover:bg-white/10" onClick={() => zoomBy(0.1)} aria-label="Aumentar zoom"><ZoomIn size={18} /></button>
-                    <button type="button" className="grid size-11 place-items-center rounded-lg hover:bg-white/10" onClick={centerMedia} aria-label="Centralizar mídia"><Move size={18} /></button>
-                  </>
+                  <span className="px-2 text-[11px] text-white/65">
+                    Arraste para posicionar · pinça para ampliar
+                  </span>
                 ) : (
                   <button
                     type="button"
@@ -2135,6 +2137,15 @@ export function NewsDesignPage() {
                 )}
                 <button type="button" className="grid size-11 place-items-center rounded-lg hover:bg-white/10" onClick={() => setSelectedLayer(null)} aria-label="Fechar seleção"><X size={17} /></button>
               </div>
+            )}
+            {!panelOpen && !selectedLayer && !activeMediaError && (
+              <button
+                type="button"
+                className="absolute inset-x-3 bottom-3 z-10 mx-auto min-h-11 max-w-sm rounded-full border border-white/15 bg-black/70 px-4 text-xs font-semibold text-white/80 shadow-xl backdrop-blur md:hidden"
+                onClick={() => editLayer("media")}
+              >
+                Toque para editar · arraste a mídia
+              </button>
             )}
             {(sourceLoading || mediaLoading || !brandImage) && (
               <div
@@ -2194,30 +2205,36 @@ export function NewsDesignPage() {
         </section>
 
         <aside
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[62dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[58dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]"
           data-testid="design-controls"
         >
           <div
-            className="pointer-events-auto order-2 grid grid-cols-6 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:gap-1 md:border-b md:border-t-0 md:p-2"
+            className="pointer-events-auto order-2 grid grid-cols-4 border-t border-white/10 bg-[#151515]/98 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:order-1 md:grid-cols-6 md:gap-1 md:border-b md:border-t-0 md:p-2"
             data-testid="design-toolbar"
           >
-            {tabs.map((item) => (
-              <button
+            {tabs.map((item) => {
+              const active = item.id === "titulo"
+                ? ["titulo", "categoria", "marca"].includes(tab)
+                : tab === item.id;
+              return <button
                 key={item.id}
                 type="button"
                 className={cn(
                   "relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] font-bold transition md:min-h-11 md:px-0 md:text-[11px]",
-                  tab === item.id
+                  (item.id === "categoria" || item.id === "marca") && "max-md:hidden",
+                  active
                     ? "bg-transparent text-[#fb0039] after:absolute after:inset-x-3 after:top-0 after:h-0.5 after:rounded-full after:bg-[#fb0039] md:bg-white md:text-black md:after:hidden"
                     : "text-white/65 hover:bg-white/10 hover:text-white",
                 )}
                 onClick={() => openPanel(item.id)}
-                aria-expanded={panelOpen && tab === item.id}
+                aria-expanded={panelOpen && active}
               >
                 <item.icon className="md:hidden" size={18} />
-                {item.label}
+                {item.id === "titulo" ? (
+                  <><span className="md:hidden">Textos</span><span className="hidden md:inline">Título</span></>
+                ) : item.label}
               </button>
-            ))}
+            })}
           </div>
 
           <div
@@ -2250,6 +2267,27 @@ export function NewsDesignPage() {
                 <X size={20} />
               </button>
             </div>
+            {["titulo", "categoria", "marca"].includes(tab) && (
+              <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl bg-black/35 p-1 md:hidden">
+                {([
+                  ["titulo", "Título"],
+                  ["categoria", "Destaque"],
+                  ["marca", "Marca"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={cn(
+                      "min-h-11 rounded-lg px-2 text-xs font-bold",
+                      tab === value ? "bg-white text-black" : "text-white/65",
+                    )}
+                    onClick={() => setTab(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {tab === "modelo" && (
               <ControlSection
                 title="Formato e modelo"
@@ -2340,8 +2378,20 @@ export function NewsDesignPage() {
             {tab === "midia" && (
               <ControlSection
                 title="Mídia"
-                description="Arraste no preview ou use os controles. No celular, faça o gesto de pinça para ampliar."
+                description="Edite como no celular: arraste a mídia diretamente e use dois dedos para ampliar."
               >
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-[#fb0039]/25 bg-[#fb0039]/10 p-3 text-xs">
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <Move className="mb-2 text-[#fb0039]" size={19} />
+                    <b className="block">Arraste</b>
+                    <span className="mt-1 block text-white/55">Reposicione direto na arte</span>
+                  </div>
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <ZoomIn className="mb-2 text-[#fb0039]" size={19} />
+                    <b className="block">Faça pinça</b>
+                    <span className="mt-1 block text-white/55">Aproxime ou afaste a mídia</span>
+                  </div>
+                </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
                   <p className="text-xs font-bold text-white/75">
                     Pré-visualização
@@ -2536,6 +2586,13 @@ export function NewsDesignPage() {
                     />
                   </div>
                 </div>
+                <details className="group rounded-2xl border border-white/10 bg-white/[0.025] p-3">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-bold">
+                    Ajustes avançados
+                    <span className="text-xs font-normal text-white/45 group-open:hidden">Tamanho, espaço e posição</span>
+                    <span className="hidden text-xs font-normal text-white/45 group-open:inline">Ocultar</span>
+                  </summary>
+                  <div className="mt-3 space-y-5 border-t border-white/10 pt-4">
                 <RangeControl
                   label="Zoom"
                   value={config.media.zoom}
@@ -2551,43 +2608,6 @@ export function NewsDesignPage() {
                   }
                   disabled={!canEdit}
                 />
-                <div>
-                  <p className="mb-2 text-xs font-bold text-white/65">
-                    Posição
-                  </p>
-                  <div className="mx-auto grid w-40 grid-cols-3 gap-1">
-                    {[
-                      [-28, -28, "↖"],
-                      [0, -28, "↑"],
-                      [28, -28, "↗"],
-                      [-28, 0, "←"],
-                      [0, 0, "●"],
-                      [28, 0, "→"],
-                      [-28, 28, "↙"],
-                      [0, 28, "↓"],
-                      [28, 28, "↘"],
-                    ].map(([x, y, label]) => (
-                      <button
-                        key={String(label)}
-                        type="button"
-                        className="grid size-11 place-items-center rounded-lg border border-white/10 text-sm hover:bg-white/10"
-                        onClick={() =>
-                          Number(x) === 0 && Number(y) === 0
-                            ? centerMedia()
-                            : nudgeMedia(Number(x), Number(y))
-                        }
-                        disabled={!canEdit}
-                        aria-label={
-                          label === "●"
-                            ? "Centralizar mídia"
-                            : `Mover mídia ${label}`
-                        }
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 <Button
                   variant="ghost"
                   className="w-full text-white hover:bg-white/10 hover:text-white"
@@ -2602,6 +2622,8 @@ export function NewsDesignPage() {
                   <RotateCcw />
                   Restaurar enquadramento
                 </Button>
+                  </div>
+                </details>
               </ControlSection>
             )}
 
@@ -2674,6 +2696,13 @@ export function NewsDesignPage() {
                     linhas e não será cortado silenciosamente.
                   </div>
                 )}
+                <details className="group rounded-2xl border border-white/10 bg-white/[0.025] p-3">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-bold">
+                    Ajustes avançados
+                    <span className="text-xs font-normal text-white/45 group-open:hidden">Tamanho, espaço e posição</span>
+                    <span className="hidden text-xs font-normal text-white/45 group-open:inline">Ocultar</span>
+                  </summary>
+                  <div className="mt-3 space-y-5 border-t border-white/10 pt-4">
                 <RangeControl
                   label="Tamanho máximo"
                   value={config.title.fontSize}
@@ -2756,8 +2785,8 @@ export function NewsDesignPage() {
                 <RangeControl
                   label="Posição vertical"
                   value={config.title.y}
-                  min={1250}
-                  max={1500}
+                  min={templateProfile.title.y - 140}
+                  max={templateProfile.title.y + 140}
                   step={5}
                   display={`${config.title.y}px`}
                   onChange={(y) =>
@@ -2768,6 +2797,8 @@ export function NewsDesignPage() {
                   }
                   disabled={!canEdit}
                 />
+                  </div>
+                </details>
                 <div>
                   <p className="mb-2 text-xs font-semibold text-white/65">
                     Alinhamento

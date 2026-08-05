@@ -12,6 +12,7 @@ import {
   mergeDesignConfig,
   significantCrop,
   suggestDesignFormat,
+  titleColorForSurface,
   validateDesignImage,
   validateDesignMedia,
 } from "./news-design";
@@ -172,7 +173,7 @@ describe("template de arte", () => {
       {
         "portrait": {
           "canvas": "1080x1350",
-          "categoryY": 866,
+          "categoryY": 852,
           "surface": "gradient",
           "title": {
             "fontFamily": "Sora",
@@ -187,7 +188,7 @@ describe("template de arte", () => {
         },
         "square": {
           "canvas": "1080x1080",
-          "categoryY": 694,
+          "categoryY": 682,
           "surface": "gradient",
           "title": {
             "fontFamily": "Sora",
@@ -217,5 +218,18 @@ describe("template de arte", () => {
         },
       }
     `);
+  });
+
+  it("usa título branco e tarja ampla nos formatos de publicação", () => {
+    expect(titleColorForSurface(DESIGN_TEMPLATES.portrait.surface)).toBe("#ffffff");
+    expect(titleColorForSurface(DESIGN_TEMPLATES.square.surface)).toBe("#ffffff");
+    expect(DESIGN_TEMPLATES.portrait.category).toMatchObject({
+      minWidth: 540,
+      height: 72,
+    });
+    expect(DESIGN_TEMPLATES.square.category).toMatchObject({
+      minWidth: 520,
+      height: 68,
+    });
   });
 });
