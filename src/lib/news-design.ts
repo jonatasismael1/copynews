@@ -1,7 +1,8 @@
 export const DESIGN_WIDTH = 1080;
 export const DESIGN_HEIGHT = 1920;
-export const TITLE_FONT_MIN = 42;
+export const TITLE_FONT_MIN = 24;
 export const TITLE_FONT_MAX = 72;
+export const TITLE_FONT_INITIAL = 40;
 export const TITLE_MAX_LINES = 3;
 
 export type DesignExportFormat = "png" | "jpg";
@@ -19,6 +20,8 @@ export type MediaTransform = {
   fit: MediaFit;
   currentTime: number;
   muted: boolean;
+  trimStart: number;
+  trimEnd: number | null;
 };
 
 export type TitleLayout = {
@@ -83,6 +86,8 @@ const baseMedia: MediaTransform = {
   fit: "cover",
   currentTime: 0,
   muted: false,
+  trimStart: 0,
+  trimEnd: null,
 };
 
 export const DESIGN_TEMPLATES: Record<DesignFormat, DesignTemplateProfile> = {
@@ -100,7 +105,7 @@ export const DESIGN_TEMPLATES: Record<DesignFormat, DesignTemplateProfile> = {
       y: 1390,
       width: 996,
       height: 250,
-      fontSize: 64,
+      fontSize: TITLE_FONT_INITIAL,
       lineHeight: 1.04,
       align: "center",
       paddingX: 26,
@@ -126,7 +131,7 @@ export const DESIGN_TEMPLATES: Record<DesignFormat, DesignTemplateProfile> = {
       y: 934,
       width: 940,
       height: 300,
-      fontSize: 58,
+      fontSize: TITLE_FONT_INITIAL,
       lineHeight: 1.08,
       align: "center",
       paddingX: 12,
@@ -152,7 +157,7 @@ export const DESIGN_TEMPLATES: Record<DesignFormat, DesignTemplateProfile> = {
       y: 754,
       width: 940,
       height: 236,
-      fontSize: 52,
+      fontSize: TITLE_FONT_INITIAL,
       lineHeight: 1.06,
       align: "center",
       paddingX: 12,
@@ -361,6 +366,14 @@ export function mergeDesignConfig(value: unknown): DesignConfig {
   const format = input.format && DESIGN_TEMPLATES[input.format] ? input.format : "story";
   const profile = templateForFormat(format);
   const titleInput: Partial<TitleLayout> = input.title || {};
+  const mediaInput: Partial<MediaTransform> = input.media || {};
+  const trimStart = Number.isFinite(Number(mediaInput.trimStart))
+    ? Math.max(0, Number(mediaInput.trimStart))
+    : 0;
+  const trimEndValue = Number(mediaInput.trimEnd);
+  const trimEnd = Number.isFinite(trimEndValue) && trimEndValue > trimStart
+    ? trimEndValue
+    : null;
   const legacyStoryTitle =
     format === "story" &&
     titleInput.paddingX == null &&
@@ -369,7 +382,7 @@ export function mergeDesignConfig(value: unknown): DesignConfig {
     ...DEFAULT_DESIGN_CONFIG,
     ...input,
     format,
-    media: { ...baseMedia, ...(input.media || {}) },
+    media: { ...baseMedia, ...mediaInput, trimStart, trimEnd },
     title: {
       ...profile.title,
       ...titleInput,
@@ -381,7 +394,12 @@ export function mergeDesignConfig(value: unknown): DesignConfig {
       maxLines: Number(titleInput.maxLines ?? profile.title.maxLines),
       fontFamily: safeFont(titleInput.fontFamily, profile.title.fontFamily),
     },
-    slides: Array.isArray(input.slides) ? input.slides : [],
+    slides: Array.isArray(input.slides)
+      ? input.slides.map((slide) => ({
+          ...slide,
+          media: { ...baseMedia, ...(slide.media || {}) },
+        }))
+      : [],
     activeSlideId: typeof input.activeSlideId === "string" ? input.activeSlideId : null,
     exportedCarouselPaths: Array.isArray(input.exportedCarouselPaths)
       ? input.exportedCarouselPaths.filter((path): path is string => typeof path === "string")

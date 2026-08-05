@@ -43,11 +43,25 @@ export function calculateMediaFrame(
   return { fit, width, height, x, y };
 }
 
-export function buildVideoRenderArgs(source, overlay, output, frame, dimensions = outputDimensions()) {
+export function buildVideoRenderArgs(
+  source,
+  overlay,
+  output,
+  frame,
+  dimensions = outputDimensions(),
+  trim = {},
+) {
   const x = Math.round(frame.x);
   const y = Math.round(frame.y);
+  const trimStart = Math.max(0, Number(trim.trimStart) || 0);
+  const requestedEnd = Number(trim.trimEnd);
+  const trimDuration = Number.isFinite(requestedEnd) && requestedEnd > trimStart
+    ? requestedEnd - trimStart
+    : null;
   return [
     "-y",
+    ...(trimStart > 0 ? ["-ss", trimStart.toFixed(3)] : []),
+    ...(trimDuration ? ["-t", trimDuration.toFixed(3)] : []),
     "-i",
     source,
     "-loop",

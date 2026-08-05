@@ -939,7 +939,14 @@ async function processDesignRender(design) {
       .eq("status", "rendering");
     await run(
       "ffmpeg",
-      buildVideoRenderArgs(source, overlay, output, frame, outputSize),
+      buildVideoRenderArgs(
+        source,
+        overlay,
+        output,
+        frame,
+        outputSize,
+        design.config_json?.media,
+      ),
     );
     await db
       .from("news_designs")

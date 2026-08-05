@@ -59,3 +59,20 @@ test("renderização respeita as dimensões próprias de cada formato", () => {
   );
   assert.ok(args.some((value) => value.includes("s=1080x1080")));
 });
+
+test("renderiza somente o intervalo escolhido no editor", () => {
+  const args = buildVideoRenderArgs(
+    "source.mp4",
+    "overlay.png",
+    "output.mp4",
+    calculateMediaFrame(1080, 1920),
+    outputDimensions("story"),
+    { trimStart: 4.25, trimEnd: 18.75 },
+  );
+  assert.deepEqual(args.slice(1, args.indexOf("-i")), [
+    "-ss",
+    "4.250",
+    "-t",
+    "14.500",
+  ]);
+});

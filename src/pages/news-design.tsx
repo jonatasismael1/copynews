@@ -26,7 +26,9 @@ import {
   Play,
   RotateCcw,
   Save,
+  Scissors,
   SkipBack,
+  SkipForward,
   TriangleAlert,
   Volume2,
   VolumeX,
@@ -220,9 +222,6 @@ function useLoadedMedia(
         if (!video) return;
         if (video.paused) await video.play();
         else video.pause();
-      },
-      restart: () => {
-        if (videoRef.current) videoRef.current.currentTime = 0;
       },
       seek: (time: number) => {
         if (videoRef.current) videoRef.current.currentTime = time;
@@ -533,6 +532,18 @@ export function NewsDesignPage() {
     canvasWidth,
     canvasHeight,
   );
+  const videoTrimStart = Math.min(
+    Math.max(0, config.media.trimStart || 0),
+    Math.max(0, videoDuration - 0.1),
+  );
+  const videoTrimEnd = Math.max(
+    videoTrimStart + 0.1,
+    Math.min(
+      videoDuration || videoTrimStart + 0.1,
+      config.media.trimEnd == null ? videoDuration : config.media.trimEnd,
+    ),
+  );
+  const videoTrimDuration = Math.max(0, videoTrimEnd - videoTrimStart);
 
   useEffect(() => {
     let cancelled = false;
@@ -625,7 +636,13 @@ export function NewsDesignPage() {
       animation.stop();
       draw();
     };
-    const handleTime = () => setVideoCurrentTime(video.currentTime);
+    const handleTime = () => {
+      if (video.currentTime >= videoTrimEnd - 0.02 && !video.paused) {
+        video.pause();
+        video.currentTime = videoTrimStart;
+      }
+      setVideoCurrentTime(video.currentTime);
+    };
     const handleDuration = () => setVideoDuration(video.duration || 0);
     video.addEventListener("play", handlePlay);
     video.addEventListener("pause", handlePause);
@@ -642,7 +659,7 @@ export function NewsDesignPage() {
       video.removeEventListener("durationchange", handleDuration);
       video.removeEventListener("seeked", draw);
     };
-  }, [mediaElement]);
+  }, [mediaElement, videoTrimEnd, videoTrimStart]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -1578,6 +1595,13 @@ export function NewsDesignPage() {
   async function toggleVideoPlayback() {
     if (!(mediaElement instanceof HTMLVideoElement)) return;
     try {
+      if (
+        mediaElement.currentTime < videoTrimStart ||
+        mediaElement.currentTime >= videoTrimEnd - 0.02
+      ) {
+        videoControls.seek(videoTrimStart);
+        setVideoCurrentTime(videoTrimStart);
+      }
       await videoControls.togglePlayback();
     } catch (error) {
       console.error("Falha ao reproduzir vídeo no editor", error);
@@ -1585,9 +1609,30 @@ export function NewsDesignPage() {
     }
   }
 
-  function restartVideo() {
-    videoControls.restart();
+  function seekVideoBy(seconds: number) {
+    const time = Math.max(
+      videoTrimStart,
+      Math.min(videoTrimEnd, videoCurrentTime + seconds),
+    );
+    videoControls.seek(time);
+    setVideoCurrentTime(time);
     mediaLayerRef.current?.batchDraw();
+  }
+
+  function updateVideoTrim(edge: "start" | "end", value: number) {
+    const next = edge === "start"
+      ? Math.min(value, videoTrimEnd - 0.1)
+      : Math.max(value, videoTrimStart + 0.1);
+    setConfig((current) => ({
+      ...current,
+      media: {
+        ...current.media,
+        trimStart: edge === "start" ? next : current.media.trimStart,
+        trimEnd: edge === "end" ? next : current.media.trimEnd,
+      },
+    }));
+    videoControls.seek(next);
+    setVideoCurrentTime(next);
   }
 
   function toggleVideoAudio() {
@@ -1797,7 +1842,7 @@ export function NewsDesignPage() {
             className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center"
           >
             <div
-              className="touch-none overflow-hidden bg-black shadow-2xl shadow-black/60"
+              className="relative touch-none overflow-hidden bg-black shadow-2xl shadow-black/60"
               style={{
                 width: canvasWidth * previewScale,
                 height: canvasHeight * previewScale,
@@ -1910,20 +1955,6 @@ export function NewsDesignPage() {
                         />
                       </>
                     )}
-                    {selectedLayer === "media" && mediaElement && (
-                      <Rect
-                        x={10}
-                        y={10}
-                        width={canvasWidth - 20}
-                        height={canvasHeight - 20}
-                        stroke="#ffffff"
-                        strokeWidth={5}
-                        dash={[16, 12]}
-                        cornerRadius={10}
-                        opacity={0.9}
-                        listening={false}
-                      />
-                    )}
                     {activeShowTitle && templateProfile.surface === "box" && <Rect
                       x={titleBoxX + 20}
                       y={titleBottom - 2}
@@ -1950,19 +1981,6 @@ export function NewsDesignPage() {
                       onClick={() => editLayer("title")}
                       onTap={() => editLayer("title")}
                     />}
-                    {activeShowTitle && selectedLayer === "title" && (
-                      <Rect
-                        x={titleBoxX - 5}
-                        y={titleBoxY - 5}
-                        width={titleBoxWidth + 10}
-                        height={titleBoxHeight + 10}
-                        stroke="#8b5cf6"
-                        strokeWidth={4}
-                        dash={[12, 8]}
-                        cornerRadius={8}
-                        listening={false}
-                      />
-                    )}
                     {activeShowTitle && <KonvaText
                       x={titleTextX}
                       y={titleTextY}
@@ -1987,18 +2005,6 @@ export function NewsDesignPage() {
                         onTap={() => editLayer("category")}
                         onDblClick={() => editLayer("category")}
                       >
-                        {selectedLayer === "category" && (
-                          <Rect
-                            x={categoryX - 6}
-                            y={categoryY - 6}
-                            width={categoryWidth + 12}
-                            height={templateProfile.category.height + 12}
-                            stroke="#8b5cf6"
-                            strokeWidth={4}
-                            dash={[12, 8]}
-                            cornerRadius={templateProfile.category.height / 2 + 6}
-                          />
-                        )}
                         <Rect
                           x={categoryX}
                           y={categoryY}
@@ -2047,6 +2053,65 @@ export function NewsDesignPage() {
                     )}
                   </Layer>
               </Stage>
+              {isVideo && mediaElement instanceof HTMLVideoElement && !activeMediaError && (
+                <div
+                  className="absolute inset-x-2 bottom-2 z-20 rounded-2xl bg-black/75 p-2 text-white shadow-xl backdrop-blur"
+                  data-testid="video-player-overlay"
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <input
+                    type="range"
+                    className="h-5 w-full accent-[#fb0039]"
+                    min={videoTrimStart}
+                    max={videoTrimEnd}
+                    step={0.05}
+                    value={Math.max(videoTrimStart, Math.min(videoCurrentTime, videoTrimEnd))}
+                    onChange={(event) => {
+                      const time = Number(event.target.value);
+                      videoControls.seek(time);
+                      setVideoCurrentTime(time);
+                    }}
+                    aria-label="Posição do vídeo"
+                  />
+                  <div className="flex items-center justify-between gap-1">
+                    <button
+                      type="button"
+                      className="grid size-10 place-items-center rounded-full hover:bg-white/15"
+                      onClick={() => seekVideoBy(-5)}
+                      aria-label="Voltar 5 segundos"
+                    >
+                      <span className="relative"><SkipBack size={19} /><small className="absolute inset-0 grid place-items-center text-[7px] font-black">5</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      className="grid size-11 place-items-center rounded-full bg-white text-black"
+                      onClick={() => void toggleVideoPlayback()}
+                      aria-label={videoPlaying ? "Pausar vídeo" : "Reproduzir vídeo"}
+                    >
+                      {videoPlaying ? <Pause size={20} /> : <Play className="translate-x-px" size={20} />}
+                    </button>
+                    <button
+                      type="button"
+                      className="grid size-10 place-items-center rounded-full hover:bg-white/15"
+                      onClick={() => seekVideoBy(5)}
+                      aria-label="Adiantar 5 segundos"
+                    >
+                      <span className="relative"><SkipForward size={19} /><small className="absolute inset-0 grid place-items-center text-[7px] font-black">5</small></span>
+                    </button>
+                    <span className="min-w-20 flex-1 px-1 text-center text-[10px] tabular-nums text-white/70">
+                      {formatMediaTime(videoCurrentTime)} / {formatMediaTime(videoTrimEnd)}
+                    </span>
+                    <button
+                      type="button"
+                      className="grid size-10 place-items-center rounded-full hover:bg-white/15"
+                      onClick={toggleVideoAudio}
+                      aria-label={config.media.muted ? "Ativar áudio" : "Desativar áudio"}
+                    >
+                      {config.media.muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             {config.slides.length > 1 && (
               <div
@@ -2118,34 +2183,6 @@ export function NewsDesignPage() {
                   </button>
                 </div>
               </div>
-            )}
-            {selectedLayer && !panelOpen && (
-              <div className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-xl border border-white/15 bg-black/80 p-1 shadow-xl backdrop-blur md:hidden">
-                <span className="px-2 text-[11px] font-bold capitalize">{selectedLayer === "title" ? "Título" : selectedLayer === "category" ? "Destaque" : "Mídia"}</span>
-                {selectedLayer === "media" ? (
-                  <span className="px-2 text-[11px] text-white/65">
-                    Arraste para posicionar · pinça para ampliar
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="min-h-11 rounded-lg px-3 text-xs font-bold hover:bg-white/10"
-                    onClick={() => editLayer(selectedLayer)}
-                  >
-                    Editar
-                  </button>
-                )}
-                <button type="button" className="grid size-11 place-items-center rounded-lg hover:bg-white/10" onClick={() => setSelectedLayer(null)} aria-label="Fechar seleção"><X size={17} /></button>
-              </div>
-            )}
-            {!panelOpen && !selectedLayer && !activeMediaError && (
-              <button
-                type="button"
-                className="absolute inset-x-3 bottom-3 z-10 mx-auto min-h-11 max-w-sm rounded-full border border-white/15 bg-black/70 px-4 text-xs font-semibold text-white/80 shadow-xl backdrop-blur md:hidden"
-                onClick={() => editLayer("media")}
-              >
-                Toque para editar · arraste a mídia
-              </button>
             )}
             {(sourceLoading || mediaLoading || !brandImage) && (
               <div
@@ -2378,20 +2415,8 @@ export function NewsDesignPage() {
             {tab === "midia" && (
               <ControlSection
                 title="Mídia"
-                description="Edite como no celular: arraste a mídia diretamente e use dois dedos para ampliar."
+                description="Enquadramento, corte e reprodução do arquivo."
               >
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-[#fb0039]/25 bg-[#fb0039]/10 p-3 text-xs">
-                  <div className="rounded-xl bg-black/20 p-3">
-                    <Move className="mb-2 text-[#fb0039]" size={19} />
-                    <b className="block">Arraste</b>
-                    <span className="mt-1 block text-white/55">Reposicione direto na arte</span>
-                  </div>
-                  <div className="rounded-xl bg-black/20 p-3">
-                    <ZoomIn className="mb-2 text-[#fb0039]" size={19} />
-                    <b className="block">Faça pinça</b>
-                    <span className="mt-1 block text-white/55">Aproxime ou afaste a mídia</span>
-                  </div>
-                </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
                   <p className="text-xs font-bold text-white/75">
                     Pré-visualização
@@ -2476,59 +2501,50 @@ export function NewsDesignPage() {
                     </Button>
                   </div>
                 )}
-                {isVideo && mediaElement instanceof HTMLVideoElement && (
+                {isVideo && mediaElement instanceof HTMLVideoElement && videoDuration > 0 && (
                   <div className="space-y-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-                    <p className="text-xs font-bold text-white/75">
-                      Controles do vídeo
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="grid size-11 shrink-0 place-items-center rounded-xl bg-white text-black"
-                        onClick={() => void toggleVideoPlayback()}
-                        aria-label={videoPlaying ? "Pausar vídeo" : "Reproduzir vídeo"}
-                      >
-                        {videoPlaying ? <Pause size={19} /> : <Play size={19} />}
-                      </button>
-                      <button
-                        type="button"
-                        className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/15"
-                        onClick={restartVideo}
-                        aria-label="Voltar vídeo ao início"
-                      >
-                        <SkipBack size={18} />
-                      </button>
-                      <input
-                        type="range"
-                        className="h-11 min-w-0 flex-1 accent-[#fb0039]"
-                        min={0}
-                        max={videoDuration || 0}
-                        step={0.05}
-                        value={Math.min(videoCurrentTime, videoDuration || 0)}
-                        onChange={(event) => {
-                          const time = Number(event.target.value);
-                          videoControls.seek(time);
-                          setVideoCurrentTime(time);
-                        }}
-                        aria-label="Posição do vídeo"
-                      />
-                      <button
-                        type="button"
-                        className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/15"
-                        onClick={toggleVideoAudio}
-                        aria-label={config.media.muted ? "Ativar áudio" : "Desativar áudio"}
-                      >
-                        {config.media.muted ? (
-                          <VolumeX size={18} />
-                        ) : (
-                          <Volume2 size={18} />
-                        )}
-                      </button>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="flex items-center gap-2 text-sm font-bold text-white/85">
+                        <Scissors size={17} className="text-[#fb0039]" /> Cortar duração
+                      </p>
+                      <span className="text-xs tabular-nums text-white/55">
+                        {formatMediaTime(videoTrimDuration)} selecionados
+                      </span>
                     </div>
-                    <p className="text-right text-[11px] text-white/50">
-                      {formatMediaTime(videoCurrentTime)} /{" "}
-                      {formatMediaTime(videoDuration)}
-                    </p>
+                    <RangeControl
+                      label="Começa em"
+                      value={videoTrimStart}
+                      min={0}
+                      max={Math.max(0.1, videoTrimEnd - 0.1)}
+                      step={0.1}
+                      display={formatMediaTime(videoTrimStart)}
+                      onChange={(value) => updateVideoTrim("start", value)}
+                      disabled={!canEdit}
+                    />
+                    <RangeControl
+                      label="Termina em"
+                      value={videoTrimEnd}
+                      min={Math.min(videoDuration, videoTrimStart + 0.1)}
+                      max={videoDuration}
+                      step={0.1}
+                      display={formatMediaTime(videoTrimEnd)}
+                      onChange={(value) => updateVideoTrim("end", value)}
+                      disabled={!canEdit}
+                    />
+                    <Button
+                      variant="ghost"
+                      className="w-full text-white/75 hover:bg-white/10 hover:text-white"
+                      onClick={() => {
+                        setConfig((current) => ({
+                          ...current,
+                          media: { ...current.media, trimStart: 0, trimEnd: null },
+                        }));
+                        videoControls.seek(0);
+                        setVideoCurrentTime(0);
+                      }}
+                    >
+                      <RotateCcw /> Usar vídeo completo
+                    </Button>
                     <Button
                       variant="outline"
                       className="w-full border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
@@ -2696,6 +2712,26 @@ export function NewsDesignPage() {
                     linhas e não será cortado silenciosamente.
                   </div>
                 )}
+                <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                  <RangeControl
+                    label="Tamanho do título"
+                    value={config.title.fontSize}
+                    min={TITLE_FONT_MIN}
+                    max={TITLE_FONT_MAX}
+                    step={1}
+                    display={`${config.title.fontSize}px`}
+                    onChange={(fontSize) =>
+                      setConfig((current) => ({
+                        ...current,
+                        title: { ...current.title, fontSize },
+                      }))
+                    }
+                    disabled={!canEdit}
+                  />
+                  <p className="text-[11px] leading-relaxed text-white/45">
+                    Começa em 40px e reduz automaticamente quando o título precisa caber na área segura.
+                  </p>
+                </div>
                 <details className="group rounded-2xl border border-white/10 bg-white/[0.025] p-3">
                   <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between text-sm font-bold">
                     Ajustes avançados
@@ -2703,21 +2739,6 @@ export function NewsDesignPage() {
                     <span className="hidden text-xs font-normal text-white/45 group-open:inline">Ocultar</span>
                   </summary>
                   <div className="mt-3 space-y-5 border-t border-white/10 pt-4">
-                <RangeControl
-                  label="Tamanho máximo"
-                  value={config.title.fontSize}
-                  min={TITLE_FONT_MIN}
-                  max={TITLE_FONT_MAX}
-                  step={1}
-                  display={`${config.title.fontSize}px`}
-                  onChange={(fontSize) =>
-                    setConfig((current) => ({
-                      ...current,
-                      title: { ...current.title, fontSize },
-                    }))
-                  }
-                  disabled={!canEdit}
-                />
                 <RangeControl
                   label="Espaçamento entre linhas"
                   value={config.title.lineHeight}

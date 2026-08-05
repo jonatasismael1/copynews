@@ -80,11 +80,20 @@ describe("template de arte", () => {
         showCategory: false,
       }),
     ).toMatchObject({
-      media: { zoom: 1.5, offsetX: 0, offsetY: 0 },
+      media: { zoom: 1.5, offsetX: 0, offsetY: 0, trimStart: 0, trimEnd: null },
       title: DEFAULT_DESIGN_CONFIG.title,
       showCategory: false,
       showBrand: true,
     });
+  });
+
+  it("restaura corte de vídeo com compatibilidade para configurações antigas", () => {
+    expect(mergeDesignConfig({ media: { trimStart: 3, trimEnd: 12 } }).media)
+      .toMatchObject({ trimStart: 3, trimEnd: 12 });
+    expect(mergeDesignConfig({ media: { trimStart: 8, trimEnd: 4 } }).media)
+      .toMatchObject({ trimStart: 8, trimEnd: null });
+    expect(mergeDesignConfig({ slides: [{ media: { zoom: 1.2 } }] }).slides[0].media)
+      .toMatchObject({ zoom: 1.2, trimStart: 0, trimEnd: null });
   });
 
   it("valida formato e limite do upload", () => {
@@ -177,7 +186,7 @@ describe("template de arte", () => {
           "surface": "gradient",
           "title": {
             "fontFamily": "Sora",
-            "fontSize": 58,
+            "fontSize": 40,
             "lineHeight": 1.08,
             "maxLines": 4,
             "paddingX": 12,
@@ -192,7 +201,7 @@ describe("template de arte", () => {
           "surface": "gradient",
           "title": {
             "fontFamily": "Sora",
-            "fontSize": 52,
+            "fontSize": 40,
             "lineHeight": 1.06,
             "maxLines": 4,
             "paddingX": 12,
@@ -207,7 +216,7 @@ describe("template de arte", () => {
           "surface": "box",
           "title": {
             "fontFamily": "Open Sans",
-            "fontSize": 64,
+            "fontSize": 40,
             "lineHeight": 1.04,
             "maxLines": 3,
             "paddingX": 26,
