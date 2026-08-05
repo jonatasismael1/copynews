@@ -5,12 +5,14 @@ import {
   Check,
   ClipboardPaste,
   Info,
+  ImagePlus,
   LoaderCircle,
   Plus,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -33,6 +35,8 @@ export function CreateNewsPage() {
   const mutation = useCreateNews();
   const [infoTopic, setInfoTopic] = useState<InfoTopic>(null);
   const [showNotes, setShowNotes] = useState(false);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
   const {
     register,
     handleSubmit,
@@ -46,10 +50,21 @@ export function CreateNewsPage() {
     mode: "onChange",
   });
   const notes = useWatch({ control, name: "notes" }) || "";
+  const sourceUrl = useWatch({ control, name: "source_url" }) || "";
 
   async function submit(values: CreateNewsInput) {
-    const result = await mutation.mutateAsync(values);
+    const result = await mutation.mutateAsync({ ...values, media_file: mediaFile || undefined });
     navigate(`/noticias/${result.news_item_id}`);
+  }
+
+  function selectMedia(file?: File) {
+    if (!file) return;
+    const supported = /^(image\/(jpeg|png|webp)|video\/(mp4|webm|quicktime))$/;
+    if (!supported.test(file.type)) return toast.error("Use uma imagem ou vídeo compatível");
+    if (file.size > 100 * 1024 * 1024) return toast.error("A mídia deve ter no máximo 100 MB");
+    setMediaFile(file);
+    setValue("source_url", "", { shouldDirty: true, shouldValidate: true });
+    toast.success("Mídia adicionada como fonte");
   }
 
   async function pasteSourceUrl() {
@@ -159,6 +174,34 @@ export function CreateNewsPage() {
               )}
             </label>
 
+            <div className="flex items-center gap-3" aria-label="Ou envie uma mídia">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs font-medium text-muted-foreground">ou</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <input
+              ref={mediaInputRef}
+              type="file"
+              className="sr-only"
+              aria-label="Selecionar mídia de origem"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+              onChange={(event) => selectMedia(event.target.files?.[0])}
+            />
+            {mediaFile ? (
+              <div className="flex min-w-0 items-center gap-3 rounded-[var(--radius-card)] border bg-[var(--primary-subtle)] p-3">
+                <div className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-card text-primary"><ImagePlus size={20} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{mediaFile.name}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{(mediaFile.size / 1024 / 1024).toFixed(1)} MB · fonte principal</p>
+                </div>
+                <Button type="button" variant="ghost" size="icon" onClick={() => setMediaFile(null)} aria-label="Remover mídia"><X size={18} /></Button>
+              </div>
+            ) : (
+              <Button type="button" variant="outline" className="w-full" onClick={() => mediaInputRef.current?.click()}>
+                <ImagePlus size={18} /> Inserir mídia
+              </Button>
+            )}
+
             <div className="rounded-xl border border-border/70 bg-card px-3 py-2 md:rounded-2xl md:bg-muted/30 md:p-4">
               <label className="flex min-h-11 cursor-pointer items-center gap-3">
                 <span className="min-w-0 flex-1">
@@ -172,6 +215,7 @@ export function CreateNewsPage() {
                   role="switch"
                   className="peer sr-only"
                   {...register("transcribe_audio")}
+                  disabled={Boolean(mediaFile)}
                 />
                 <span
                   aria-hidden="true"
@@ -275,7 +319,7 @@ export function CreateNewsPage() {
             <Button
               className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 h-12 w-auto shadow-xl md:static md:w-full md:shadow-sm"
               size="lg"
-              disabled={!isValid || mutation.isPending}
+              disabled={(!mediaFile && (!isValid || !sourceUrl.trim())) || mutation.isPending}
               type="submit"
             >
               {mutation.isPending ? (

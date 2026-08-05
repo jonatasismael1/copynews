@@ -140,12 +140,30 @@ export function useDesignTemplates() {
 export function useCreateNews() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateNewsInput) => {
+    mutationFn: async (input: CreateNewsInput & { media_file?: File }) => {
+      let uploadedPath: string | null = null;
+      let body: Record<string, unknown> = input;
+      if (input.media_file) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData.user) throw userError || new Error("Sessão inválida");
+        const file = input.media_file;
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+        uploadedPath = `${userData.user.id}/sources/${crypto.randomUUID()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage
+          .from("temporary-media")
+          .upload(uploadedPath, file, { contentType: file.type, upsert: false });
+        if (uploadError) throw uploadError;
+        const values: Record<string, unknown> = { ...input };
+        delete values.media_file;
+        body = { ...values, source_media: { path: uploadedPath, name: file.name, mime_type: file.type, size: file.size } };
+      }
       const { data, error } = await supabase.functions.invoke(
         "process-source-url",
-        { body: input },
+        { body },
       );
       if (error) {
+        if (uploadedPath)
+          await supabase.storage.from("temporary-media").remove([uploadedPath]);
         let detail = error.message;
         try {
           const payload = await (error as unknown as { context?: Response })

@@ -136,4 +136,30 @@ describe("criação automática de notícia", () => {
       screen.getByRole("button", { name: "Adicionar observações" }),
     ).toBeInTheDocument();
   });
+
+  it("aceita mídia como fonte sem exigir URL e preserva observações", async () => {
+    renderPage();
+    const media = new File(["imagem"], "fonte.jpg", { type: "image/jpeg" });
+
+    fireEvent.change(screen.getByLabelText("Selecionar mídia de origem"), {
+      target: { files: [media] },
+    });
+    expect(screen.getByText("fonte.jpg")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Processar notícia" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar observações" }));
+    fireEvent.change(screen.getByLabelText("Observações"), {
+      target: { value: "Contexto da imagem." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Processar notícia" }));
+
+    await waitFor(() =>
+      expect(mutateAsync).toHaveBeenCalledWith({
+        source_url: "",
+        transcribe_audio: false,
+        notes: "Contexto da imagem.",
+        media_file: media,
+      }),
+    );
+  });
 });

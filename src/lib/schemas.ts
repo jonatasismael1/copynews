@@ -22,7 +22,7 @@ export const aiResultSchema = z.object({
   confidence: z.enum(["low", "medium", "high"]),
 });
 export const createNewsSchema = z.object({
-  source_url: sourceUrlSchema,
+  source_url: sourceUrlSchema.or(z.literal("")),
   transcribe_audio: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
 });

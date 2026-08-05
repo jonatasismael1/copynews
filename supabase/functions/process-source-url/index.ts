@@ -88,20 +88,41 @@ Deno.serve(
     if (!["admin", "editor", "writer"].includes(profile.role))
       throw new Error("Forbidden");
     const body = await req.json();
-    const url = new URL(String(body.source_url));
-    const sourcePlatform = platform(url.hostname);
-    const transcribeAudio = body.transcribe_audio === true;
+    const media = body.source_media as {
+      path?: string;
+      name?: string;
+      mime_type?: string;
+      size?: number;
+    } | undefined;
+    const hasMedia = Boolean(media?.path);
+    const allowedMedia = /^(image\/(jpeg|png|webp)|video\/(mp4|webm|quicktime))$/;
+    if (hasMedia) {
+      if (!media?.path?.startsWith(`${user.id}/sources/`))
+        throw new Error("Mídia inválida");
+      if (!media.mime_type || !allowedMedia.test(media.mime_type))
+        throw new Error("Formato de mídia não suportado");
+      if (!media.size || media.size > 104857600)
+        throw new Error("A mídia deve ter no máximo 100 MB");
+    }
+    if (!hasMedia && !body.source_url)
+      throw new Error("Informe um link ou uma mídia");
+    const url = hasMedia ? null : new URL(String(body.source_url));
+    const sourcePlatform = hasMedia ? "upload" : platform(url!.hostname);
+    const transcribeAudio = hasMedia
+      ? Boolean(media?.mime_type?.startsWith("video/"))
+      : body.transcribe_audio === true;
     if (
-      !supported.has(url.protocol) ||
+      url && (!supported.has(url.protocol) ||
       ["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||
-      url.hostname.endsWith(".local")
+      url.hostname.endsWith(".local"))
     )
       throw new Error("URL inválida");
+    const sourceUrl = url?.toString() || `https://media-upload.copynews.invalid/${media!.path}`;
 
     const { data: duplicate } = await client
       .from("news_items")
       .select("id")
-      .eq("source_url", url.toString())
+      .eq("source_url", sourceUrl)
       .is("archived_at", null)
       .limit(1)
       .maybeSingle();
@@ -109,12 +130,17 @@ Deno.serve(
     const { data: news, error } = await client
       .from("news_items")
       .insert({
-        source_url: url.toString(),
+        source_url: sourceUrl,
         source_platform: sourcePlatform,
         assigned_to: user.id,
         category_id: null,
         destination_page_id: destinationPageId,
         transcribe_audio: transcribeAudio,
+        temporary_media_path: media?.path || null,
+        temporary_media_paths: media?.path ? [media.path] : [],
+        temporary_media_expires_at: media?.path
+          ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+          : null,
         created_by: user.id,
         status: "processing",
       })
@@ -125,13 +151,23 @@ Deno.serve(
       .from("processing_jobs")
       .insert({
         news_item_id: news.id,
-        current_step: "validate_url",
+        current_step: hasMedia ? "extract_audio" : "validate_url",
         status: "queued",
         progress: 0,
         step_results: {
           notes: body.notes || null,
           transcribe_audio: transcribeAudio,
           automatic_destination_page: destinationPageId,
+          ...(hasMedia
+            ? {
+                validated: true,
+                metadata: { provider: "upload", title: media?.name || "Mídia enviada", caption: null, author: null, mediaItems: [] },
+                media_path: media?.path,
+                media_paths: [media?.path],
+                media_kind: media?.mime_type?.startsWith("image/") ? "image" : "video",
+                media_items: [{ storage_path: media?.path, kind: media?.mime_type?.startsWith("image/") ? "image" : "video", contentType: media?.mime_type, source: { filename: media?.name } }],
+              }
+            : {}),
         },
       })
       .select("id")
