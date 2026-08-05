@@ -127,6 +127,8 @@ function parsePayload(payload: unknown, requestedUsername: string) {
       views: count(first(item, [
         "views", "view_count", "video_views", "videoViews", "video_view_count", "video_play_count", "play_count",
       ])),
+      authorUsername: text(first(item, ["user_posted", "owner_username", "ownerUsername", "username"]))
+        ?.replace(/^@/, "").toLowerCase() || requestedUsername,
       raw: item,
     }];
   });
@@ -371,6 +373,8 @@ Deno.serve(async (req) => {
     const context = trackedProfile.sync_job_context as Record<string, unknown> | null;
     for (const reportDate of requestedDays(context, parsed.posts)) {
       const posts = parsed.posts.filter((post) => localDay(post.publishedAt) === reportDate);
+      const authoredPosts = posts.filter((post) => post.authorUsername === username);
+      const collaborationPosts = posts.filter((post) => post.authorUsername !== username);
       const { error: reportError } = await admin
         .from("instagram_profile_daily_stats")
         .upsert({
@@ -378,15 +382,18 @@ Deno.serve(async (req) => {
           tracked_profile_id: trackedProfile.id,
           report_date: reportDate,
           posts_count: posts.length,
-          views: posts.reduce((sum, post) => sum + post.views, 0),
-          likes: posts.reduce((sum, post) => sum + post.likes, 0),
-          comments: posts.reduce((sum, post) => sum + post.comments, 0),
+          authored_posts_count: authoredPosts.length,
+          collaborations_count: collaborationPosts.length,
+          views: 0,
+          likes: authoredPosts.reduce((sum, post) => sum + post.likes, 0),
+          comments: authoredPosts.reduce((sum, post) => sum + post.comments, 0),
           reach: null,
           shares: null,
           collected_at: new Date().toISOString(),
           raw_payload: {
             provider: "bright-data",
-            post_codes: posts.map((post) => post.code),
+            authored_post_codes: authoredPosts.map((post) => post.code),
+            collaboration_post_codes: collaborationPosts.map((post) => post.code),
           },
         }, { onConflict: "tracked_profile_id,report_date" });
       if (reportError) throw reportError;

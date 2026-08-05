@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Download, ExternalLink, LoaderCircle, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,11 +31,10 @@ type DailyReportRow = {
   display_name: string | null;
   report_date: string;
   posts_count: number;
-  views: number;
+  authored_posts_count: number;
+  collaborations_count: number;
   likes: number;
   comments: number;
-  reach: number | null;
-  shares: number | null;
   last_sync_at: string;
 };
 
@@ -75,49 +76,34 @@ function lastSevenDays() {
   return dates;
 }
 
-function csvValue(value: unknown) {
-  const text = value === null || value === undefined ? "N/D" : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
-}
-
 function downloadWeeklyReport(rows: DailyReportRow[], profiles: TrackedInstagramProfile[]) {
   const dates = lastSevenDays();
-  const lines = [[
-    "Data",
-    "Perfil",
-    "Publicações",
-    "Visualizações",
-    "Curtidas",
-    "Comentários",
-    "Alcance",
-    "Compartilhamentos",
-  ].map(csvValue).join(";")];
-  for (const date of dates) {
-    for (const profile of profiles) {
-      const row = rows.find((item) =>
-        item.report_date === date && item.tracked_profile_id === profile.id
-      );
-      lines.push([
-        date.split("-").reverse().join("/"),
-        `@${profile.username}`,
-        row?.posts_count ?? 0,
-        row?.views ?? 0,
-        row?.likes ?? 0,
-        row?.comments ?? 0,
-        row?.reach ?? null,
-        row?.shares ?? null,
-      ].map(csvValue).join(";"));
-    }
-  }
-  const blob = new Blob([`\uFEFF${lines.join("\r\n")}`], {
-    type: "text/csv;charset=utf-8",
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  pdf.setFillColor(20, 33, 61);
+  pdf.rect(0, 0, 297, 28, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFontSize(18);
+  pdf.text("Copy News | Relatório semanal do Instagram", 14, 13);
+  pdf.setFontSize(10);
+  pdf.text(`Período: ${dates[0].split("-").reverse().join("/")} a ${dates.at(-1)!.split("-").reverse().join("/")}`, 14, 21);
+  pdf.setTextColor(25, 25, 25);
+  autoTable(pdf, {
+    startY: 35,
+    head: [["Data", "Perfil", "Publicados", "Colaborações aceitas", "Total exibido", "Curtidas", "Comentários"]],
+    body: dates.flatMap((date) => profiles.map((profile) => {
+      const row = rows.find((item) => item.report_date === date && item.tracked_profile_id === profile.id);
+      return [date.split("-").reverse().join("/"), `@${profile.username}`,
+        row?.authored_posts_count ?? 0, row?.collaborations_count ?? 0,
+        row?.posts_count ?? 0, row?.likes ?? 0, row?.comments ?? 0];
+    })),
+    theme: "striped",
+    headStyles: { fillColor: [31, 111, 235] },
+    styles: { fontSize: 8, cellPadding: 2.3 },
   });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `relatorio-instagram-${dates[0]}-a-${dates.at(-1)}.csv`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const finalY = (pdf as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 35;
+  pdf.setFontSize(9);
+  pdf.text("Critério: Publicados conta somente posts criados pelo perfil. Colaborações aceitas aparecem separadamente.", 14, finalY + 8);
+  pdf.save(`relatorio-instagram-${dates[0]}-a-${dates.at(-1)}.pdf`);
 }
 
 async function functionError(error: unknown) {
@@ -303,7 +289,7 @@ export function InstagramProfileTracker({
           {profiles.map((profile) => {
             const postsToday = reportRows.find((row) =>
               row.tracked_profile_id === profile.id && row.report_date === today
-            )?.posts_count ?? publications.filter((publication) =>
+            )?.authored_posts_count ?? publications.filter((publication) =>
               publication.tracked_profile_id === profile.id &&
               todayKey(new Date(publication.published_at)) === today
             ).length;
@@ -379,7 +365,7 @@ export function InstagramProfileTracker({
             <div>
               <p className="font-display font-bold">Relatório dos últimos 7 dias</p>
               <p className="text-xs text-muted-foreground">
-                Atualização automática diária às 19h. Alcance e compartilhamentos não são públicos.
+                Atualização automática diária às 19h, separando autoria e colaborações aceitas.
               </p>
             </div>
             <Button
@@ -398,25 +384,24 @@ export function InstagramProfileTracker({
                 <div key={profile.id} className="rounded-xl border bg-card p-3">
                   <p className="truncate text-xs font-semibold">@{profile.username}</p>
                   <p className="mt-1 text-2xl font-bold">
-                    {rows.reduce((sum, row) => sum + row.posts_count, 0)}
+                    {rows.reduce((sum, row) => sum + row.authored_posts_count, 0)}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">posts em 7 dias</p>
+                  <p className="text-[11px] text-muted-foreground">publicados pelo perfil em 7 dias</p>
                 </div>
               );
             })}
           </div>
           <div className="overflow-x-auto rounded-xl border bg-card">
-            <table className="w-full min-w-[820px] text-left text-xs">
+            <table className="w-full min-w-[720px] text-left text-xs">
               <thead className="border-b bg-muted/40 text-muted-foreground">
                 <tr>
                   <th className="p-2.5">Data</th>
                   <th className="p-2.5">Perfil</th>
-                  <th className="p-2.5 text-right">Posts</th>
-                  <th className="p-2.5 text-right">Visualizações</th>
+                  <th className="p-2.5 text-right">Publicados</th>
+                  <th className="p-2.5 text-right">Colaborações aceitas</th>
+                  <th className="p-2.5 text-right">Total exibido</th>
                   <th className="p-2.5 text-right">Curtidas</th>
                   <th className="p-2.5 text-right">Comentários</th>
-                  <th className="p-2.5 text-right">Alcance</th>
-                  <th className="p-2.5 text-right">Compart.</th>
                 </tr>
               </thead>
               <tbody>
@@ -429,12 +414,11 @@ export function InstagramProfileTracker({
                       <tr key={`${date}-${profile.id}`} className="border-b last:border-0">
                         <td className="p-2.5">{date.split("-").reverse().join("/")}</td>
                         <td className="p-2.5 font-semibold">@{profile.username}</td>
+                        <td className="p-2.5 text-right font-semibold">{row?.authored_posts_count ?? 0}</td>
+                        <td className="p-2.5 text-right">{row?.collaborations_count ?? 0}</td>
                         <td className="p-2.5 text-right">{row?.posts_count ?? 0}</td>
-                        <td className="p-2.5 text-right">{formatNumber(row?.views ?? 0)}</td>
                         <td className="p-2.5 text-right">{formatNumber(row?.likes ?? 0)}</td>
                         <td className="p-2.5 text-right">{formatNumber(row?.comments ?? 0)}</td>
-                        <td className="p-2.5 text-right">{formatNumber(row?.reach ?? null)}</td>
-                        <td className="p-2.5 text-right">{formatNumber(row?.shares ?? null)}</td>
                       </tr>
                     );
                   })
@@ -444,8 +428,8 @@ export function InstagramProfileTracker({
           </div>
         </section>
         <p className="text-xs text-muted-foreground">
-          Perfis públicos fornecem curtidas, comentários e visualizações quando disponíveis.
-          Alcance, compartilhamentos e salvos exigem uma conta profissional conectada.
+          Curtidas e comentários consideram apenas as publicações realmente criadas pelo perfil.
+          Colaborações aceitas são contabilizadas separadamente.
         </p>
       </CardContent>
     </Card>

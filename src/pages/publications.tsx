@@ -290,13 +290,9 @@ export function PublicationsPage() {
                         </p>
                       )}
                     </div>
-                    <div className="grid grid-cols-3 gap-x-4 gap-y-3 text-sm md:min-w-72">
-                      <Stat label="Views" value={number(latest?.views)} />
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:min-w-48">
                       <Stat label="Curtidas" value={number(latest?.likes)} />
                       <Stat label="Comentários" value={number(latest?.comments)} />
-                      <div className="hidden sm:block"><Stat label="Compart." value={number(latest?.shares)} /></div>
-                      <div className="hidden sm:block"><Stat label="Salvos" value={number(latest?.saves)} /></div>
-                      <div className="hidden sm:block"><Stat label="Reposts" value={number(latest?.reposts)} /></div>
                     </div>
                     <div className="flex w-full flex-wrap justify-end gap-2 border-t pt-3 md:w-auto md:shrink-0 md:border-l md:border-t-0 md:pl-3 md:pt-0">
                       <Button
@@ -426,13 +422,9 @@ function PublicationDetails({
             <p className="max-h-52 overflow-y-auto whitespace-pre-line rounded-xl bg-muted/50 p-4 text-sm text-muted-foreground">{publication.caption}</p>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <Stat label="Views" value={number(latest?.views)} />
+        <div className="grid grid-cols-2 gap-3">
           <Stat label="Curtidas" value={number(latest?.likes)} />
           <Stat label="Comentários" value={number(latest?.comments)} />
-          <Stat label="Compart." value={number(latest?.shares)} />
-          <Stat label="Salvos" value={number(latest?.saves)} />
-          <Stat label="Reposts" value={number(latest?.reposts)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Button variant="outline" onClick={refresh}><RefreshCw /> Atualizar</Button>
@@ -452,44 +444,23 @@ function MetricHistory({ snapshots }: { snapshots: Snapshot[] }) {
         Nenhuma métrica registrada.
       </p>
     );
-  const current = snapshots[0];
-  const previous = snapshots[1];
-  const variation = previous
-    ? number(current.views) - number(previous.views)
-    : null;
   return (
     <details className="mt-4 border-t pt-4">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold">
         <History size={16} />
         Histórico de métricas{" "}
         <Badge variant="outline">{snapshots.length}</Badge>
-        {variation !== null && (
-          <span
-            className={
-              variation >= 0
-                ? "ml-auto text-emerald-600"
-                : "ml-auto text-red-600"
-            }
-          >
-            {variation >= 0 ? "+" : ""}
-            {variation.toLocaleString("pt-BR")} views
-          </span>
-        )}
       </summary>
       <div className="mt-3 overflow-x-auto rounded-xl border">
-        <div className="grid min-w-[720px] grid-cols-[1.4fr_repeat(6,auto)] gap-4 bg-muted/60 px-3 py-2 text-[11px] font-semibold text-muted-foreground">
+        <div className="grid min-w-[420px] grid-cols-[1.4fr_repeat(2,auto)] gap-4 bg-muted/60 px-3 py-2 text-[11px] font-semibold text-muted-foreground">
           <span>Coleta</span>
-          <span>Views</span>
           <span>Curtidas</span>
           <span>Comentários</span>
-          <span>Compart.</span>
-          <span>Salvos</span>
-          <span>Reposts</span>
         </div>
         {snapshots.map((snapshot, index) => (
           <div
             key={String(snapshot.id ?? snapshot.captured_at)}
-            className="grid min-w-[720px] grid-cols-[1.4fr_repeat(6,auto)] gap-4 border-t px-3 py-2 text-xs"
+            className="grid min-w-[420px] grid-cols-[1.4fr_repeat(2,auto)] gap-4 border-t px-3 py-2 text-xs"
           >
             <span>
               {formatDate(String(snapshot.captured_at))}
@@ -502,12 +473,8 @@ function MetricHistory({ snapshots }: { snapshots: Snapshot[] }) {
                 {snapshot.source === "api" ? "Instagram" : "Manual"}
               </span>
             </span>
-            <b>{number(snapshot.views).toLocaleString("pt-BR")}</b>
             <b>{number(snapshot.likes).toLocaleString("pt-BR")}</b>
             <b>{number(snapshot.comments).toLocaleString("pt-BR")}</b>
-            <b>{number(snapshot.shares).toLocaleString("pt-BR")}</b>
-            <b>{number(snapshot.saves).toLocaleString("pt-BR")}</b>
-            <b>{number(snapshot.reposts).toLocaleString("pt-BR")}</b>
           </div>
         ))}
       </div>
@@ -729,33 +696,14 @@ function MetricsModal({
         </Field>
         <div className="grid grid-cols-2 gap-3">
           {(
-            [
-              "views",
-              "reach",
-              "impressions",
-              "likes",
-              "comments",
-              "shares",
-              "saves",
-              "reposts",
-              "clicks",
-              "followers_gained",
-            ] as const
+            ["likes", "comments"] as const
           ).map((name) => (
             <Field
               key={name}
               label={
                 {
-                  views: "Visualizações",
-                  reach: "Alcance",
-                  impressions: "Impressões",
                   likes: "Curtidas",
                   comments: "Comentários",
-                  shares: "Compartilhamentos",
-                  saves: "Salvamentos",
-                  reposts: "Reposts",
-                  clicks: "Cliques",
-                  followers_gained: "Seguidores ganhos",
                 }[name]
               }
             >
