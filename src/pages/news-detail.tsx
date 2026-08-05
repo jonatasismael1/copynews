@@ -1270,7 +1270,7 @@ export function NewsDetailPage() {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            As mudanças de texto e status aparecerão aqui.
+            Nenhuma alteração registrada.
           </p>
         )}
       </ResponsiveSection>

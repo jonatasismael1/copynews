@@ -159,7 +159,7 @@ export function PublicationsPage() {
             </Button>
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Registros vinculados e externos, com snapshots preservados.
+            Publicações vinculadas e externas.
           </p>
         </div>
         <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-[220px_auto]">
@@ -219,7 +219,7 @@ export function PublicationsPage() {
             </div>
           )}
           <p className="text-sm font-semibold">
-            {visiblePublications.length} publicação(ões) no período
+            {visiblePublications.length} {visiblePublications.length === 1 ? "publicação" : "publicações"} no período
           </p>
         </CardContent>
       </Card>
@@ -233,7 +233,7 @@ export function PublicationsPage() {
                 Nenhuma publicação registrada
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Publicações externas também contam no dashboard.
+                Adicione uma publicação para começar.
               </p>
             </CardContent>
           </Card>
@@ -547,8 +547,7 @@ function PublicationModal({ close }: { close: () => void }) {
       <form className="space-y-4" onSubmit={submit}>
         <h2 className="font-display text-xl font-bold">Adicionar publicação</h2>
         <p className="text-sm text-muted-foreground">
-          Cole o link. O Copy News buscará legenda, autor, plataforma, data e
-          hora reais da publicação.
+          Cole o link da publicação.
         </p>
         <div className="flex gap-2">
           <Input

@@ -196,7 +196,7 @@ export function InstagramProfileTracker({
       ]);
       await onSynced();
       toast.success(
-        `@${result.profile.username}: ${result.imported} publicação(ões) atualizadas`,
+        `@${result.profile.username}: ${result.imported} ${result.imported === 1 ? "publicação atualizada" : "publicações atualizadas"}`,
       );
     },
     onError: (error) => toast.error(
@@ -234,7 +234,7 @@ export function InstagramProfileTracker({
           <div>
             <p className="font-display text-lg font-bold">Perfis acompanhados</p>
             <p className="text-sm text-muted-foreground">
-              Cole @usuário, nome ou link do perfil para importar posts e métricas públicas.
+              Informe o perfil do Instagram.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

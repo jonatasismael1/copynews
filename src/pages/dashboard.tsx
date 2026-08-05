@@ -112,7 +112,7 @@ export function DashboardPage() {
             Visão geral
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Produção e distribuição no fuso America/Maceio.
+            Produção e distribuição no horário de Maceió.
           </p>
         </div>
         <Button asChild className="hidden sm:inline-flex">
@@ -290,7 +290,7 @@ export function DashboardPage() {
                 Resultado diário por usuário
               </CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Acompanhe toda a equipe, incluindo sua própria produção.
+                Produção diária da equipe.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -387,7 +387,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <Empty text="O ranking aparecerá após as primeiras publicações." />
+              <Empty text="Ainda não há dados para o ranking." />
             )}
           </CardContent>
         </Card>
@@ -425,7 +425,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <Empty text="Os destaques aparecerão após os primeiros snapshots." />
+              <Empty text="Ainda não há destaques neste período." />
             )}
           </CardContent>
         </Card>

@@ -4,7 +4,6 @@ import {
   AudioLines,
   Check,
   ClipboardPaste,
-  Info,
   ImagePlus,
   LoaderCircle,
   Plus,
@@ -18,22 +17,13 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { useCreateNews } from "@/hooks/use-data";
 import { createNewsSchema, type CreateNewsInput } from "@/lib/schemas";
 
-type InfoTopic = "transcription" | "automatic" | null;
-
 export function CreateNewsPage() {
   const navigate = useNavigate();
   const mutation = useCreateNews();
-  const [infoTopic, setInfoTopic] = useState<InfoTopic>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +51,7 @@ export function CreateNewsPage() {
     if (!file) return;
     const supported = /^(image\/(jpeg|png|webp)|video\/(mp4|webm|quicktime))$/;
     if (!supported.test(file.type)) return toast.error("Use uma imagem ou vídeo compatível");
-    if (file.size > 100 * 1024 * 1024) return toast.error("A mídia deve ter no máximo 100 MB");
+    if (file.size > 200 * 1024 * 1024) return toast.error("A mídia deve ter no máximo 200 MB");
     setMediaFile(file);
     setValue("source_url", "", { shouldDirty: true, shouldValidate: true });
     toast.success("Mídia adicionada como fonte");
@@ -126,11 +116,10 @@ export function CreateNewsPage() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground md:mt-2">
             <span className="md:hidden">
-              Cole o link da publicação para começar.
+              Use um link ou uma mídia como fonte.
             </span>
             <span className="hidden md:inline">
-              Cole a publicação original. O processamento continua mesmo se
-              você sair desta tela.
+              Use um link, uma imagem ou um vídeo como fonte.
             </span>
           </p>
         </div>
@@ -197,9 +186,12 @@ export function CreateNewsPage() {
                 <Button type="button" variant="ghost" size="icon" onClick={() => setMediaFile(null)} aria-label="Remover mídia"><X size={18} /></Button>
               </div>
             ) : (
-              <Button type="button" variant="outline" className="w-full" onClick={() => mediaInputRef.current?.click()}>
-                <ImagePlus size={18} /> Inserir mídia
-              </Button>
+              <div>
+                <Button type="button" variant="outline" className="w-full" onClick={() => mediaInputRef.current?.click()}>
+                  <ImagePlus size={18} /> Inserir mídia
+                </Button>
+                <p className="mt-2 text-center text-xs text-muted-foreground">JPG, PNG, WebP, MP4, WebM ou MOV · até 200 MB</p>
+              </div>
             )}
 
             <div className="rounded-xl border border-border/70 bg-card px-3 py-2 md:rounded-2xl md:bg-muted/30 md:p-4">
@@ -222,21 +214,6 @@ export function CreateNewsPage() {
                   className="relative h-7 w-12 shrink-0 rounded-full bg-muted-foreground/30 transition after:absolute after:left-1 after:top-1 after:size-5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2"
                 />
               </label>
-              <div className="flex items-center gap-1 pl-6">
-                <p className="min-w-0 flex-1 text-xs leading-relaxed text-muted-foreground">
-                  Usar quando o vídeo tiver informações importantes na fala.
-                </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-11 shrink-0"
-                  onClick={() => setInfoTopic("transcription")}
-                  aria-label="Saiba mais sobre transcrição de áudio"
-                >
-                  <Info size={17} />
-                </Button>
-              </div>
             </div>
 
             <div>
@@ -299,23 +276,6 @@ export function CreateNewsPage() {
               )}
             </div>
 
-            <div className="flex items-center gap-1 rounded-xl bg-muted/35 py-1 pl-3 pr-1 text-xs text-muted-foreground">
-              <Info size={16} className="shrink-0 text-primary" />
-              <p className="min-w-0 flex-1">
-                Categoria, destino e tom serão definidos automaticamente.
-              </p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-11 shrink-0"
-                onClick={() => setInfoTopic("automatic")}
-                aria-label="Saiba mais sobre definições automáticas"
-              >
-                <Info size={17} />
-              </Button>
-            </div>
-
             <Button
               className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 h-12 w-auto shadow-xl md:static md:w-full md:shadow-sm"
               size="lg"
@@ -333,27 +293,6 @@ export function CreateNewsPage() {
         </CardContent>
       </Card>
 
-      <Dialog
-        open={Boolean(infoTopic)}
-        onOpenChange={(open) => {
-          if (!open) setInfoTopic(null);
-        }}
-      >
-        <DialogContent aria-describedby="create-info-description">
-          <div className="space-y-3 p-5 pr-16">
-            <DialogTitle>
-              {infoTopic === "transcription"
-                ? "Quando transcrever o áudio?"
-                : "Definições automáticas"}
-            </DialogTitle>
-            <DialogDescription id="create-info-description">
-              {infoTopic === "transcription"
-                ? "Ative quando a fala do vídeo trouxer informações importantes que não aparecem na legenda. Quando estiver desativado, a notícia será criada usando a legenda original e o texto visível na mídia."
-                : "Categoria, página de destino e tom editorial serão definidos automaticamente a partir do conteúdo da publicação e das configurações do sistema."}
-            </DialogDescription>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

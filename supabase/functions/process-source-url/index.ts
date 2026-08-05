@@ -101,8 +101,8 @@ Deno.serve(
         throw new Error("Mídia inválida");
       if (!media.mime_type || !allowedMedia.test(media.mime_type))
         throw new Error("Formato de mídia não suportado");
-      if (!media.size || media.size > 104857600)
-        throw new Error("A mídia deve ter no máximo 100 MB");
+      if (!media.size || media.size > 209715200)
+        throw new Error("A mídia deve ter no máximo 200 MB");
     }
     if (!hasMedia && !body.source_url)
       throw new Error("Informe um link ou uma mídia");

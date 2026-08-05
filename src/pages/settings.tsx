@@ -227,7 +227,7 @@ export function SettingsPage() {
     queryClient.invalidateQueries({ queryKey: ["publications"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     toast.success(
-      `${Number(data?.imported || 0)} publicação(ões) e métricas atualizadas`,
+      `${Number(data?.imported || 0)} ${Number(data?.imported || 0) === 1 ? "publicação atualizada" : "publicações atualizadas"}`,
     );
   }
 
@@ -352,9 +352,6 @@ export function SettingsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Instale o Copy News na tela inicial para abrir como aplicativo.
-            </p>
             <PwaInstallButton />
           </CardContent>
         </Card>
@@ -369,10 +366,7 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={saveEditorLinks}>
-            <p className="text-sm text-muted-foreground">
-              Estes links abrem o modelo correto depois que o título e a legenda
-              estiverem prontos. Cada usuário pode configurar os próprios modelos.
-            </p>
+            <p className="text-sm text-muted-foreground">Defina os modelos usados em cada formato.</p>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Modelo para vídeo">
                 <div className="relative">
@@ -426,12 +420,7 @@ export function SettingsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Cada usuário conecta sua própria conta Business ou Creator diretamente
-              pelo login oficial do Instagram. O administrador visualiza os resultados de toda a
-              equipe, mas os tokens permanecem criptografados no backend. O acesso é
-              renovado automaticamente antes de expirar e pode ser reconectado aqui.
-            </p>
+            <p className="mb-4 text-sm text-muted-foreground">Conecte uma conta Business ou Creator.</p>
             <form className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end" onSubmit={connectInstagram}>
               <Field label="Página do Copy News">
                 <select

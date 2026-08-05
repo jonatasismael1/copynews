@@ -57,11 +57,7 @@ describe("criação automática de notícia", () => {
     expect(
       screen.queryByLabelText("Observações"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Categoria, destino e tom serão definidos automaticamente.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/MOV · até 200 MB/)).toBeInTheDocument();
   });
 
   it("cola no próprio campo e preserva o payload enviado ao processamento", async () => {
@@ -101,18 +97,8 @@ describe("criação automática de notícia", () => {
     );
   });
 
-  it("explica a transcrição e permite adicionar e remover observações", () => {
+  it("permite adicionar e remover observações", () => {
     renderPage();
-
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Saiba mais sobre transcrição de áudio",
-      }),
-    );
-    expect(
-      screen.getByRole("dialog", { name: "Quando transcrever o áudio?" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
 
     fireEvent.click(
       screen.getByRole("button", { name: "Adicionar observações" }),
@@ -161,5 +147,15 @@ describe("criação automática de notícia", () => {
         media_file: media,
       }),
     );
+  });
+
+  it("aceita vídeo MOV como fonte", () => {
+    renderPage();
+    const media = new File(["video"], "fonte.mov", { type: "video/quicktime" });
+    fireEvent.change(screen.getByLabelText("Selecionar mídia de origem"), {
+      target: { files: [media] },
+    });
+    expect(screen.getByText("fonte.mov")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: /Transcrever áudio/i })).toBeDisabled();
   });
 });
