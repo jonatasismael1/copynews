@@ -8,7 +8,29 @@ max_rows = 1000
 
 [storage]
 enabled = true
-file_size_limit = "200MiB"
+file_size_limit = "50MiB"
+
+[storage.vector]
+enabled = false
+
+[auth]
+site_url = "https://copynews.netlify.app"
+additional_redirect_urls = ["https://copynews.netlify.app/**"]
+enable_signup = false
+minimum_password_length = 8
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = false
+max_frequency = "1m0s"
+otp_length = 8
+otp_expiry = 3600
 
 [functions.admin-users]
 verify_jwt = true
