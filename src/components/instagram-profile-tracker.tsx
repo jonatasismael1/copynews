@@ -30,6 +30,8 @@ type TrackedPublication = {
 type Props = {
   publications: TrackedPublication[];
   selectedProfile: string;
+  syncStartDate: string;
+  syncEndDate: string;
   onSelectProfile: (profileId: string) => void;
   onSynced: () => Promise<unknown> | unknown;
 };
@@ -62,6 +64,8 @@ async function functionError(error: unknown) {
 export function InstagramProfileTracker({
   publications,
   selectedProfile,
+  syncStartDate,
+  syncEndDate,
   onSelectProfile,
   onSynced,
 }: Props) {
@@ -81,12 +85,24 @@ export function InstagramProfileTracker({
   });
   const sync = useMutation({
     mutationFn: async (body: { profile?: string; profile_id?: string }) => {
-      const { data, error } = await supabase.functions.invoke(
-        "sync-instagram-profile",
-        { body },
-      );
-      if (error) throw new Error(await functionError(error));
-      return data as { profile: TrackedInstagramProfile; imported: number; posts_today: number };
+      let request = { ...body, start_date: syncStartDate, end_date: syncEndDate };
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const { data, error } = await supabase.functions.invoke(
+          "sync-instagram-profile",
+          { body: request },
+        );
+        if (error) throw new Error(await functionError(error));
+        if (!data?.pending) {
+          return data as { profile: TrackedInstagramProfile; imported: number; posts_today: number };
+        }
+        request = {
+          profile_id: String(data.profile.id),
+          start_date: syncStartDate,
+          end_date: syncEndDate,
+        };
+        await new Promise((resolve) => window.setTimeout(resolve, 8_000));
+      }
+      throw new Error("A Bright Data demorou mais de 8 minutos para concluir a consulta");
     },
     onSuccess: async (result) => {
       setInput("");

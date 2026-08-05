@@ -22,6 +22,11 @@ function text(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function mediaUrl(value: unknown) {
+  if (Array.isArray(value)) return text(value[0]);
+  return text(value);
+}
+
 function count(value: unknown) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) && number >= 0 ? Math.round(number) : 0;
@@ -90,7 +95,7 @@ function postCode(record: Record<string, unknown>) {
 function parsePayload(payload: unknown, requestedUsername: string) {
   const all = objects(payload);
   const profile = all.find((item) => {
-    const username = text(first(item, ["username", "profile", "user_name"]));
+    const username = text(first(item, ["username", "account", "profile", "user_name"]));
     return username?.replace(/^@/, "").toLowerCase() === requestedUsername &&
       (item.followers !== undefined || item.followers_count !== undefined ||
         item.full_name !== undefined || item.fullName !== undefined ||
@@ -101,7 +106,7 @@ function parsePayload(payload: unknown, requestedUsername: string) {
     const code = postCode(item);
     if (!code || seen.has(code)) return [];
     const publishedAt = isoDate(first(item, [
-      "published_at", "publishedAt", "date_utc", "date", "taken_at", "taken_at_timestamp",
+      "published_at", "publishedAt", "date_posted", "datetime", "date_utc", "date", "taken_at", "taken_at_timestamp",
       "timestamp", "created_at",
     ]));
     if (!publishedAt) return [];
@@ -114,13 +119,13 @@ function parsePayload(payload: unknown, requestedUsername: string) {
       permalink: text(first(item, ["permalink", "post_url", "instagram_url", "url"])) ||
         `https://www.instagram.com/${isVideo ? "reel" : "p"}/${code}/`,
       caption: text(first(item, ["caption", "caption_text", "title", "description"])),
-      thumbnail: text(first(item, [
-        "thumbnail_url", "thumbnailUrl", "display_url", "image_url", "url_thumbnail",
+      thumbnail: mediaUrl(first(item, [
+        "thumbnail_url", "thumbnailUrl", "thumbnail", "photos", "display_url", "image_url", "url_thumbnail",
       ])),
       likes: count(first(item, ["likes", "likes_count", "like_count"])),
-      comments: count(first(item, ["comments", "comments_count", "comment_count"])),
+      comments: count(first(item, ["comments", "num_comments", "comments_count", "comment_count"])),
       views: count(first(item, [
-        "views", "view_count", "video_views", "videoViews", "video_view_count", "play_count",
+        "views", "view_count", "video_views", "videoViews", "video_view_count", "video_play_count", "play_count",
       ])),
       raw: item,
     }];
@@ -128,7 +133,7 @@ function parsePayload(payload: unknown, requestedUsername: string) {
   return {
     profile: {
       displayName: text(first(profile, ["full_name", "fullName", "display_name", "name"])),
-      avatarUrl: text(first(profile, ["profile_pic_url", "profilePicUrl", "profile_pic_url_hd", "avatar_url"])),
+      avatarUrl: text(first(profile, ["profile_pic_url", "profilePicUrl", "profile_pic_url_hd", "profile_image_link", "avatar_url"])),
       followers: optionalCount(first(profile, ["followers", "followers_count", "edge_followed_by_count"])),
       following: optionalCount(first(profile, ["following", "following_count", "edge_follow_count"])),
       mediaCount: optionalCount(first(profile, ["media_count", "posts_count", "postsCount", "mediacount"])),
@@ -150,6 +155,58 @@ function localDay(value: string) {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(value));
+}
+
+const brightBaseUrl = "https://api.brightdata.com/datasets/v3";
+const brightPostDataset = "gd_lk5ns7kz21pck8jpis";
+
+async function brightFetch(path: string, init?: RequestInit) {
+  const response = await fetch(`${brightBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${env("BRIGHT_DATA_API_KEY")}`,
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
+    },
+    signal: AbortSignal.timeout(65_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = text((payload as Record<string, unknown>).message) ||
+      text((payload as Record<string, unknown>).error) ||
+      `Bright Data HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
+}
+
+async function brightStart(input: Record<string, unknown>) {
+  const payload = await brightFetch(
+    `/trigger?dataset_id=${brightPostDataset}&type=discover_new&discover_by=url&include_errors=true`,
+    {
+    method: "POST",
+    body: JSON.stringify([input]),
+    },
+  );
+  const snapshotId = text((payload as Record<string, unknown>).snapshot_id);
+  if (!snapshotId) throw new Error("A Bright Data não iniciou a consulta");
+  return snapshotId;
+}
+
+async function brightSnapshot(snapshotId: string) {
+  const progress = await brightFetch(`/progress/${encodeURIComponent(snapshotId)}`) as Record<string, unknown>;
+  const status = text(progress.status);
+  if (status === "starting" || status === "running") return { pending: true, payload: null };
+  if (status !== "ready" || count(progress.errors) > 0 && count(progress.records) === 0)
+    throw new Error("A Bright Data não conseguiu consultar esse perfil do Instagram");
+  const payload = await brightFetch(`/snapshot/${encodeURIComponent(snapshotId)}?format=json`);
+  return { pending: false, payload };
+}
+
+function dateInput(value: unknown, fallback: Date) {
+  const raw = text(value);
+  if (raw && /^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw;
+  return `${String(fallback.getMonth() + 1).padStart(2, "0")}-${String(fallback.getDate()).padStart(2, "0")}-${fallback.getFullYear()}`;
 }
 
 Deno.serve(async (req) => {
@@ -201,64 +258,80 @@ Deno.serve(async (req) => {
       trackedProfile = data;
     }
 
-    const response = await fetch(
-      `${env("INSTALOADER_SERVICE_URL").replace(/\/$/, "")}/profile`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": env("INSTALOADER_SERVICE_API_KEY"),
-        },
-        body: JSON.stringify({ profile: username, limit: 12 }),
-        signal: AbortSignal.timeout(45_000),
-      },
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = text((payload as Record<string, unknown>).detail) ||
-        text((payload as Record<string, unknown>).error) ||
-        `Instaloader HTTP ${response.status}`;
-      if (trackedProfile) {
-        await admin.from("tracked_instagram_profiles").update({
-          last_sync_status: "error",
-          last_error: detail,
-        }).eq("id", trackedProfile.id);
-      }
-      throw new Error(detail);
-    }
-
-    const parsed = parsePayload(payload, username);
-    const profileRow = {
-      organization_id: caller.organization_id,
-      username,
-      display_name: parsed.profile.displayName,
-      profile_url: `https://www.instagram.com/${username}/`,
-      avatar_url: parsed.profile.avatarUrl,
-      followers_count: parsed.profile.followers,
-      following_count: parsed.profile.following,
-      media_count: parsed.profile.mediaCount,
-      last_sync_at: new Date().toISOString(),
-      last_sync_status: "success",
-      last_error: null,
-    };
-    if (trackedProfile) {
+    if (!trackedProfile) {
       const { data, error } = await admin
         .from("tracked_instagram_profiles")
-        .update(profileRow)
+        .insert({
+          organization_id: caller.organization_id,
+          username,
+          display_name: username,
+          profile_url: `https://www.instagram.com/${username}/`,
+          last_sync_status: "pending",
+          sync_provider: "bright-data",
+          created_by: user.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      trackedProfile = data;
+    }
+
+    let payload: unknown;
+    if (trackedProfile.sync_job_id) {
+      const snapshot = await brightSnapshot(trackedProfile.sync_job_id);
+      if (snapshot.pending) return json({ pending: true, profile: trackedProfile });
+      payload = snapshot.payload;
+    } else {
+      const defaultFrom = new Date();
+      defaultFrom.setDate(defaultFrom.getDate() - 29);
+      const defaultTo = new Date();
+      defaultTo.setDate(defaultTo.getDate() + 1);
+      const snapshotId = await brightStart({
+        url: `https://www.instagram.com/${username}/`,
+        start_date: dateInput(body.start_date, defaultFrom),
+        end_date: dateInput(body.end_date, defaultTo),
+        post_type: "",
+      });
+      const { data, error } = await admin.from("tracked_instagram_profiles")
+        .update({
+          last_sync_status: "pending",
+          last_error: null,
+          sync_provider: "bright-data",
+          sync_job_id: snapshotId,
+          sync_job_stage: "posts",
+          sync_job_context: {
+            start_date: body.start_date || null,
+            end_date: body.end_date || null,
+          },
+        })
         .eq("id", trackedProfile.id)
         .select()
         .single();
       if (error) throw error;
-      trackedProfile = data;
-    } else {
-      const { data, error } = await admin
-        .from("tracked_instagram_profiles")
-        .insert({ ...profileRow, created_by: user.id })
-        .select()
-        .single();
-      if (error) throw error;
-      trackedProfile = data;
+      return json({ pending: true, profile: data });
     }
+
+    const parsed = parsePayload(payload, username);
+    const { data: updatedProfile, error: profileError } = await admin
+      .from("tracked_instagram_profiles")
+      .update({
+        display_name: parsed.profile.displayName || trackedProfile.display_name || username,
+        avatar_url: parsed.profile.avatarUrl || trackedProfile.avatar_url,
+        followers_count: parsed.profile.followers ?? trackedProfile.followers_count,
+        following_count: parsed.profile.following ?? trackedProfile.following_count,
+        media_count: parsed.profile.mediaCount ?? trackedProfile.media_count,
+        last_sync_at: new Date().toISOString(),
+        last_sync_status: "success",
+        last_error: null,
+        sync_job_id: null,
+        sync_job_stage: null,
+        sync_job_context: null,
+      })
+      .eq("id", trackedProfile.id)
+      .select()
+      .single();
+    if (profileError) throw profileError;
+    trackedProfile = updatedProfile;
 
     let imported = 0;
     let snapshots = 0;
@@ -274,7 +347,7 @@ Deno.serve(async (req) => {
         credit_text: `@${username}`,
         source_type: "external",
         thumbnail_url: post.thumbnail,
-        metadata_provider: "dbe-instaloader",
+        metadata_provider: "bright-data",
         metadata_fetched_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -324,7 +397,7 @@ Deno.serve(async (req) => {
         reposts: 0,
         clicks: 0,
         followers_gained: 0,
-        raw_payload: { provider: "dbe-instaloader", post: post.raw },
+        raw_payload: { provider: "bright-data", post: post.raw },
         created_by: user.id,
       });
       if (metricError) throw metricError;

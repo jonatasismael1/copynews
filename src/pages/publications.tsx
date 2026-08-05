@@ -185,6 +185,8 @@ export function PublicationsPage() {
       <InstagramProfileTracker
         publications={data}
         selectedProfile={profileFilter}
+        syncStartDate={brightDate(range.from)}
+        syncEndDate={brightDate(range.to)}
         onSelectProfile={setProfileFilter}
         onSynced={refetch}
       />
@@ -810,6 +812,10 @@ function publicationRange(period: Period, customFrom: string, customTo: string) 
     }
   }
   return { from: from.getTime(), to: to.getTime() };
+}
+function brightDate(timestamp: number) {
+  const value = new Date(timestamp);
+  return `${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}-${value.getFullYear()}`;
 }
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
