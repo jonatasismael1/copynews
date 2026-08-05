@@ -1,10 +1,6 @@
 services:
   copy-news-worker:
-    image: copy-news-worker:latest
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
-    restart: unless-stopped
+    image: ghcr.io/jonatasismael1/copynews-worker:latest
     environment:
       PORT: "8080"
       SUPABASE_URL: ${SUPABASE_URL}
@@ -29,3 +25,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 10
