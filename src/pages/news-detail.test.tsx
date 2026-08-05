@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   prepareMediaFiles: vi.fn(),
   savePreparedMediaFiles: vi.fn(),
+  createSignedUrls: vi.fn(),
 }));
 
 const longCaption =
@@ -60,13 +61,14 @@ const news = {
 let currentNews: Omit<typeof news, "temporary_media_path"> & {
   temporary_media_path: string | null;
 } = news;
+let currentDesign: Record<string, unknown> | null = null;
 
 vi.mock("@/hooks/use-data", () => ({
   useLookups: () => ({
     data: { profiles: [], categories: [], pages: [] },
   }),
   useNewsItem: () => ({ data: currentNews, isLoading: false, refetch }),
-  useNewsDesign: () => ({ data: null, isLoading: false }),
+  useNewsDesign: () => ({ data: currentDesign, isLoading: false }),
 }));
 
 vi.mock("@/providers/auth-provider", () => ({
@@ -89,6 +91,7 @@ vi.mock("@/lib/supabase", () => ({
     storage: {
       from: () => ({
         createSignedUrl: vi.fn().mockResolvedValue({ data: null, error: null }),
+        createSignedUrls: mocks.createSignedUrls,
       }),
     },
     rpc: vi.fn(),
@@ -113,6 +116,8 @@ describe("detalhes da notícia no mobile", () => {
     mocks.invoke.mockReset();
     mocks.prepareMediaFiles.mockReset();
     mocks.savePreparedMediaFiles.mockReset();
+    mocks.createSignedUrls.mockReset();
+    currentDesign = null;
     mocks.invoke.mockResolvedValue({
       data: { urls: [{ url: "https://media.local/1.mp4" }] },
       error: null,
@@ -126,6 +131,10 @@ describe("detalhes da notícia no mobile", () => {
       ),
     );
     mocks.savePreparedMediaFiles.mockResolvedValue("downloaded");
+    mocks.createSignedUrls.mockResolvedValue({
+      data: [{ signedUrl: "https://media.local/editada-1.png" }],
+      error: null,
+    });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: clipboardWrite.mockResolvedValue(undefined) },
@@ -245,7 +254,7 @@ describe("detalhes da notícia no mobile", () => {
       screen.getByRole("dialog", { name: "Baixar mídia" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Baixar tudo (3)" }),
+      screen.getByRole("button", { name: "Baixar originais (3)" }),
     ).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Baixar arquivo 2" }),
@@ -257,6 +266,32 @@ describe("detalhes da notícia no mobile", () => {
     const selectedFiles = mocks.savePreparedMediaFiles.mock.calls[0][0] as File[];
     expect(selectedFiles).toHaveLength(1);
     expect(selectedFiles[0].name).toBe("arquivo-2.mp4");
+  });
+
+  it("permite escolher entre a mídia original e a mídia editada", async () => {
+    currentDesign = {
+      id: "design-1",
+      status: "ready",
+      exported_file_path: "exports/editada.png",
+      export_format: "png",
+      config_json: { exportedCarouselPaths: ["exports/editada.png"] },
+      generated_media: [],
+      design_templates: { name: "Post 4:5" },
+    };
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Baixar" }));
+    expect(
+      screen.getByRole("button", { name: "Baixar mídia original" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Baixar mídia editada" }),
+    );
+    await waitFor(() => expect(mocks.createSignedUrls).toHaveBeenCalled());
+    expect(mocks.createSignedUrls).toHaveBeenCalledWith(
+      ["exports/editada.png"],
+      900,
+      { download: true },
+    );
   });
 
   it("desativa abrir fonte e baixar quando os dados não estão disponíveis", () => {

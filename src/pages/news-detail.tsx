@@ -524,7 +524,7 @@ export function NewsDetailPage() {
   const hasValidSource = isValidExternalUrl(data.source_url);
 
   function requestDownload() {
-    if (mediaCount > 1) {
+    if (mediaCount > 1 || newsDesign?.exported_file_path) {
       setDownloadOpen(true);
       return;
     }
@@ -535,18 +535,28 @@ export function NewsDetailPage() {
     if (!newsDesign?.exported_file_path) return;
     setPreparingMedia(true);
     try {
+      const savedPaths = (newsDesign.config_json as {
+        exportedCarouselPaths?: unknown;
+      } | null)?.exportedCarouselPaths;
+      const paths = Array.isArray(savedPaths)
+        ? savedPaths.filter(
+            (path): path is string => typeof path === "string" && Boolean(path),
+          )
+        : [];
+      const exportPaths = paths.length ? paths : [newsDesign.exported_file_path];
       const { data: signed, error } = await supabase.storage
         .from("news-designs")
-        .createSignedUrl(newsDesign.exported_file_path, 900, {
-          download: true,
-        });
-      if (error || !signed?.signedUrl)
+        .createSignedUrls(exportPaths, 900, { download: true });
+      const signedUrls = (signed || [])
+        .map((item) => item.signedUrl)
+        .filter((url): url is string => Boolean(url));
+      if (error || !signedUrls.length)
         throw error || new Error("Arte indisponível");
       const files = await prepareMediaFiles(
-        [signed.signedUrl],
+        signedUrls,
         `copy-news-arte-${data.id}`,
       );
-      await savePreparedMediaFiles(files, [signed.signedUrl]);
+      await savePreparedMediaFiles(files, signedUrls);
     } catch {
       toast.error("Não foi possível baixar a arte");
     } finally {
@@ -1322,7 +1332,7 @@ export function NewsDetailPage() {
           <div className="border-b p-5 pr-16">
             <DialogTitle>Baixar mídia</DialogTitle>
             <DialogDescription id="download-media-description">
-              Escolha baixar o carrossel completo ou apenas um arquivo.
+              Escolha entre a mídia original e a versão editada no Copy News.
             </DialogDescription>
           </div>
           <div className="grid gap-2 p-4">
@@ -1335,9 +1345,9 @@ export function NewsDetailPage() {
               disabled={preparingMedia}
             >
               <Download />
-              Baixar tudo ({mediaCount})
+              {mediaCount > 1 ? `Baixar originais (${mediaCount})` : "Baixar mídia original"}
             </Button>
-            {Array.from({ length: mediaCount }, (_, index) => (
+            {mediaCount > 1 && Array.from({ length: mediaCount }, (_, index) => (
               <Button
                 key={mediaPaths[index] || preparedMedia[index]?.name || index}
                 variant="outline"
@@ -1352,6 +1362,20 @@ export function NewsDetailPage() {
                 Baixar arquivo {index + 1}
               </Button>
             ))}
+            {newsDesign?.exported_file_path && (
+              <Button
+                variant="outline"
+                className="justify-start border-[#fb0039]/40 text-[#d20836]"
+                onClick={() => {
+                  void downloadDesign();
+                  setDownloadOpen(false);
+                }}
+                disabled={preparingMedia}
+              >
+                <Download />
+                Baixar mídia editada
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

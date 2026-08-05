@@ -25,6 +25,7 @@ import { shouldTranscribe } from "./processing-options.mjs";
 import {
   buildVideoRenderArgs,
   calculateMediaFrame,
+  outputDimensions,
 } from "./design-render.mjs";
 const required = [
   "SUPABASE_URL",
@@ -249,7 +250,7 @@ async function editorialSources(newsId) {
   return data;
 }
 const normalizeLookup = (value = "") =>
-  value
+  (typeof value === "string" ? value : value == null ? "" : String(value))
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -924,17 +925,22 @@ async function processDesignRender(design) {
     const stream = probe.streams?.[0];
     if (!stream?.width || !stream?.height)
       throw new Error("Não foi possível identificar as dimensões do vídeo");
+    const outputSize = outputDimensions(design.config_json?.format);
     const frame = calculateMediaFrame(
       stream.width,
       stream.height,
       design.config_json?.media,
+      outputSize,
     );
     await db
       .from("news_designs")
       .update({ render_progress: 45 })
       .eq("id", design.id)
       .eq("status", "rendering");
-    await run("ffmpeg", buildVideoRenderArgs(source, overlay, output, frame));
+    await run(
+      "ffmpeg",
+      buildVideoRenderArgs(source, overlay, output, frame, outputSize),
+    );
     await db
       .from("news_designs")
       .update({ render_progress: 85 })
@@ -960,8 +966,8 @@ async function processDesignRender(design) {
         design_id: design.id,
         storage_path: exportedPath,
         mime_type: "video/mp4",
-        width: 1080,
-        height: 1920,
+        width: outputSize.width,
+        height: outputSize.height,
         created_by: design.updated_by,
       });
     if (generatedError) throw generatedError;

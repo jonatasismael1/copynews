@@ -676,6 +676,22 @@ test("entrega a legenda para leitura mesmo quando o título continua igual", asy
   }
 });
 
+test("tolera campos nulos retornados pela IA sem falhar na normalização", () => {
+  const sources = classify({
+    originalTitle: null,
+    originalCaption: null,
+    articleBody: "Defesa Civil interdita ponte após vistoria em Pilar.",
+  });
+  expectSafeStrings(sources);
+  assert.equal(sources.sourceMode, "article_fallback");
+});
+
+function expectSafeStrings(value) {
+  for (const item of Object.values(value)) {
+    if (typeof item === "string") assert.doesNotThrow(() => item.normalize("NFD"));
+  }
+}
+
 test("usa o endpoint dedicado de transcrição do OpenRouter", async () => {
   const originalFetch = globalThis.fetch;
   let request;

@@ -123,7 +123,7 @@ const attributionTerms = [
 ];
 
 const normalize = (value = "") =>
-  value
+  (typeof value === "string" ? value : value == null ? "" : String(value))
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();

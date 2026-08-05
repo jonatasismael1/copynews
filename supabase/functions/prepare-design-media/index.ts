@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     if (profileError || !profile?.is_active)
       failure("FORBIDDEN", "Usuário sem acesso ao editor.", 403);
 
-    const { news_item_id } = await req.json();
+    const { news_item_id, media_index = 0 } = await req.json();
     if (!news_item_id)
       failure("NEWS_ID_REQUIRED", "Notícia não informada.");
 
@@ -132,7 +132,10 @@ Deno.serve(async (req) => {
     if (!sourcePaths.length)
       failure("MEDIA_URL_MISSING", "Esta notícia não possui mídia disponível.");
 
-    const sourcePath = sourcePaths[0];
+    const requestedIndex = Number.isInteger(media_index)
+      ? Math.max(0, Math.min(sourcePaths.length - 1, media_index))
+      : 0;
+    const sourcePath = sourcePaths[requestedIndex];
     const sourceId = await fingerprint(sourcePath);
     const folder = `${profile.organization_id}/${news.id}/source`;
     const { data: preparedFiles } = await admin.storage
@@ -150,7 +153,11 @@ Deno.serve(async (req) => {
           prepared.name.endsWith(`.${extension}`)
         )?.[0] ||
         "application/octet-stream";
-      if (design?.id && design.media_asset_path !== path) {
+      if (
+        requestedIndex === 0 &&
+        design?.id &&
+        design.media_asset_path !== path
+      ) {
         await userClient
           .from("news_designs")
           .update({ media_asset_path: path, media_mime_type: mimeType })
@@ -161,6 +168,8 @@ Deno.serve(async (req) => {
         path,
         mime_type: mimeType,
         source: "prepared",
+        index: requestedIndex,
+        count: sourcePaths.length,
       });
     }
 
@@ -226,6 +235,18 @@ Deno.serve(async (req) => {
     }
 
     if (design?.id) {
+      // The legacy columns continue pointing to the first slide for backward
+      // compatibility. All carousel slide paths are versioned in config_json.
+      if (requestedIndex !== 0) {
+        return response({
+          url: await signedUrl(admin, destinationPath),
+          path: destinationPath,
+          mime_type: mimeType,
+          source: "normalized",
+          index: requestedIndex,
+          count: sourcePaths.length,
+        });
+      }
       const { error: updateError } = await userClient
         .from("news_designs")
         .update({
@@ -248,6 +269,8 @@ Deno.serve(async (req) => {
       path: destinationPath,
       mime_type: mimeType,
       source: "normalized",
+      index: requestedIndex,
+      count: sourcePaths.length,
     });
   } catch (error) {
     const detail = error as Error & { code?: string; status?: number };

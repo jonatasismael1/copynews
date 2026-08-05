@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildVideoRenderArgs,
   calculateMediaFrame,
+  outputDimensions,
 } from "./design-render.mjs";
 
 test("vídeo horizontal usa cover central sem deformação", () => {
@@ -41,4 +42,20 @@ test("renderização mantém áudio e produz MP4 compatível", () => {
   ]);
   assert.ok(args.includes("yuv420p"));
   assert.ok(args.includes("+faststart"));
+});
+
+test("renderização respeita as dimensões próprias de cada formato", () => {
+  assert.deepEqual(outputDimensions("story"), { width: 1080, height: 1920 });
+  assert.deepEqual(outputDimensions("portrait"), { width: 1080, height: 1350 });
+  assert.deepEqual(outputDimensions("square"), { width: 1080, height: 1080 });
+  const dimensions = outputDimensions("square");
+  const frame = calculateMediaFrame(1920, 1080, { fit: "cover" }, dimensions);
+  const args = buildVideoRenderArgs(
+    "source.mp4",
+    "overlay.png",
+    "output.mp4",
+    frame,
+    dimensions,
+  );
+  assert.ok(args.some((value) => value.includes("s=1080x1080")));
 });

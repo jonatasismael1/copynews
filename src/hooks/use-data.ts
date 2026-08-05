@@ -112,6 +112,31 @@ export function useDefaultDesignTemplate() {
   });
 }
 
+export function useDesignTemplates() {
+  return useQuery({
+    queryKey: ["design-templates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("design_templates")
+        .select("*,design_template_layers(*)")
+        .eq("is_active", true)
+        .order("height", { ascending: false });
+      if (error) throw error;
+      return data as (DesignTemplate & {
+        design_template_layers: {
+          id: string;
+          layer_key: string;
+          layer_type: string;
+          z_index: number;
+          config_json: Record<string, unknown>;
+          is_visible: boolean;
+          is_locked: boolean;
+        }[];
+      })[];
+    },
+  });
+}
+
 export function useCreateNews() {
   const queryClient = useQueryClient();
   return useMutation({
