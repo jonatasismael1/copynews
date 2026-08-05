@@ -1,5 +1,6 @@
 services:
   copy-news-worker:
+    image: copy-news-worker:latest
     build:
       context: .
       dockerfile: worker/Dockerfile
