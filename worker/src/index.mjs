@@ -132,17 +132,17 @@ async function download(url, path) {
       code: "MEDIA_DOWNLOAD",
     });
   const length = Number(r.headers.get("content-length") || 0);
-  if (length > 100 * 1024 * 1024)
-    throw Object.assign(new Error("Mídia excede 100 MB"), {
+  if (length > 200 * 1024 * 1024)
+    throw Object.assign(new Error("Mídia excede 200 MB"), {
       code: "MEDIA_TOO_LARGE",
     });
   const file = createWriteStream(path);
   let bytes = 0;
   for await (const chunk of r.body) {
     bytes += chunk.length;
-    if (bytes > 100 * 1024 * 1024) {
+    if (bytes > 200 * 1024 * 1024) {
       file.destroy();
-      throw Object.assign(new Error("Mídia excede 100 MB"), {
+      throw Object.assign(new Error("Mídia excede 200 MB"), {
         code: "MEDIA_TOO_LARGE",
       });
     }
@@ -168,7 +168,7 @@ async function downloadVideoWithYtDlp(sourceUrl, dir, basename = "source-video")
     "--no-write-thumbnail",
     "--force-overwrites",
     "--max-filesize",
-    "100M",
+    "200M",
     "--socket-timeout",
     "20",
     "--retries",
@@ -182,8 +182,8 @@ async function downloadVideoWithYtDlp(sourceUrl, dir, basename = "source-video")
     sourceUrl,
   ]);
   const stats = await fs.stat(output);
-  if (!stats.size || stats.size > 100 * 1024 * 1024)
-    throw Object.assign(new Error("Mídia excede 100 MB"), {
+  if (!stats.size || stats.size > 200 * 1024 * 1024)
+    throw Object.assign(new Error("Mídia excede 200 MB"), {
       code: "MEDIA_TOO_LARGE",
     });
   return {
@@ -1048,17 +1048,17 @@ async function cleanup() {
 async function loop() {
   if (!busy) {
     try {
-      const job = await claim();
-      if (job) await processJob(job);
+      const design = await claimDesignRender();
+      if (design) await processDesignRender(design);
       else {
-        const design = await claimDesignRender();
-        if (design) await processDesignRender(design);
+        const job = await claim();
+        if (job) await processJob(job);
       }
     } catch (error) {
       log("loop.error", { message: error.message });
     }
   }
-  setTimeout(loop, 3000);
+  setTimeout(loop, 1000);
 }
 setInterval(
   () =>

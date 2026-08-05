@@ -287,7 +287,11 @@ export function CreateNewsPage() {
               ) : (
                 <Sparkles />
               )}
-              {mutation.isPending ? "Processando..." : "Processar notícia"}
+              {mutation.uploadProgress != null
+                ? `Enviando mídia ${mutation.uploadProgress}%`
+                : mutation.isPending
+                  ? "Processando..."
+                  : "Processar notícia"}
             </Button>
           </form>
         </CardContent>

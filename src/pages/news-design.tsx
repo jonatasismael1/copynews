@@ -71,6 +71,7 @@ import {
   extensionForMime,
   fitHeadline,
   mergeDesignConfig,
+  pinchZoom,
   significantCrop,
   suggestDesignFormat,
   templateForFormat,
@@ -90,6 +91,7 @@ import {
   savePreparedMediaFiles,
 } from "@/lib/media-download";
 import { supabase } from "@/lib/supabase";
+import { uploadStorageFile } from "@/lib/storage-upload";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -292,11 +294,11 @@ async function renderCarouselSlide(
   context.fillRect(0, 0, canvas.width, canvas.height);
   const frame = coverMedia(image.naturalWidth, image.naturalHeight, slide.media, canvas.width, canvas.height);
   context.drawImage(image, frame.x, frame.y, frame.width, frame.height);
-  if (profile.surface === "gradient") {
+  if (profile.surface === "gradient" || config.showMediaShade) {
     const gradient = context.createLinearGradient(0, profile.overlayStartY, 0, canvas.height);
     gradient.addColorStop(0, "rgba(0,0,0,0)");
-    gradient.addColorStop(0.42, "rgba(0,0,0,.62)");
-    gradient.addColorStop(1, "rgba(0,0,0,.92)");
+    gradient.addColorStop(0.42, profile.surface === "gradient" ? "rgba(0,0,0,.62)" : "rgba(0,0,0,.18)");
+    gradient.addColorStop(1, profile.surface === "gradient" ? "rgba(0,0,0,.92)" : "rgba(0,0,0,.46)");
     context.fillStyle = gradient;
     context.fillRect(0, profile.overlayStartY, canvas.width, canvas.height - profile.overlayStartY);
   }
@@ -416,6 +418,7 @@ export function NewsDesignPage() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [renderProgress, setRenderProgress] = useState(0);
   const [lastError, setLastError] = useState("");
   const [lastFailedAction, setLastFailedAction] = useState<
@@ -926,14 +929,6 @@ export function NewsDesignPage() {
     [mediaFile, mediaUrl],
   );
 
-  useEffect(() => {
-    if (savedDesign?.status !== "rendering") return;
-    const timer = window.setInterval(() => {
-      void refetchDesign();
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [refetchDesign, savedDesign?.status]);
-
   const updateConfig = useCallback(
     (next: Partial<DesignConfig>) =>
       setConfig((current) => ({ ...current, ...next })),
@@ -1120,14 +1115,11 @@ export function NewsDesignPage() {
     blob: Blob,
     contentType: string,
   ) {
-    const { error } = await supabase.storage
-      .from("news-designs")
-      .upload(path, blob, {
-        contentType,
-        cacheControl: "31536000",
-        upsert: true,
-      });
-    if (error) throw error;
+    await uploadStorageFile("news-designs", path, blob, {
+      contentType,
+      upsert: true,
+      onProgress: blob.size > 6 * 1024 * 1024 ? setUploadProgress : undefined,
+    });
     return path;
   }
 
@@ -1404,6 +1396,7 @@ export function NewsDesignPage() {
       toast.error(message);
       return null;
     } finally {
+      setUploadProgress(null);
       setSaving(false);
     }
   }
@@ -1673,7 +1666,6 @@ export function NewsDesignPage() {
       const centerClientY = (touches[0].clientY + touches[1].clientY) / 2;
       const pointX = rect ? (centerClientX - rect.left) / previewScale : canvasWidth / 2;
       const pointY = rect ? (centerClientY - rect.top) / previewScale : canvasHeight / 2;
-      const delta = (distance - lastPinchDistance.current) / 240;
       setConfig((current) => {
         const oldFrame = coverMedia(
           dimensions.width,
@@ -1682,7 +1674,11 @@ export function NewsDesignPage() {
           canvasWidth,
           canvasHeight,
         );
-        const zoom = Math.max(1, Math.min(3, current.media.zoom + delta));
+        const zoom = pinchZoom(
+          current.media.zoom,
+          lastPinchDistance.current || distance,
+          distance,
+        );
         const nextMedia = { ...current.media, zoom };
         const nextFrame = coverMedia(
           dimensions.width,
@@ -1917,7 +1913,7 @@ export function NewsDesignPage() {
                         }}
                       />
                     )}
-                    <Rect
+                    {(templateProfile.surface === "gradient" || config.showMediaShade) && <Rect
                       x={0}
                       y={templateProfile.overlayStartY}
                       width={canvasWidth}
@@ -1929,10 +1925,10 @@ export function NewsDesignPage() {
                       }}
                       fillLinearGradientColorStops={
                         templateProfile.surface === "box"
-                          ? [0, "rgba(0,0,0,.06)", 1, "rgba(0,0,0,.06)"]
+                          ? [0, "rgba(0,0,0,0)", 0.45, "rgba(0,0,0,.18)", 1, "rgba(0,0,0,.46)"]
                           : [0, "rgba(0,0,0,0)", 0.45, "rgba(0,0,0,.58)", 1, "rgba(0,0,0,.94)"]
                       }
-                    />
+                    />}
                   </Layer>
                   <Layer
                     ref={overlayLayerRef}
@@ -2055,7 +2051,7 @@ export function NewsDesignPage() {
               </Stage>
               {isVideo && mediaElement instanceof HTMLVideoElement && !activeMediaError && (
                 <div
-                  className="absolute inset-x-2 bottom-2 z-20 rounded-2xl bg-black/75 p-2 text-white shadow-xl backdrop-blur"
+                  className="absolute inset-x-2 bottom-2 z-20 rounded-xl border border-white/10 bg-black/55 p-1.5 text-white shadow-lg backdrop-blur-sm"
                   data-testid="video-player-overlay"
                   onPointerDown={(event) => event.stopPropagation()}
                 >
@@ -2242,7 +2238,7 @@ export function NewsDesignPage() {
         </section>
 
         <aside
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[58dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex max-h-[54dvh] min-h-0 flex-col bg-transparent md:pointer-events-auto md:static md:max-h-none md:border-l md:border-white/10 md:bg-[#181818]"
           data-testid="design-controls"
         >
           <div
@@ -2257,7 +2253,7 @@ export function NewsDesignPage() {
                 key={item.id}
                 type="button"
                 className={cn(
-                  "relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] font-bold transition md:min-h-11 md:px-0 md:text-[11px]",
+                  "relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 text-[10px] font-bold transition md:min-h-11 md:px-0 md:text-[11px]",
                   (item.id === "categoria" || item.id === "marca") && "max-md:hidden",
                   active
                     ? "bg-transparent text-[#fb0039] after:absolute after:inset-x-3 after:top-0 after:h-0.5 after:rounded-full after:bg-[#fb0039] md:bg-white md:text-black md:after:hidden"
@@ -2276,13 +2272,13 @@ export function NewsDesignPage() {
 
           <div
             className={cn(
-              "pointer-events-auto order-1 min-h-0 flex-1 overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#181818] p-4 pb-5 shadow-[0_-18px_40px_rgba(0,0,0,0.45)] md:order-2 md:block md:rounded-none md:border-t-0 md:shadow-none",
+              "pointer-events-auto order-1 min-h-0 flex-1 overflow-y-auto rounded-t-3xl border-t border-white/10 bg-[#181818] p-3 pb-4 shadow-[0_-14px_32px_rgba(0,0,0,0.38)] md:order-2 md:block md:rounded-none md:border-t-0 md:p-4 md:shadow-none",
               !panelOpen && "max-md:hidden",
             )}
             data-testid="design-properties-panel"
           >
             <div
-              className="mb-3 flex items-center justify-between md:hidden"
+              className="sticky top-0 z-30 -mx-3 -mt-3 mb-2 flex items-center justify-between border-b border-white/5 bg-[#181818]/95 px-3 py-1 backdrop-blur md:hidden"
               onTouchStart={(event) => {
                 sheetTouchStart.current = event.touches[0]?.clientY ?? null;
               }}
@@ -2327,8 +2323,8 @@ export function NewsDesignPage() {
             )}
             {tab === "modelo" && (
               <ControlSection
-                title="Formato e modelo"
-                description="Cada formato possui composição própria. Título, categoria e mídia são preservados ao trocar."
+                title="Modelo"
+                description="Escolha o formato da publicação."
               >
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {([
@@ -2400,6 +2396,14 @@ export function NewsDesignPage() {
                     );
                   })}
                 </div>
+                {config.format === "story" && (
+                  <ToggleControl
+                    label="Sombra sobre a mídia"
+                    checked={config.showMediaShade}
+                    onChange={(showMediaShade) => updateConfig({ showMediaShade })}
+                    disabled={!canEdit}
+                  />
+                )}
                 <Button
                   variant="outline"
                   className="w-full border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
@@ -2415,7 +2419,7 @@ export function NewsDesignPage() {
             {tab === "midia" && (
               <ControlSection
                 title="Mídia"
-                description="Enquadramento, corte e reprodução do arquivo."
+                description="Ajuste o enquadramento e o vídeo."
               >
                 <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
                   <p className="text-xs font-bold text-white/75">
@@ -2444,17 +2448,17 @@ export function NewsDesignPage() {
                         {mediaMime || "formato não identificado"}
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      className="grid min-h-11 shrink-0 grid-cols-[auto_auto] items-center gap-1.5 rounded-xl border border-white/15 px-2.5 text-xs font-bold text-white/80 hover:bg-white/10"
+                      onClick={() => uploadRef.current?.click()}
+                      disabled={!canEdit}
+                      aria-label="Trocar mídia"
+                    >
+                      <ImagePlus size={16} /> Trocar
+                    </button>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  className="w-full border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                  onClick={() => uploadRef.current?.click()}
-                  disabled={!canEdit}
-                >
-                  <ImagePlus />
-                  Trocar mídia
-                </Button>
                 {config.slides.length === 1 && (
                   <Button
                     variant="outline"
@@ -2565,7 +2569,7 @@ export function NewsDesignPage() {
                 )}
                 <div>
                   <p className="mb-2 text-xs font-bold text-white/65">
-                    Enquadramento rápido
+                    Enquadramento
                   </p>
                   <div className="grid grid-cols-5 gap-2">
                     <MediaAction
@@ -2646,11 +2650,41 @@ export function NewsDesignPage() {
             {tab === "titulo" && (
               <ControlSection
                 title="Título da notícia"
-                description={`O editor começa no tamanho do modelo e só reduz quando o texto ultrapassa a altura segura de ${config.title.maxLines} linhas.`}
+                description="Escolha uma versão ou ajuste o texto diretamente."
               >
+                <div className="grid grid-cols-2 gap-2" aria-label="Versão do título">
+                  <button
+                    type="button"
+                    className={cn(
+                      "min-h-11 rounded-xl border px-3 text-xs font-bold",
+                      title === (news.generated_title || "")
+                        ? "border-white bg-white text-black"
+                        : "border-white/15 text-white/75",
+                    )}
+                    onClick={() => setTitle(news.generated_title || news.original_title || "")}
+                    disabled={!canEdit || !news.generated_title}
+                    aria-pressed={title === (news.generated_title || "")}
+                  >
+                    Título novo
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "min-h-11 rounded-xl border px-3 text-xs font-bold",
+                      title === (news.original_title || "")
+                        ? "border-white bg-white text-black"
+                        : "border-white/15 text-white/75",
+                    )}
+                    onClick={() => setTitle(news.original_title || news.generated_title || "")}
+                    disabled={!canEdit || !news.original_title}
+                    aria-pressed={title === (news.original_title || "")}
+                  >
+                    Título original
+                  </button>
+                </div>
                 <Textarea
                   ref={titleInputRef}
-                  className="min-h-36 border-white/15 bg-white/5 text-white placeholder:text-white/35"
+                  className="min-h-28 border-white/15 bg-white/5 text-white placeholder:text-white/35"
                   value={title}
                   maxLength={280}
                   onChange={(event) => setTitle(event.target.value)}
@@ -2854,17 +2888,6 @@ export function NewsDesignPage() {
                     )}
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  className="w-full text-white hover:bg-white/10 hover:text-white"
-                  onClick={() =>
-                    setTitle(news.generated_title || news.original_title || "")
-                  }
-                  disabled={!canEdit}
-                >
-                  <RotateCcw />
-                  Restaurar título da notícia
-                </Button>
                 {config.slides.length > 1 && (
                   <Button
                     variant="outline"
@@ -2884,8 +2907,8 @@ export function NewsDesignPage() {
 
             {tab === "categoria" && (
               <ControlSection
-                title="Categoria ou destaque"
-                description="Somente o texto pode ser alterado; a tarja mantém a identidade visual."
+                title="Destaque"
+                description="Edite o texto da tarja."
               >
                 <Input
                   ref={categoryInputRef}
@@ -2948,13 +2971,13 @@ export function NewsDesignPage() {
             {tab === "marca" && (
               <ControlSection
                 title="Francês News"
-                description="A posição e as proporções da marca estão bloqueadas."
+                description="Marca e créditos da arte."
               >
-                <div className="rounded-2xl border border-white/10 bg-black p-4">
+                <div className="rounded-2xl border border-white/10 bg-black p-3">
                   <img
                     src="/brand/frances-news-vertical.png"
                     alt="Logo vertical da Francês News"
-                    className="mx-auto h-52 w-auto object-contain"
+                    className="mx-auto h-40 w-auto object-contain"
                   />
                 </div>
                 <ToggleControl
@@ -3004,7 +3027,7 @@ export function NewsDesignPage() {
             {tab === "exportar" && (
               <ControlSection
                 title="Arquivo final"
-                description={`Escolha entre preservar a mídia original ou baixar a composição editada em ${canvasWidth} × ${canvasHeight}.`}
+                description="Baixe a mídia original ou a versão editada."
               >
                 {!isVideo && (
                   <div className="grid grid-cols-2 gap-2">
@@ -3025,7 +3048,7 @@ export function NewsDesignPage() {
                     ))}
                   </div>
                 )}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm">
                   <div className="flex justify-between">
                     <span className="text-white/55">Resolução</span>
                     <b>{canvasWidth} × {canvasHeight}</b>
@@ -3078,6 +3101,9 @@ export function NewsDesignPage() {
                         style={{ width: `${savedDesign.render_progress}%` }}
                       />
                     </div>
+                    <p className="mt-2 text-xs leading-relaxed text-white/60">
+                      Você pode sair desta página. O processamento continuará em segundo plano.
+                    </p>
                   </div>
                 )}
                 <Button
@@ -3101,14 +3127,16 @@ export function NewsDesignPage() {
                   ) : (
                     <Download />
                   )}
-                  {isVideo
-                    ? savedDesign?.status === "rendering"
+                  {uploadProgress != null
+                    ? `Enviando vídeo ${uploadProgress}%`
+                    : isVideo
+                      ? savedDesign?.status === "rendering"
                       ? `Renderizando ${savedDesign.render_progress}%`
                       : savedDesign?.status === "ready" &&
                           savedDesign.export_format === "mp4"
                         ? "Baixar vídeo"
                         : "Renderizar vídeo"
-                    : "Baixar arte"}
+                      : "Baixar arte"}
                 </Button>
                 {isVideo &&
                   savedDesign?.status === "ready" &&
@@ -3163,7 +3191,7 @@ function MediaAction({
     <button
       type="button"
       className={cn(
-        "flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1 text-[10px] font-semibold transition",
+        "flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 text-[10px] font-semibold transition",
         active
           ? "border-[#fb0039]/60 bg-[#fb0039]/10 text-[#ff416b]"
           : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white",
@@ -3172,7 +3200,7 @@ function MediaAction({
       disabled={disabled}
       aria-pressed={active}
     >
-      <Icon size={18} />
+      <Icon size={16} />
       <span className="max-w-full truncate">{label}</span>
     </button>
   );
@@ -3188,10 +3216,10 @@ function ControlSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-bold">{title}</h2>
-        <p className="mt-1 text-sm leading-relaxed text-white/55">
+        <h2 className="text-base font-bold">{title}</h2>
+        <p className="mt-0.5 text-xs leading-relaxed text-white/55">
           {description}
         </p>
       </div>

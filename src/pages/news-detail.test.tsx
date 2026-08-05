@@ -181,6 +181,24 @@ describe("detalhes da notícia no mobile", () => {
     expect(copyCaption).toHaveClass("size-11");
   });
 
+  it("mostra o progresso da arte enquanto o vídeo renderiza em segundo plano", () => {
+    currentDesign = {
+      id: "design-1",
+      status: "rendering",
+      render_progress: 42,
+      preview_path: null,
+      exported_file_path: null,
+      design_templates: { name: "Story" },
+    };
+
+    renderPage();
+
+    expect(screen.getByText("Renderizando 42%")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Progresso da renderização" }),
+    ).toHaveAttribute("aria-valuenow", "42");
+  });
+
   it("copia o texto completo mesmo depois de recolher a seção", async () => {
     renderPage();
 

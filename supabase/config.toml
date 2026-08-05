@@ -6,6 +6,10 @@ schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
+[storage]
+enabled = true
+file_size_limit = "200MiB"
+
 [functions.admin-users]
 verify_jwt = true
 [functions.process-source-url]

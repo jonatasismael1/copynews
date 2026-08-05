@@ -10,6 +10,7 @@ import {
   coverMedia,
   fitHeadline,
   mergeDesignConfig,
+  pinchZoom,
   significantCrop,
   suggestDesignFormat,
   titleColorForSurface,
@@ -46,6 +47,12 @@ describe("template de arte", () => {
       x: -520,
       y: -280,
     });
+  });
+
+  it("amplia com resposta sensível ao gesto de pinça", () => {
+    expect(pinchZoom(1, 100, 120)).toBeGreaterThan(1.3);
+    expect(pinchZoom(2.8, 100, 180)).toBe(3);
+    expect(pinchZoom(1.2, 100, 80)).toBe(1);
   });
 
   it("ajusta títulos curtos e preserva caracteres especiais", () => {
@@ -112,6 +119,9 @@ describe("template de arte", () => {
         new File(["video"], "noticia.mp4", { type: "video/mp4" }),
       ),
     ).toBeNull();
+    const videoGrande = new File(["video"], "noticia-grande.mp4", { type: "video/mp4" });
+    Object.defineProperty(videoGrande, "size", { value: 201 * 1024 * 1024 });
+    expect(validateDesignMedia(videoGrande)).toContain("200 MB");
   });
 
   it("permite ajustar a mídia inteira sem deformar", () => {
@@ -240,5 +250,10 @@ describe("template de arte", () => {
       minWidth: 520,
       height: 68,
     });
+  });
+
+  it("inicia o Story sem sombra opcional sobre a mídia", () => {
+    expect(DEFAULT_DESIGN_CONFIG.showMediaShade).toBe(false);
+    expect(mergeDesignConfig({}).showMediaShade).toBe(false);
   });
 });

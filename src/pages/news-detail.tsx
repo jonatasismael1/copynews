@@ -496,11 +496,11 @@ export function NewsDetailPage() {
   const historyItems = [
     ...(data.news_versions ?? []).map((item: Record<string, string>) => ({
       at: item.created_at,
-      text: `${item.field === "title" ? "Título" : "Legenda"} alterado (${item.change_type})`,
+      text: `${item.field === "title" ? "Título" : "Legenda"} ${item.change_type === "ai" ? "revisado pela IA" : "editado"}`,
     })),
     ...(data.status_history ?? []).map((item: Record<string, string>) => ({
       at: item.created_at,
-      text: `Status: ${item.from_status ? statusLabels[item.from_status as NewsStatus] : "inicial"} → ${statusLabels[item.to_status as NewsStatus]}`,
+      text: `${item.from_status ? statusLabels[item.from_status as NewsStatus] : "Início"} → ${statusLabels[item.to_status as NewsStatus]}`,
     })),
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
@@ -849,6 +849,10 @@ export function NewsDetailPage() {
                 >
                   {newsDesign?.status === "ready"
                     ? "Pronta"
+                    : newsDesign?.status === "rendering"
+                      ? `Renderizando ${newsDesign.render_progress}%`
+                      : newsDesign?.status === "failed"
+                        ? "Falha ao renderizar"
                     : newsDesign
                       ? "Rascunho"
                       : "Não criada"}
@@ -857,6 +861,21 @@ export function NewsDetailPage() {
                   <Badge variant="outline">Em uso</Badge>
                 )}
               </div>
+              {newsDesign?.status === "rendering" && (
+                <div
+                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                  role="progressbar"
+                  aria-label="Progresso da renderização"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={newsDesign.render_progress}
+                >
+                  <div
+                    className="h-full rounded-full bg-[#fb0039] transition-[width] duration-500"
+                    style={{ width: `${newsDesign.render_progress}%` }}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {newsDesign && (
@@ -1252,7 +1271,7 @@ export function NewsDetailPage() {
 
       <ResponsiveSection
         title="Histórico editorial"
-        summary={`${historyItems.length} alteração${historyItems.length === 1 ? "" : "ões"}${historyItems[0] ? ` · ${new Date(historyItems[0].at).toLocaleDateString("pt-BR")}` : ""}`}
+        summary={`${historyItems.length} ${historyItems.length === 1 ? "alteração" : "alterações"}${historyItems[0] ? ` · ${new Date(historyItems[0].at).toLocaleDateString("pt-BR")}` : ""}`}
       >
         {historyItems.length ? (
           <div className="space-y-3">

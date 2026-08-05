@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { uploadStorageFile } from "@/lib/storage-upload";
 import type {
   NewsItem,
   NewsDesign,
@@ -83,6 +85,8 @@ export function useNewsDesign(newsId?: string) {
       if (error) throw error;
       return data as NewsDesignWithTemplate | null;
     },
+    refetchInterval: (query) =>
+      query.state.data?.status === "rendering" ? 2000 : false,
   });
 }
 
@@ -139,7 +143,8 @@ export function useDesignTemplates() {
 
 export function useCreateNews() {
   const queryClient = useQueryClient();
-  return useMutation({
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const mutation = useMutation({
     mutationFn: async (input: CreateNewsInput & { media_file?: File }) => {
       let uploadedPath: string | null = null;
       let body: Record<string, unknown> = input;
@@ -149,10 +154,11 @@ export function useCreateNews() {
         const file = input.media_file;
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
         uploadedPath = `${userData.user.id}/sources/${crypto.randomUUID()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from("temporary-media")
-          .upload(uploadedPath, file, { contentType: file.type, upsert: false });
-        if (uploadError) throw uploadError;
+        await uploadStorageFile("temporary-media", uploadedPath, file, {
+          contentType: file.type,
+          upsert: false,
+          onProgress: file.size > 6 * 1024 * 1024 ? setUploadProgress : undefined,
+        });
         const values: Record<string, unknown> = { ...input };
         delete values.media_file;
         body = { ...values, source_media: { path: uploadedPath, name: file.name, mime_type: file.type, size: file.size } };
@@ -181,7 +187,9 @@ export function useCreateNews() {
       toast.success("Notícia enviada para processamento");
     },
     onError: (error) => toast.error(message(error)),
+    onSettled: () => setUploadProgress(null),
   });
+  return { ...mutation, uploadProgress };
 }
 
 export function useUpdateNews() {

@@ -42,6 +42,7 @@ test("renderização mantém áudio e produz MP4 compatível", () => {
   ]);
   assert.ok(args.includes("yuv420p"));
   assert.ok(args.includes("+faststart"));
+  assert.equal(args[args.indexOf("-preset") + 1], "superfast");
 });
 
 test("renderização respeita as dimensões próprias de cada formato", () => {

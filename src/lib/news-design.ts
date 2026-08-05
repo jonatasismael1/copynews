@@ -57,6 +57,7 @@ export type DesignConfig = {
   title: TitleLayout;
   showCategory: boolean;
   showBrand: boolean;
+  showMediaShade: boolean;
   showCredits: boolean;
   credits: string;
   slides: CarouselSlide[];
@@ -181,6 +182,7 @@ export const DEFAULT_DESIGN_CONFIG: DesignConfig = {
   title: { ...DESIGN_TEMPLATES.story.title },
   showCategory: true,
   showBrand: true,
+  showMediaShade: false,
   showCredits: false,
   credits: "",
   slides: [],
@@ -287,6 +289,18 @@ export function coverMedia(
   const offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, transform.offsetX || 0));
   const offsetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, transform.offsetY || 0));
   return { x: (canvasWidth - width) / 2 + offsetX, y: (canvasHeight - height) / 2 + offsetY, width, height };
+}
+
+export function pinchZoom(
+  currentZoom: number,
+  previousDistance: number,
+  nextDistance: number,
+  sensitivity = 1.8,
+) {
+  if (previousDistance <= 0 || nextDistance <= 0)
+    return Math.max(1, Math.min(3, currentZoom));
+  const ratio = nextDistance / previousDistance;
+  return Math.max(1, Math.min(3, currentZoom * ratio ** sensitivity));
 }
 
 export function clampMediaPosition(
@@ -417,7 +431,7 @@ export function validateDesignImage(file: File) {
 export function validateDesignMedia(file: File) {
   const allowed = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm", "video/quicktime"];
   if (!allowed.includes(file.type)) return "Use uma imagem JPG, PNG ou WebP, ou um vídeo MP4, WebM ou MOV.";
-  const limit = file.type.startsWith("video/") ? 100 : 15;
+  const limit = file.type.startsWith("video/") ? 200 : 15;
   if (file.size > limit * 1024 * 1024) return `A mídia deve ter no máximo ${limit} MB.`;
   return null;
 }

@@ -200,12 +200,12 @@ Deno.serve(async (req) => {
         415,
       );
     const sizeLimit = mimeType.startsWith("video/")
-      ? 100 * 1024 * 1024
+      ? 200 * 1024 * 1024
       : 15 * 1024 * 1024;
     if (blob.size > sizeLimit)
       failure(
         "FILE_TOO_LARGE",
-        `A mídia ultrapassa o limite de ${mimeType.startsWith("video/") ? 100 : 15} MB.`,
+        `A mídia ultrapassa o limite de ${mimeType.startsWith("video/") ? 200 : 15} MB.`,
         413,
       );
 
