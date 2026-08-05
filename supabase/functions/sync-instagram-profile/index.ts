@@ -83,7 +83,7 @@ function isoDate(value: unknown) {
 function postCode(record: Record<string, unknown>) {
   const direct = text(first(record, ["shortcode", "code", "short_code"]));
   if (direct) return direct;
-  const permalink = text(first(record, ["permalink", "post_url", "instagram_url"]));
+  const permalink = text(first(record, ["permalink", "post_url", "instagram_url", "url"]));
   return permalink?.match(/\/(?:p|reel|reels|tv)\/([^/?#]+)/i)?.[1] || null;
 }
 
@@ -93,43 +93,45 @@ function parsePayload(payload: unknown, requestedUsername: string) {
     const username = text(first(item, ["username", "profile", "user_name"]));
     return username?.replace(/^@/, "").toLowerCase() === requestedUsername &&
       (item.followers !== undefined || item.followers_count !== undefined ||
-        item.full_name !== undefined || item.profile_pic_url !== undefined);
+        item.full_name !== undefined || item.fullName !== undefined ||
+        item.profile_pic_url !== undefined || item.profilePicUrl !== undefined);
   }) || {};
   const seen = new Set<string>();
   const posts = all.flatMap((item) => {
     const code = postCode(item);
     if (!code || seen.has(code)) return [];
     const publishedAt = isoDate(first(item, [
-      "published_at", "date_utc", "date", "taken_at", "taken_at_timestamp",
+      "published_at", "publishedAt", "date_utc", "date", "taken_at", "taken_at_timestamp",
       "timestamp", "created_at",
     ]));
     if (!publishedAt) return [];
     seen.add(code);
-    const isVideo = Boolean(first(item, ["is_video", "video", "isVideo"]));
+    const mediaType = text(first(item, ["type", "typename"]))?.toLowerCase();
+    const isVideo = mediaType === "video" || Boolean(first(item, ["is_video", "video", "isVideo"]));
     return [{
       code,
       publishedAt,
-      permalink: text(first(item, ["permalink", "post_url", "instagram_url"])) ||
+      permalink: text(first(item, ["permalink", "post_url", "instagram_url", "url"])) ||
         `https://www.instagram.com/${isVideo ? "reel" : "p"}/${code}/`,
       caption: text(first(item, ["caption", "caption_text", "title", "description"])),
       thumbnail: text(first(item, [
-        "thumbnail_url", "display_url", "image_url", "url_thumbnail",
+        "thumbnail_url", "thumbnailUrl", "display_url", "image_url", "url_thumbnail",
       ])),
       likes: count(first(item, ["likes", "likes_count", "like_count"])),
       comments: count(first(item, ["comments", "comments_count", "comment_count"])),
       views: count(first(item, [
-        "views", "view_count", "video_views", "video_view_count", "play_count",
+        "views", "view_count", "video_views", "videoViews", "video_view_count", "play_count",
       ])),
       raw: item,
     }];
   });
   return {
     profile: {
-      displayName: text(first(profile, ["full_name", "display_name", "name"])),
-      avatarUrl: text(first(profile, ["profile_pic_url", "profile_pic_url_hd", "avatar_url"])),
+      displayName: text(first(profile, ["full_name", "fullName", "display_name", "name"])),
+      avatarUrl: text(first(profile, ["profile_pic_url", "profilePicUrl", "profile_pic_url_hd", "avatar_url"])),
       followers: optionalCount(first(profile, ["followers", "followers_count", "edge_followed_by_count"])),
       following: optionalCount(first(profile, ["following", "following_count", "edge_follow_count"])),
-      mediaCount: optionalCount(first(profile, ["media_count", "posts_count", "mediacount"])),
+      mediaCount: optionalCount(first(profile, ["media_count", "posts_count", "postsCount", "mediacount"])),
     },
     posts,
   };
