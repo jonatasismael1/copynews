@@ -44,3 +44,5 @@ verify_jwt = true
 verify_jwt = false
 [functions.share-news]
 verify_jwt = false
+[functions.sync-instagram-profile]
+verify_jwt = true

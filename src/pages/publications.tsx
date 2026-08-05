@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { InstagramProfileTracker } from "@/components/instagram-profile-tracker";
 import {
   useCreatePublication,
   useLookups,
@@ -46,6 +47,7 @@ export function PublicationsPage() {
   const [modal, setModal] = useState<"publication" | "metrics" | "detail" | null>(null);
   const [selected, setSelected] = useState("");
   const [userFilter, setUserFilter] = useState("all");
+  const [profileFilter, setProfileFilter] = useState("all");
   const [period, setPeriod] = useState<Period>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -59,7 +61,11 @@ export function PublicationsPage() {
       userFilter === "all" ||
       publication.created_by === userFilter ||
       publication.posted_by === userFilter;
-    return matchesUser && publishedAt >= range.from && publishedAt < range.to;
+    const trackedProfileId = (publication as PublicationWithRelations & {
+      tracked_profile_id?: string | null;
+    }).tracked_profile_id;
+    const matchesProfile = profileFilter === "all" || trackedProfileId === profileFilter;
+    return matchesUser && matchesProfile && publishedAt >= range.from && publishedAt < range.to;
   });
   const selectedPublication = data.find((publication) => publication.id === selected);
 
@@ -176,6 +182,12 @@ export function PublicationsPage() {
           </Button>
         </div>
       </div>
+      <InstagramProfileTracker
+        publications={data}
+        selectedProfile={profileFilter}
+        onSelectProfile={setProfileFilter}
+        onSynced={refetch}
+      />
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="flex flex-wrap gap-2">
