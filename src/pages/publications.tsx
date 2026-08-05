@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Archive,
   ClipboardPaste,
@@ -41,14 +42,18 @@ type Snapshot = Record<string, number | string>;
 type Period = "today" | "yesterday" | "3days" | "7days" | "30days" | "custom";
 
 export function PublicationsPage() {
+  const [searchParams] = useSearchParams();
   const { profile } = useAuth();
   const { data = [], isLoading, refetch } = usePublications();
   const { data: lookups } = useLookups();
-  const [modal, setModal] = useState<"publication" | "metrics" | "detail" | null>(null);
-  const [selected, setSelected] = useState("");
-  const [userFilter, setUserFilter] = useState("all");
+  const [modal, setModal] = useState<"publication" | "metrics" | "detail" | null>(() => searchParams.get("publication") ? "detail" : null);
+  const [selected, setSelected] = useState(() => searchParams.get("publication") || "");
+  const [userFilter, setUserFilter] = useState(() => searchParams.get("user") || "all");
   const [profileFilter, setProfileFilter] = useState("all");
-  const [period, setPeriod] = useState<Period>("today");
+  const [period, setPeriod] = useState<Period>(() => {
+    const requested = searchParams.get("period");
+    return (["today", "yesterday", "3days", "7days", "30days", "custom"] as Period[]).includes(requested as Period) ? requested as Period : "today";
+  });
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [syncingAll, setSyncingAll] = useState(false);
@@ -185,8 +190,6 @@ export function PublicationsPage() {
       <InstagramProfileTracker
         publications={data}
         selectedProfile={profileFilter}
-        syncStartDate={brightDate(range.from)}
-        syncEndDate={brightDate(range.to)}
         onSelectProfile={setProfileFilter}
         onSynced={refetch}
       />
@@ -759,10 +762,6 @@ function publicationRange(period: Period, customFrom: string, customTo: string) 
     }
   }
   return { from: from.getTime(), to: to.getTime() };
-}
-function brightDate(timestamp: number) {
-  const value = new Date(timestamp);
-  return `${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}-${value.getFullYear()}`;
 }
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {

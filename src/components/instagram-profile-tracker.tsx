@@ -46,8 +46,6 @@ type TrackedPublication = {
 type Props = {
   publications: TrackedPublication[];
   selectedProfile: string;
-  syncStartDate: string;
-  syncEndDate: string;
   onSelectProfile: (profileId: string) => void;
   onSynced: () => Promise<unknown> | unknown;
 };
@@ -74,6 +72,15 @@ function lastSevenDays() {
     dates.push(todayKey(date));
   }
   return dates;
+}
+
+function brightDate(date: string) {
+  const [year, month, day] = date.split("-");
+  return `${month}-${day}-${year}`;
+}
+
+function reportEndDate() {
+  return brightDate(todayKey(new Date(Date.now() + 86_400_000)));
 }
 
 function downloadWeeklyReport(rows: DailyReportRow[], profiles: TrackedInstagramProfile[]) {
@@ -106,6 +113,15 @@ function downloadWeeklyReport(rows: DailyReportRow[], profiles: TrackedInstagram
   pdf.save(`relatorio-instagram-${dates[0]}-a-${dates.at(-1)}.pdf`);
 }
 
+function ProfileMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[10px] bg-muted/60 p-3">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-1 font-display text-xl font-bold">{value.toLocaleString("pt-BR")}</p>
+    </div>
+  );
+}
+
 async function functionError(error: unknown) {
   let detail = error instanceof Error ? error.message : "Não foi possível sincronizar o perfil";
   try {
@@ -121,8 +137,6 @@ async function functionError(error: unknown) {
 export function InstagramProfileTracker({
   publications,
   selectedProfile,
-  syncStartDate,
-  syncEndDate,
   onSelectProfile,
   onSynced,
 }: Props) {
@@ -130,6 +144,7 @@ export function InstagramProfileTracker({
   const [input, setInput] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [reportDay, setReportDay] = useState(todayKey());
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["tracked-instagram-profiles"],
     queryFn: async () => {
@@ -155,6 +170,13 @@ export function InstagramProfileTracker({
       return data as DailyReportRow[];
     },
   });
+  const fixedProfiles = profiles.filter((profile) => profile.is_fixed);
+  const reportProfiles = selectedProfile === "all"
+    ? fixedProfiles
+    : fixedProfiles.filter((profile) => profile.id === selectedProfile);
+  const selectedProfileData = profiles.find((profile) => profile.id === selectedProfile);
+  const selectedProfileRows = reportRows.filter((row) => row.tracked_profile_id === selectedProfile);
+  const selectedToday = selectedProfileRows.find((row) => row.report_date === todayKey());
 
   async function runSync(body: { profile?: string; profile_id?: string }) {
     let request: {
@@ -162,7 +184,7 @@ export function InstagramProfileTracker({
       profile_id?: string;
       start_date: string;
       end_date: string;
-    } = { ...body, start_date: syncStartDate, end_date: syncEndDate };
+    } = { ...body, start_date: brightDate(weekDates[0]), end_date: reportEndDate() };
     for (let attempt = 0; attempt < 60; attempt += 1) {
       const { data, error } = await supabase.functions.invoke(
         "sync-instagram-profile",
@@ -174,8 +196,8 @@ export function InstagramProfileTracker({
       }
       request = {
         profile_id: String(data.profile.id),
-        start_date: syncStartDate,
-        end_date: syncEndDate,
+        start_date: brightDate(weekDates[0]),
+        end_date: reportEndDate(),
       };
       await new Promise((resolve) => window.setTimeout(resolve, 8_000));
     }
@@ -360,33 +382,60 @@ export function InstagramProfileTracker({
             );
           })}
         </div>
+        {selectedProfileData && (
+          <section className="rounded-[var(--radius-card)] border bg-card p-4" aria-label={`Resumo de @${selectedProfileData.username}`}>
+            <div className="flex items-center gap-3">
+              {selectedProfileData.avatar_url ? (
+                <img className="size-12 rounded-full object-cover" src={selectedProfileData.avatar_url} alt="" />
+              ) : (
+                <div className="grid size-12 place-items-center rounded-full bg-muted"><AtSign size={20} /></div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate font-display font-bold">@{selectedProfileData.username}</h3>
+                <p className="truncate text-xs text-muted-foreground">{selectedProfileData.display_name || `${formatNumber(selectedProfileData.followers_count)} seguidores`}</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => onSelectProfile("all")}>Ver todos</Button>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <ProfileMetric label="Posts hoje" value={selectedToday?.authored_posts_count ?? 0} />
+              <ProfileMetric label="Posts em 7 dias" value={selectedProfileRows.reduce((sum, row) => sum + row.authored_posts_count, 0)} />
+              <ProfileMetric label="Curtidas em 7 dias" value={selectedProfileRows.reduce((sum, row) => sum + row.likes, 0)} />
+              <ProfileMetric label="Comentários em 7 dias" value={selectedProfileRows.reduce((sum, row) => sum + row.comments, 0)} />
+            </div>
+          </section>
+        )}
         <section className="space-y-3 rounded-2xl border bg-muted/20 p-3 sm:p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-display font-bold">Relatório dos últimos 7 dias</p>
-              <p className="text-xs text-muted-foreground">
-                Atualização automática diária às 19h, separando autoria e colaborações aceitas.
-              </p>
+              <p className="font-display font-bold">Relatório diário</p>
+              <p className="text-xs text-muted-foreground">Consulte qualquer dia dos últimos 7 dias.</p>
             </div>
             <Button
               size="sm"
               variant="outline"
               disabled={!profiles.length}
-              onClick={() => downloadWeeklyReport(reportRows, profiles.filter((profile) => profile.is_fixed))}
+              onClick={() => downloadWeeklyReport(reportRows, reportProfiles)}
             >
               <Download /> Baixar relatório semanal
             </Button>
           </div>
+          <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Filtrar dia do relatório">
+            {[...weekDates].reverse().map((date, index) => (
+              <Button key={date} size="sm" className="shrink-0" variant={reportDay === date ? "default" : "outline"} onClick={() => setReportDay(date)}>
+                {index === 0 ? "Hoje" : index === 1 ? "Ontem" : date.slice(5).split("-").reverse().join("/")}
+              </Button>
+            ))}
+          </div>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            {profiles.filter((profile) => profile.is_fixed).map((profile) => {
-              const rows = reportRows.filter((row) => row.tracked_profile_id === profile.id);
+            {reportProfiles.map((profile) => {
+              const row = reportRows.find((item) => item.tracked_profile_id === profile.id && item.report_date === reportDay);
               return (
                 <div key={profile.id} className="rounded-xl border bg-card p-3">
                   <p className="truncate text-xs font-semibold">@{profile.username}</p>
                   <p className="mt-1 text-2xl font-bold">
-                    {rows.reduce((sum, row) => sum + row.authored_posts_count, 0)}
+                    {row?.authored_posts_count ?? 0}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">publicados pelo perfil em 7 dias</p>
+                  <p className="text-[11px] text-muted-foreground">publicados em {reportDay.split("-").reverse().join("/")}</p>
                 </div>
               );
             })}
@@ -405,14 +454,13 @@ export function InstagramProfileTracker({
                 </tr>
               </thead>
               <tbody>
-                {[...weekDates].reverse().flatMap((date) =>
-                  profiles.filter((profile) => profile.is_fixed).map((profile) => {
+                {reportProfiles.map((profile) => {
                     const row = reportRows.find((item) =>
-                      item.report_date === date && item.tracked_profile_id === profile.id
+                      item.report_date === reportDay && item.tracked_profile_id === profile.id
                     );
                     return (
-                      <tr key={`${date}-${profile.id}`} className="border-b last:border-0">
-                        <td className="p-2.5">{date.split("-").reverse().join("/")}</td>
+                      <tr key={`${reportDay}-${profile.id}`} className="border-b last:border-0">
+                        <td className="p-2.5">{reportDay.split("-").reverse().join("/")}</td>
                         <td className="p-2.5 font-semibold">@{profile.username}</td>
                         <td className="p-2.5 text-right font-semibold">{row?.authored_posts_count ?? 0}</td>
                         <td className="p-2.5 text-right">{row?.collaborations_count ?? 0}</td>
@@ -421,8 +469,7 @@ export function InstagramProfileTracker({
                         <td className="p-2.5 text-right">{formatNumber(row?.comments ?? 0)}</td>
                       </tr>
                     );
-                  })
-                )}
+                  })}
               </tbody>
             </table>
           </div>

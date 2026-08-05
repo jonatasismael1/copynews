@@ -146,7 +146,7 @@ export function DashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.65fr_1fr]">
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -356,7 +356,7 @@ export function DashboardPage() {
       )}
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Trophy className="text-amber-500" />
@@ -367,14 +367,14 @@ export function DashboardPage() {
             {data?.ranking?.length ? (
               <div className="divide-y">
                 {data.ranking.map((row, index) => (
-                  <div key={row.id} className="flex items-center gap-3 py-3">
+                  <Link key={row.id} to={`/publicacoes?user=${row.id}&period=${period === 1 ? "today" : period === 7 ? "7days" : "30days"}`} className="flex min-w-0 items-center gap-3 rounded-lg py-3 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                     <span className="grid size-8 place-items-center rounded-lg bg-muted text-xs font-bold">
                       {index + 1}
                     </span>
                     <p className="min-w-0 flex-1 truncate text-sm font-medium">
                       {row.name}
                     </p>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <p className="text-sm font-bold">
                         {row.publications} publicações
                       </p>
@@ -383,7 +383,8 @@ export function DashboardPage() {
                         interações
                       </p>
                     </div>
-                  </div>
+                    <ArrowUpRight className="shrink-0 text-muted-foreground" size={16} />
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -391,7 +392,7 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Destaques do período</CardTitle>
             <Button asChild variant="ghost" size="sm">
@@ -405,14 +406,14 @@ export function DashboardPage() {
             {data?.top_publications?.length ? (
               <div className="divide-y">
                 {data.top_publications.map((item, index) => (
-                  <div key={item.id} className="flex items-center gap-3 py-3">
+                  <Link key={item.id} to={`/publicacoes?publication=${item.id}&period=${period === 1 ? "today" : period === 7 ? "7days" : "30days"}`} className="flex min-w-0 items-center gap-3 rounded-lg py-3 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                     <span className="grid size-8 place-items-center rounded-lg bg-muted text-xs font-bold">
                       {index + 1}
                     </span>
-                    <p className="min-w-0 flex-1 truncate text-sm font-medium">
+                    <p className="min-w-0 flex-1 break-words text-sm font-medium sm:line-clamp-2">
                       {item.title}
                     </p>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <p className="text-sm font-bold">
                         {Number(item.views).toLocaleString("pt-BR")} views
                       </p>
@@ -421,7 +422,8 @@ export function DashboardPage() {
                         interações
                       </p>
                     </div>
-                  </div>
+                    <ArrowUpRight className="shrink-0 text-muted-foreground" size={16} />
+                  </Link>
                 ))}
               </div>
             ) : (
