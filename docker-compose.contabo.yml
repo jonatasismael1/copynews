@@ -1,0 +1,30 @@
+services:
+  copy-news-worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4.1-mini}
+      OPENROUTER_REWRITE_MODEL: ${OPENROUTER_REWRITE_MODEL:-openai/gpt-5.6-terra}
+      OPENROUTER_TRANSCRIPTION_MODEL: ${OPENROUTER_TRANSCRIPTION_MODEL:-openai/whisper-large-v3}
+      OPENROUTER_VISION_MODEL: ${OPENROUTER_VISION_MODEL:-openai/gpt-4.1-mini}
+      COBALT_API_URL: ${COBALT_API_URL:-https://cobalt.dbe.digital}
+      COBALT_API_KEY: ${COBALT_API_KEY}
+      INSTALOADER_SERVICE_URL: ${INSTALOADER_SERVICE_URL:-https://instaloader.dbe.digital}
+      INSTALOADER_SERVICE_API_KEY: ${INSTALOADER_SERVICE_API_KEY}
+      WORKER_ID: ${WORKER_ID:-contabo-worker-1}
+      TEMP_MEDIA_BUCKET: ${TEMP_MEDIA_BUCKET:-temporary-media}
+      TEMP_MEDIA_TTL_MINUTES: ${TEMP_MEDIA_TTL_MINUTES:-120}
+      TRANSCRIPTION_CHUNK_SECONDS: ${TRANSCRIPTION_CHUNK_SECONDS:-600}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Maceio}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

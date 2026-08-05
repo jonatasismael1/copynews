@@ -10,6 +10,7 @@ import {
   parseArticleMetadata,
   parseInstagramEmbedImage,
   parseInstagramMetadata,
+  parseInstaloaderMetadata,
 } from "./adapters.mjs";
 
 test("identifica links do YouTube sem confundir outros domínios", () => {
@@ -143,6 +144,37 @@ test("preserva todos os itens de um carrossel", async () => {
   } finally {
     global.fetch = original;
   }
+});
+
+test("normaliza a publicação retornada pelo Instaloader", () => {
+  const result = parseInstaloaderMetadata(
+    {
+      profile: { username: "portal" },
+      posts: [{
+        shortcode: "ABC123",
+        caption: "Legenda completa",
+        owner_username: "portal",
+        date_utc: "2026-08-01T12:30:00Z",
+        display_url: "https://cdn.test/ABC123.jpg",
+      }],
+    },
+    "https://www.instagram.com/reel/ABC123/",
+  );
+  assert.equal(result.provider, "dbe-instaloader");
+  assert.equal(result.caption, "Legenda completa");
+  assert.equal(result.author, "portal");
+  assert.equal(result.publishedAt, "2026-08-01T12:30:00Z");
+  assert.equal(result.mediaItems[0].url, "https://cdn.test/ABC123.jpg");
+});
+
+test("ignora resposta do Instaloader sem a publicação solicitada", () => {
+  assert.equal(
+    parseInstaloaderMetadata(
+      { posts: [{ shortcode: "OUTRO", caption: "Não usar" }] },
+      "https://www.instagram.com/p/ABC123/",
+    ),
+    null,
+  );
 });
 
 test("extrai a legenda completa e o autor dos metadados do Instagram", () => {

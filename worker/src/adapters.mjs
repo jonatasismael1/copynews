@@ -317,7 +317,89 @@ async function instagramMetadata(sourceUrl) {
       JSON.stringify({ event: "instagram.embed.failed", message: error.message }),
     );
   }
-  return metadata;
+  const instaloader = await instaloaderMetadata(sourceUrl, metadata.author);
+  return instaloader ? mergeInstagramMetadata(metadata, instaloader) : metadata;
+}
+
+function textValue(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function instagramShortcode(value) {
+  try {
+    return new URL(value).pathname.match(/\/(?:p|reel|reels|tv)\/([^/?#]+)/i)?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
+function collectObjects(value, output = [], seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return output;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) collectObjects(item, output, seen);
+  } else {
+    output.push(value);
+    for (const item of Object.values(value)) collectObjects(item, output, seen);
+  }
+  return output;
+}
+
+export function parseInstaloaderMetadata(payload, sourceUrl) {
+  const expected = instagramShortcode(sourceUrl);
+  const objects = collectObjects(payload);
+  const post = objects.find((item) => {
+    const code = textValue(item.shortcode) || textValue(item.code);
+    const url = textValue(item.url) || textValue(item.post_url) || textValue(item.permalink);
+    return (expected && code === expected) || (expected && instagramShortcode(url) === expected);
+  });
+  if (!post) return null;
+  const timestamp = post.date_utc || post.date || post.taken_at || post.taken_at_timestamp;
+  const publishedAt = typeof timestamp === "number"
+    ? new Date(timestamp * 1000).toISOString()
+    : textValue(timestamp);
+  const image = textValue(post.display_url) || textValue(post.thumbnail_url) ||
+    textValue(post.image_url) || textValue(post.url_thumbnail);
+  const caption = textValue(post.caption) || textValue(post.caption_text) || textValue(post.title);
+  const author = textValue(post.owner_username) || textValue(post.username) ||
+    textValue(post.owner?.username);
+  return {
+    caption,
+    author,
+    publishedAt,
+    provider: "dbe-instaloader",
+    ...(image ? { mediaItems: [{ url: image, type: "image", filename: safeFilename(image, `${expected || "instagram"}.jpg`) }] } : {}),
+  };
+}
+
+function mergeInstagramMetadata(fallback, preferred) {
+  return {
+    ...fallback,
+    ...preferred,
+    caption: preferred.caption || fallback.caption || null,
+    author: preferred.author || fallback.author || null,
+    publishedAt: preferred.publishedAt || fallback.publishedAt || null,
+    mediaItems: preferred.mediaItems?.length ? preferred.mediaItems : fallback.mediaItems,
+  };
+}
+
+async function instaloaderMetadata(sourceUrl, author) {
+  const baseUrl = process.env.INSTALOADER_SERVICE_URL;
+  const apiKey = process.env.INSTALOADER_SERVICE_API_KEY;
+  if (!baseUrl || !apiKey || !author) return null;
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/profile`, {
+      method: "POST",
+      headers: { ...jsonHeaders, "X-API-Key": apiKey },
+      body: JSON.stringify({ profile: author.replace(/^@/, ""), limit: 12 }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) throw new Error(`Instaloader HTTP ${response.status}`);
+    return parseInstaloaderMetadata(await response.json(), sourceUrl);
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "instaloader.failed", message: error.message }));
+    return null;
+  }
 }
 
 export async function extractMetadata(sourceUrl) {

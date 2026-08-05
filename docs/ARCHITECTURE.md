@@ -5,7 +5,7 @@ React/Vite (Netlify)
   ├─ Supabase Auth + PostgreSQL + RLS
   ├─ Edge Functions (admin, validação, IA curta, URLs assinadas)
   └─ processing_jobs (fila persistente)
-       └─ Worker Railway
+       └─ Worker Contabo (Portainer)
            ├─ Cobalt externo → mídia
            ├─ ffmpeg → áudio e frames
            ├─ OpenRouter STT → transcrição

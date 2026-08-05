@@ -5,7 +5,7 @@ Central editorial mobile-first para capturar mídia social, transcrever, executa
 ## Produção
 
 - Aplicação: https://copynews.netlify.app
-- Worker: https://copy-news-worker-production.up.railway.app/health
+- Worker: container privado na Contabo, monitorado em `/health`
 - Repositório: https://github.com/jonatasismael1/copynews
 
 ## Desenvolvimento
