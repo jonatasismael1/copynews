@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, ExternalLink, LoaderCircle, Plus, RefreshCw } from "lucide-react";
+import { AtSign, Download, ExternalLink, LoaderCircle, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,21 @@ export type TrackedInstagramProfile = {
   last_sync_at: string | null;
   last_sync_status: "pending" | "success" | "error";
   last_error: string | null;
+  is_fixed: boolean;
+};
+
+type DailyReportRow = {
+  tracked_profile_id: string;
+  username: string;
+  display_name: string | null;
+  report_date: string;
+  posts_count: number;
+  views: number;
+  likes: number;
+  comments: number;
+  reach: number | null;
+  shares: number | null;
+  last_sync_at: string;
 };
 
 type TrackedPublication = {
@@ -49,6 +64,62 @@ function formatNumber(value: number | null) {
   return value === null ? "—" : value.toLocaleString("pt-BR");
 }
 
+function lastSevenDays() {
+  const dates: string[] = [];
+  const today = new Date();
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    dates.push(todayKey(date));
+  }
+  return dates;
+}
+
+function csvValue(value: unknown) {
+  const text = value === null || value === undefined ? "N/D" : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function downloadWeeklyReport(rows: DailyReportRow[], profiles: TrackedInstagramProfile[]) {
+  const dates = lastSevenDays();
+  const lines = [[
+    "Data",
+    "Perfil",
+    "Publicações",
+    "Visualizações",
+    "Curtidas",
+    "Comentários",
+    "Alcance",
+    "Compartilhamentos",
+  ].map(csvValue).join(";")];
+  for (const date of dates) {
+    for (const profile of profiles) {
+      const row = rows.find((item) =>
+        item.report_date === date && item.tracked_profile_id === profile.id
+      );
+      lines.push([
+        date.split("-").reverse().join("/"),
+        `@${profile.username}`,
+        row?.posts_count ?? 0,
+        row?.views ?? 0,
+        row?.likes ?? 0,
+        row?.comments ?? 0,
+        row?.reach ?? null,
+        row?.shares ?? null,
+      ].map(csvValue).join(";"));
+    }
+  }
+  const blob = new Blob([`\uFEFF${lines.join("\r\n")}`], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `relatorio-instagram-${dates[0]}-a-${dates.at(-1)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 async function functionError(error: unknown) {
   let detail = error instanceof Error ? error.message : "Não foi possível sincronizar o perfil";
   try {
@@ -72,6 +143,7 @@ export function InstagramProfileTracker({
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["tracked-instagram-profiles"],
     queryFn: async () => {
@@ -83,27 +155,49 @@ export function InstagramProfileTracker({
       return data as TrackedInstagramProfile[];
     },
   });
-  const sync = useMutation({
-    mutationFn: async (body: { profile?: string; profile_id?: string }) => {
-      let request = { ...body, start_date: syncStartDate, end_date: syncEndDate };
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        const { data, error } = await supabase.functions.invoke(
-          "sync-instagram-profile",
-          { body: request },
-        );
-        if (error) throw new Error(await functionError(error));
-        if (!data?.pending) {
-          return data as { profile: TrackedInstagramProfile; imported: number; posts_today: number };
-        }
-        request = {
-          profile_id: String(data.profile.id),
-          start_date: syncStartDate,
-          end_date: syncEndDate,
-        };
-        await new Promise((resolve) => window.setTimeout(resolve, 8_000));
-      }
-      throw new Error("A Bright Data demorou mais de 8 minutos para concluir a consulta");
+  const weekDates = lastSevenDays();
+  const { data: reportRows = [] } = useQuery({
+    queryKey: ["instagram-daily-report", weekDates[0]],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("instagram_daily_report")
+        .select("*")
+        .gte("report_date", weekDates[0])
+        .lte("report_date", weekDates.at(-1)!)
+        .order("report_date", { ascending: false });
+      if (error) throw error;
+      return data as DailyReportRow[];
     },
+  });
+
+  async function runSync(body: { profile?: string; profile_id?: string }) {
+    let request: {
+      profile?: string;
+      profile_id?: string;
+      start_date: string;
+      end_date: string;
+    } = { ...body, start_date: syncStartDate, end_date: syncEndDate };
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const { data, error } = await supabase.functions.invoke(
+        "sync-instagram-profile",
+        { body: request },
+      );
+      if (error) throw new Error(await functionError(error));
+      if (!data?.pending) {
+        return data as { profile: TrackedInstagramProfile; imported: number; posts_today: number };
+      }
+      request = {
+        profile_id: String(data.profile.id),
+        start_date: syncStartDate,
+        end_date: syncEndDate,
+      };
+      await new Promise((resolve) => window.setTimeout(resolve, 8_000));
+    }
+    throw new Error("A Bright Data demorou mais de 8 minutos para concluir a consulta");
+  }
+
+  const sync = useMutation({
+    mutationFn: runSync,
     onSuccess: async (result) => {
       setInput("");
       setShowForm(false);
@@ -112,6 +206,7 @@ export function InstagramProfileTracker({
         queryClient.invalidateQueries({ queryKey: ["tracked-instagram-profiles"] }),
         queryClient.invalidateQueries({ queryKey: ["publications"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["instagram-daily-report"] }),
       ]);
       await onSynced();
       toast.success(
@@ -122,6 +217,28 @@ export function InstagramProfileTracker({
       error instanceof Error ? error.message : "Não foi possível sincronizar o perfil",
     ),
   });
+  async function updateAllProfiles() {
+    const fixedProfiles = profiles.filter((profile) => profile.is_fixed);
+    if (!fixedProfiles.length) return;
+    setSyncingAll(true);
+    try {
+      await Promise.all(fixedProfiles.map((profile) =>
+        runSync({ profile_id: profile.id })
+      ));
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tracked-instagram-profiles"] }),
+        queryClient.invalidateQueries({ queryKey: ["publications"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["instagram-daily-report"] }),
+      ]);
+      await onSynced();
+      toast.success(`${fixedProfiles.length} perfis atualizados`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível atualizar os perfis");
+    } finally {
+      setSyncingAll(false);
+    }
+  }
   const today = todayKey();
 
   return (
@@ -134,9 +251,19 @@ export function InstagramProfileTracker({
               Cole @usuário, nome ou link do perfil para importar posts e métricas públicas.
             </p>
           </div>
-          <Button variant="outline" onClick={() => setShowForm((value) => !value)}>
-            <Plus /> Acompanhar perfil
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={syncingAll || !profiles.some((profile) => profile.is_fixed)}
+              onClick={() => void updateAllProfiles()}
+            >
+              {syncingAll ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+              Atualizar todos agora
+            </Button>
+            <Button variant="outline" onClick={() => setShowForm((value) => !value)}>
+              <Plus /> Acompanhar perfil
+            </Button>
+          </div>
         </div>
 
         {showForm && (
@@ -174,7 +301,9 @@ export function InstagramProfileTracker({
           </button>
           {isLoading && <p className="p-4 text-sm text-muted-foreground">Carregando...</p>}
           {profiles.map((profile) => {
-            const postsToday = publications.filter((publication) =>
+            const postsToday = reportRows.find((row) =>
+              row.tracked_profile_id === profile.id && row.report_date === today
+            )?.posts_count ?? publications.filter((publication) =>
               publication.tracked_profile_id === profile.id &&
               todayKey(new Date(publication.published_at)) === today
             ).length;
@@ -199,6 +328,7 @@ export function InstagramProfileTracker({
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold">@{profile.username}</p>
+                    {profile.is_fixed && <p className="text-[10px] font-semibold uppercase text-primary">Monitoramento diário</p>}
                     <p className="truncate text-xs text-muted-foreground">
                       {profile.display_name || `${formatNumber(profile.followers_count)} seguidores`}
                     </p>
@@ -244,6 +374,75 @@ export function InstagramProfileTracker({
             );
           })}
         </div>
+        <section className="space-y-3 rounded-2xl border bg-muted/20 p-3 sm:p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-display font-bold">Relatório dos últimos 7 dias</p>
+              <p className="text-xs text-muted-foreground">
+                Atualização automática diária às 19h. Alcance e compartilhamentos não são públicos.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!profiles.length}
+              onClick={() => downloadWeeklyReport(reportRows, profiles.filter((profile) => profile.is_fixed))}
+            >
+              <Download /> Baixar relatório semanal
+            </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            {profiles.filter((profile) => profile.is_fixed).map((profile) => {
+              const rows = reportRows.filter((row) => row.tracked_profile_id === profile.id);
+              return (
+                <div key={profile.id} className="rounded-xl border bg-card p-3">
+                  <p className="truncate text-xs font-semibold">@{profile.username}</p>
+                  <p className="mt-1 text-2xl font-bold">
+                    {rows.reduce((sum, row) => sum + row.posts_count, 0)}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">posts em 7 dias</p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="overflow-x-auto rounded-xl border bg-card">
+            <table className="w-full min-w-[820px] text-left text-xs">
+              <thead className="border-b bg-muted/40 text-muted-foreground">
+                <tr>
+                  <th className="p-2.5">Data</th>
+                  <th className="p-2.5">Perfil</th>
+                  <th className="p-2.5 text-right">Posts</th>
+                  <th className="p-2.5 text-right">Visualizações</th>
+                  <th className="p-2.5 text-right">Curtidas</th>
+                  <th className="p-2.5 text-right">Comentários</th>
+                  <th className="p-2.5 text-right">Alcance</th>
+                  <th className="p-2.5 text-right">Compart.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...weekDates].reverse().flatMap((date) =>
+                  profiles.filter((profile) => profile.is_fixed).map((profile) => {
+                    const row = reportRows.find((item) =>
+                      item.report_date === date && item.tracked_profile_id === profile.id
+                    );
+                    return (
+                      <tr key={`${date}-${profile.id}`} className="border-b last:border-0">
+                        <td className="p-2.5">{date.split("-").reverse().join("/")}</td>
+                        <td className="p-2.5 font-semibold">@{profile.username}</td>
+                        <td className="p-2.5 text-right">{row?.posts_count ?? 0}</td>
+                        <td className="p-2.5 text-right">{formatNumber(row?.views ?? 0)}</td>
+                        <td className="p-2.5 text-right">{formatNumber(row?.likes ?? 0)}</td>
+                        <td className="p-2.5 text-right">{formatNumber(row?.comments ?? 0)}</td>
+                        <td className="p-2.5 text-right">{formatNumber(row?.reach ?? null)}</td>
+                        <td className="p-2.5 text-right">{formatNumber(row?.shares ?? null)}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
         <p className="text-xs text-muted-foreground">
           Perfis públicos fornecem curtidas, comentários e visualizações quando disponíveis.
           Alcance, compartilhamentos e salvos exigem uma conta profissional conectada.

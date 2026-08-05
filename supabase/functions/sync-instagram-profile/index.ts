@@ -3,7 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-cron-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (body: unknown, status = 200) =>
@@ -197,6 +197,11 @@ async function brightSnapshot(snapshotId: string) {
   const progress = await brightFetch(`/progress/${encodeURIComponent(snapshotId)}`) as Record<string, unknown>;
   const status = text(progress.status);
   if (status === "starting" || status === "running") return { pending: true, payload: null };
+  const errorCodes = progress.error_codes as Record<string, unknown> | undefined;
+  if (
+    status === "ready" && count(progress.records) === 0 &&
+    count(errorCodes?.dead_page) > 0
+  ) return { pending: false, payload: [] };
   if (status !== "ready" || count(progress.errors) > 0 && count(progress.records) === 0)
     throw new Error("A Bright Data não conseguiu consultar esse perfil do Instagram");
   const payload = await brightFetch(`/snapshot/${encodeURIComponent(snapshotId)}?format=json`);
@@ -209,50 +214,84 @@ function dateInput(value: unknown, fallback: Date) {
   return `${String(fallback.getMonth() + 1).padStart(2, "0")}-${String(fallback.getDate()).padStart(2, "0")}-${fallback.getFullYear()}`;
 }
 
+function parseInputDate(value: unknown) {
+  const raw = text(value);
+  const match = raw?.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!match) return null;
+  const date = new Date(Date.UTC(Number(match[3]), Number(match[1]) - 1, Number(match[2])));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function requestedDays(context: Record<string, unknown> | null, posts: { publishedAt: string }[]) {
+  const days = new Set(posts.map((post) => localDay(post.publishedAt)));
+  const from = parseInputDate(context?.start_date);
+  const to = parseInputDate(context?.end_date);
+  if (from && to && from < to) {
+    for (let cursor = from, count = 0; cursor < to && count < 366; count += 1) {
+      days.add(cursor.toISOString().slice(0, 10));
+      cursor = new Date(cursor.getTime() + 86_400_000);
+    }
+  }
+  return [...days].sort();
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const authorization = req.headers.get("Authorization");
-    if (!authorization) throw new Error("Unauthorized");
-    const auth = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
-      global: { headers: { Authorization: authorization } },
-    });
-    const { data: { user }, error: userError } = await auth.auth.getUser();
-    if (userError || !user) throw new Error("Unauthorized");
-
     const admin = createClient(
       env("SUPABASE_URL"),
       Deno.env.get("SUPABASE_SECRET_KEY") || env("SUPABASE_SERVICE_ROLE_KEY"),
       { auth: { persistSession: false } },
     );
-    const { data: caller } = await admin
-      .from("profiles")
-      .select("role,is_active,organization_id")
-      .eq("id", user.id)
-      .single();
-    if (!caller?.is_active) throw new Error("Unauthorized");
-    if (!["admin", "editor", "writer"].includes(caller.role))
-      throw new Error("Forbidden");
-
     const body = await req.json().catch(() => ({}));
+    const cronSecret = req.headers.get("x-cron-secret");
+    const scheduled = Boolean(cronSecret) &&
+      cronSecret === env("SYNC_INSTAGRAM_CRON_SECRET");
+    let actorId = "";
+    let organizationId = "";
+    if (!scheduled) {
+      const authorization = req.headers.get("Authorization");
+      if (!authorization) throw new Error("Unauthorized");
+      const auth = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
+        global: { headers: { Authorization: authorization } },
+      });
+      const { data: { user }, error: userError } = await auth.auth.getUser();
+      if (userError || !user) throw new Error("Unauthorized");
+      const { data: caller } = await admin
+        .from("profiles")
+        .select("role,is_active,organization_id")
+        .eq("id", user.id)
+        .single();
+      if (!caller?.is_active) throw new Error("Unauthorized");
+      if (!["admin", "editor", "writer"].includes(caller.role))
+        throw new Error("Forbidden");
+      actorId = user.id;
+      organizationId = caller.organization_id;
+    }
     let trackedProfile = null;
     let username = "";
     if (body.profile_id) {
-      const { data, error } = await admin
+      let profileQuery = admin
         .from("tracked_instagram_profiles")
         .select("*")
-        .eq("id", String(body.profile_id))
-        .eq("organization_id", caller.organization_id)
-        .single();
+        .eq("id", String(body.profile_id));
+      if (!scheduled)
+        profileQuery = profileQuery.eq("organization_id", organizationId);
+      const { data, error } = await profileQuery.single();
       if (error || !data) throw new Error("Perfil acompanhado não encontrado");
       trackedProfile = data;
       username = data.username;
+      if (scheduled) {
+        actorId = data.created_by;
+        organizationId = data.organization_id;
+      }
     } else {
+      if (scheduled) throw new Error("Perfil acompanhado não encontrado");
       username = normalizeUsername(String(body.profile || ""));
       const { data } = await admin
         .from("tracked_instagram_profiles")
         .select("*")
-        .eq("organization_id", caller.organization_id)
+        .eq("organization_id", organizationId)
         .ilike("username", username)
         .maybeSingle();
       trackedProfile = data;
@@ -262,13 +301,13 @@ Deno.serve(async (req) => {
       const { data, error } = await admin
         .from("tracked_instagram_profiles")
         .insert({
-          organization_id: caller.organization_id,
+          organization_id: organizationId,
           username,
           display_name: username,
           profile_url: `https://www.instagram.com/${username}/`,
           last_sync_status: "pending",
           sync_provider: "bright-data",
-          created_by: user.id,
+          created_by: actorId,
         })
         .select()
         .single();
@@ -278,7 +317,23 @@ Deno.serve(async (req) => {
 
     let payload: unknown;
     if (trackedProfile.sync_job_id) {
-      const snapshot = await brightSnapshot(trackedProfile.sync_job_id);
+      let snapshot;
+      try {
+        snapshot = await brightSnapshot(trackedProfile.sync_job_id);
+      } catch (snapshotError) {
+        const detail = snapshotError instanceof Error
+          ? snapshotError.message
+          : "A Bright Data não concluiu a consulta";
+        await admin.from("tracked_instagram_profiles").update({
+          last_sync_status: "error",
+          last_error: detail,
+          sync_job_id: null,
+          sync_job_stage: null,
+          sync_job_context: null,
+          sync_job_started_at: null,
+        }).eq("id", trackedProfile.id);
+        throw snapshotError;
+      }
       if (snapshot.pending) return json({ pending: true, profile: trackedProfile });
       payload = snapshot.payload;
     } else {
@@ -299,6 +354,7 @@ Deno.serve(async (req) => {
           sync_provider: "bright-data",
           sync_job_id: snapshotId,
           sync_job_stage: "posts",
+          sync_job_started_at: new Date().toISOString(),
           sync_job_context: {
             start_date: body.start_date || null,
             end_date: body.end_date || null,
@@ -312,6 +368,29 @@ Deno.serve(async (req) => {
     }
 
     const parsed = parsePayload(payload, username);
+    const context = trackedProfile.sync_job_context as Record<string, unknown> | null;
+    for (const reportDate of requestedDays(context, parsed.posts)) {
+      const posts = parsed.posts.filter((post) => localDay(post.publishedAt) === reportDate);
+      const { error: reportError } = await admin
+        .from("instagram_profile_daily_stats")
+        .upsert({
+          organization_id: organizationId,
+          tracked_profile_id: trackedProfile.id,
+          report_date: reportDate,
+          posts_count: posts.length,
+          views: posts.reduce((sum, post) => sum + post.views, 0),
+          likes: posts.reduce((sum, post) => sum + post.likes, 0),
+          comments: posts.reduce((sum, post) => sum + post.comments, 0),
+          reach: null,
+          shares: null,
+          collected_at: new Date().toISOString(),
+          raw_payload: {
+            provider: "bright-data",
+            post_codes: posts.map((post) => post.code),
+          },
+        }, { onConflict: "tracked_profile_id,report_date" });
+      if (reportError) throw reportError;
+    }
     const { data: updatedProfile, error: profileError } = await admin
       .from("tracked_instagram_profiles")
       .update({
@@ -326,6 +405,7 @@ Deno.serve(async (req) => {
         sync_job_id: null,
         sync_job_stage: null,
         sync_job_context: null,
+        sync_job_started_at: null,
       })
       .eq("id", trackedProfile.id)
       .select()
@@ -353,17 +433,24 @@ Deno.serve(async (req) => {
       };
       let { data: publication } = await admin
         .from("publications")
-        .select("id")
+        .select("id,tracked_profile_id")
         .eq("tracked_profile_id", trackedProfile.id)
         .eq("external_media_id", post.code)
         .maybeSingle();
       if (!publication) {
         const existing = await admin.from("publications")
-          .select("id")
+          .select("id,tracked_profile_id")
           .eq("published_url", post.permalink)
           .is("archived_at", null)
           .maybeSingle();
         publication = existing.data;
+      }
+      if (
+        publication?.tracked_profile_id &&
+        publication.tracked_profile_id !== trackedProfile.id
+      ) {
+        imported += 1;
+        continue;
       }
       if (publication) {
         const { error } = await admin.from("publications")
@@ -376,9 +463,9 @@ Deno.serve(async (req) => {
             news_item_id: null,
             page_id: null,
             posted_by: null,
-            created_by: user.id,
+            created_by: actorId,
           })
-          .select("id")
+          .select("id,tracked_profile_id")
           .single();
         if (error) throw error;
         publication = data;
@@ -398,7 +485,7 @@ Deno.serve(async (req) => {
         clicks: 0,
         followers_gained: 0,
         raw_payload: { provider: "bright-data", post: post.raw },
-        created_by: user.id,
+        created_by: actorId,
       });
       if (metricError) throw metricError;
       snapshots += 1;
