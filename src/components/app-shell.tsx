@@ -4,11 +4,13 @@ import {
   BarChart3,
   FileText,
   Home,
+  HelpCircle,
   LogOut,
   Menu,
   Newspaper,
   PlusCircle,
   Settings,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
@@ -111,6 +113,21 @@ export function AppShell() {
               {label}
             </NavLink>
           ))}
+          <NavLink
+            to="/configuracoes#conta"
+            onClick={() => setOpen(false)}
+            className="flex min-h-11 items-center gap-3 rounded-[10px] px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-white/8 hover:text-white lg:hidden"
+          >
+            <UserRound size={18} />
+            Minha conta
+          </NavLink>
+          <a
+            href="mailto:suporte@dbe.digital"
+            className="flex min-h-11 items-center gap-3 rounded-[10px] px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-white/8 hover:text-white lg:hidden"
+          >
+            <HelpCircle size={18} />
+            Ajuda e suporte
+          </a>
         </nav>
         <div className="absolute inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] border-t border-white/10 pt-4">
           <div className="mb-3 flex min-w-0 items-center gap-3">

@@ -14,6 +14,7 @@ export function UsersPage() {
   const { profile } = useAuth();
   const { data = [], refetch } = useProfiles();
   const [open, setOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>({});
   const [savingGoal, setSavingGoal] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -23,6 +24,7 @@ export function UsersPage() {
     role: "writer",
     daily_goal: 10,
   });
+  const selectedUser = data.find((user) => user.id === selectedUserId);
   if (profile?.role !== "admin")
     return (
       <Card>
@@ -82,8 +84,8 @@ export function UsersPage() {
     }
   }
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex items-end justify-between">
+    <div className="page-container space-y-5 sm:space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Administração</p>
           <h1 className="mt-1 font-display text-3xl font-bold">Usuários</h1>
@@ -111,7 +113,7 @@ export function UsersPage() {
                   {user.email}
                 </p>
               </div>
-              <div className="hidden text-right sm:block">
+              <div className="ml-auto hidden text-right sm:block">
                 <Badge variant={user.is_active ? "success" : "danger"}>
                   {user.is_active ? "Ativo" : "Inativo"}
                 </Badge>
@@ -119,43 +121,12 @@ export function UsersPage() {
                   {roleLabels[user.role]}
                 </p>
               </div>
-              <div className="flex items-end gap-2">
-                <label>
-                  <span className="mb-1 block text-xs text-muted-foreground">
-                    Meta diária
-                  </span>
-                  <Input
-                    className="w-24"
-                    type="number"
-                    min="0"
-                    step="1"
-                    aria-label={`Meta diária de ${user.name}`}
-                    value={
-                      goalDrafts[user.id] ?? String(user.daily_goal ?? 0)
-                    }
-                    onChange={(e) =>
-                      setGoalDrafts((current) => ({
-                        ...current,
-                        [user.id]: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => saveGoal(user.id)}
-                  disabled={savingGoal === user.id}
-                  title={`Salvar meta de ${user.name}`}
-                >
-                  <Save />
-                </Button>
-              </div>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => toggle(user.id, user.is_active)}
-                title={user.is_active ? "Desativar" : "Ativar"}
+                onClick={() => setSelectedUserId(user.id)}
+                title={`Ações de ${user.name}`}
+                aria-label={`Ações de ${user.name}`}
               >
                 <MoreHorizontal />
               </Button>
@@ -234,6 +205,37 @@ export function UsersPage() {
                 <Button>Criar usuário</Button>
               </div>
             </form>
+          </Card>
+        </div>
+      )}
+      {selectedUser && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center"
+          onClick={() => setSelectedUserId(null)}
+        >
+          <Card className="w-full max-w-md rounded-b-none p-5 sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b pb-4">
+              <ProfileAvatar src={selectedUser.avatar_url} name={selectedUser.name} className="size-11" />
+              <div className="min-w-0">
+                <h2 className="truncate font-display text-lg font-semibold">{selectedUser.name}</h2>
+                <p className="truncate text-xs text-muted-foreground">{selectedUser.email}</p>
+              </div>
+              <Badge className="ml-auto" variant={selectedUser.is_active ? "success" : "danger"}>{selectedUser.is_active ? "Ativo" : "Inativo"}</Badge>
+            </div>
+            <div className="space-y-4 py-4">
+              <div><p className="text-xs text-muted-foreground">Função</p><p className="mt-1 text-sm font-medium">{roleLabels[selectedUser.role]}</p></div>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-muted-foreground">Meta diária</span>
+                <div className="flex gap-2">
+                  <Input className="min-w-0" type="number" min="0" step="1" value={goalDrafts[selectedUser.id] ?? String(selectedUser.daily_goal ?? 0)} onChange={(event) => setGoalDrafts((current) => ({ ...current, [selectedUser.id]: event.target.value }))} />
+                  <Button variant="outline" onClick={() => saveGoal(selectedUser.id)} disabled={savingGoal === selectedUser.id}><Save />Salvar</Button>
+                </div>
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-3 border-t pt-4">
+              <Button variant="outline" onClick={() => setSelectedUserId(null)}>Fechar</Button>
+              <Button variant={selectedUser.is_active ? "destructive" : "default"} onClick={() => toggle(selectedUser.id, selectedUser.is_active)}>{selectedUser.is_active ? "Desativar acesso" : "Ativar acesso"}</Button>
+            </div>
           </Card>
         </div>
       )}

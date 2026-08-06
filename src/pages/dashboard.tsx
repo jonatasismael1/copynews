@@ -146,7 +146,7 @@ export function DashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.65fr_1fr]">
-        <Card className="min-w-0 overflow-hidden">
+        <Card className="order-2 min-w-0 overflow-hidden xl:order-1">
           <CardHeader className="gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -253,13 +253,15 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
-        <GoalCard
-          publications={data?.publications ?? 0}
-          goal={data?.period_goal ?? 0}
-          external={data?.external_publications ?? 0}
-          scheduled={data?.scheduled ?? 0}
-          label={periodLabel}
-        />
+        <div className="order-1 xl:order-2">
+          <GoalCard
+            publications={data?.publications ?? 0}
+            goal={data?.period_goal ?? 0}
+            external={data?.external_publications ?? 0}
+            scheduled={data?.scheduled ?? 0}
+            label={periodLabel}
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

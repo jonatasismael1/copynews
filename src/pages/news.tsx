@@ -21,7 +21,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLookups, useNews } from "@/hooks/use-data";
 import { statusLabels, type NewsStatus } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/auth-provider";
 
 const variant = (status: NewsStatus) =>
@@ -272,16 +271,11 @@ export function NewsPage() {
                       <p className="mt-1 truncate text-xs text-muted-foreground">
                         {item.source_url}
                       </p>
-                      {job && job.status !== "completed" && (
+                      {job && job.status !== "completed" && job.status !== "failed" && (
                         <div className="mt-3 flex items-center gap-2">
                           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                             <div
-                              className={cn(
-                                "h-full rounded-full",
-                                job.status === "failed"
-                                  ? "bg-red-500"
-                                  : "bg-primary",
-                              )}
+                              className="h-full rounded-full bg-primary"
                               style={{ width: `${job.progress}%` }}
                             />
                           </div>
@@ -296,6 +290,11 @@ export function NewsPage() {
                           </span>
                         </div>
                       )}
+                      {job?.status === "failed" && (
+                        <p className="mt-3 text-xs font-medium text-destructive">
+                          Falha no processamento. Abra a notícia para tentar novamente.
+                        </p>
+                      )}
                     </div>
                       <div className="flex min-w-0 items-center justify-between gap-4 sm:justify-end">
                       <div className="text-right">
@@ -305,32 +304,23 @@ export function NewsPage() {
                         <p className="mt-1 text-sm font-medium">
                           {item.profiles?.name || "Não atribuído"}
                         </p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {new Date(item.created_at).toLocaleDateString("pt-BR")}
+                        </p>
                       </div>
                       <ArrowRight className="text-muted-foreground" size={18} />
                     </div>
                     </Link>
                     {canManage(item) && (
-                      <div className="flex w-full justify-end gap-1 border-t pt-3 sm:w-auto sm:shrink-0 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Arquivar notícia"
-                          aria-label="Arquivar notícia"
-                          onClick={() => manageNews(item.id, "archive")}
-                        >
-                          <Archive />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-destructive"
-                          title="Excluir notícia"
-                          aria-label="Excluir notícia"
-                          onClick={() => manageNews(item.id, "delete")}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
+                      <details className="relative ml-auto shrink-0">
+                        <summary className="grid size-11 cursor-pointer list-none place-items-center rounded-[var(--radius-control)] text-muted-foreground hover:bg-muted hover:text-foreground [&::-webkit-details-marker]:hidden" aria-label="Ações da notícia" title="Ações da notícia">
+                          <MoreHorizontal size={19} />
+                        </summary>
+                        <div className="absolute bottom-12 right-0 z-20 w-44 rounded-xl border bg-card p-1.5 shadow-xl">
+                          <button type="button" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs hover:bg-muted" onClick={() => manageNews(item.id, "archive")}><Archive size={15} />Arquivar</button>
+                          <button type="button" className="flex min-h-10 w-full items-center gap-2 rounded-lg px-3 text-left text-xs text-destructive hover:bg-[var(--danger-subtle)]" onClick={() => manageNews(item.id, "delete")}><Trash2 size={15} />Excluir</button>
+                        </div>
+                      </details>
                     )}
                   </CardContent>
                 </Card>
