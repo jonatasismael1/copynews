@@ -183,7 +183,7 @@ function fallbackHighlights(primary = "") {
 function modelGenerationParameters(model) {
   if (/^openai\/gpt-5\.[4-9]/i.test(model))
     return { reasoning: { effort: "none", exclude: true } };
-  return { temperature: 0, top_p: 1 };
+  return { temperature: 0.2, top_p: 1 };
 }
 
 function sequenceBigrams(value) {

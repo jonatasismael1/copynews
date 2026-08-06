@@ -548,7 +548,7 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
   };
   try {
     await generateCopy({ clean_original_caption: "Defesa Civil interdita ponte após vistoria em Pilar." }, "key", "model");
-    assert.equal(request.temperature, 0);
+    assert.equal(request.temperature, 0.2);
     assert.equal(request.top_p, 1);
     assert.equal(request.stream, false);
     assert.equal(request.provider.require_parameters, true);
