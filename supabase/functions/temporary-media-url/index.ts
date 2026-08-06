@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { externalizeStorageUrl } from "../_shared/public-url.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -91,7 +92,7 @@ Deno.serve(
     const urls = (data || [])
       .filter((item) => item.signedUrl)
       .map((item, index) => ({
-        url: item.signedUrl,
+        url: externalizeStorageUrl(item.signedUrl),
         path: paths[index],
         index,
       }));

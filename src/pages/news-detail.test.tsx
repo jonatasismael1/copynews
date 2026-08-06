@@ -52,7 +52,13 @@ const news = {
   categories: { name: "Polícia" },
   profiles: { name: "Repórter" },
   processing_jobs: [
-    { id: "job-1", status: "completed", progress: 100, step_results: {} },
+    {
+      id: "job-1",
+      status: "completed",
+      progress: 100,
+      current_step: "completed",
+      step_results: {},
+    },
   ],
   news_versions: [],
   status_history: [],
@@ -179,6 +185,25 @@ describe("detalhes da notícia no mobile", () => {
     const copyCaption = screen.getByRole("button", { name: "Copiar legenda" });
     expect(copyTitle).toHaveClass("size-11");
     expect(copyCaption).toHaveClass("size-11");
+  });
+
+  it("mostra as etapas da IA em português e pluraliza as opções de destaque", () => {
+    currentNews.processing_jobs = [
+      {
+        id: "job-1",
+        status: "running",
+        progress: 76,
+        current_step: "extract_ocr",
+        step_results: {},
+      },
+    ];
+
+    renderPage();
+
+    expect(screen.getByText("Lendo o texto da imagem")).toBeInTheDocument();
+    expect(screen.getAllByText(/3 opções ·/)).not.toHaveLength(0);
+    expect(screen.queryByText(/extract_ocr/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/opçãoões/)).not.toBeInTheDocument();
   });
 
   it("mostra o progresso da arte enquanto o vídeo renderiza em segundo plano", () => {

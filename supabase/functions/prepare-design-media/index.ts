@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { externalizeStorageUrl } from "../_shared/public-url.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -62,7 +63,7 @@ async function signedUrl(
     .createSignedUrl(path, 3600);
   if (error || !data?.signedUrl)
     failure("STORAGE_SIGN_FAILED", "Não foi possível abrir a mídia preparada.");
-  return data.signedUrl;
+  return externalizeStorageUrl(data.signedUrl);
 }
 
 Deno.serve(async (req) => {
