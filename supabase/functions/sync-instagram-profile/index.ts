@@ -162,26 +162,6 @@ function localDay(value: string) {
 const brightBaseUrl = "https://api.brightdata.com/datasets/v3";
 const brightPostDataset = "gd_lk5ns7kz21pck8jpis";
 
-async function instaloaderProfile(username: string) {
-  const baseUrl = env("INSTALOADER_SERVICE_URL").replace(/\/$/, "");
-  const response = await fetch(`${baseUrl}/profile`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": env("INSTALOADER_SERVICE_API_KEY"),
-    },
-    body: JSON.stringify({ profile: username, limit: 12 }),
-    signal: AbortSignal.timeout(65_000),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = text((payload as Record<string, unknown>).detail) ||
-      `Instaloader HTTP ${response.status}`;
-    throw new Error(message);
-  }
-  return payload;
-}
-
 async function brightFetch(path: string, init?: RequestInit) {
   const response = await fetch(`${brightBaseUrl}${path}`, {
     ...init,
@@ -320,9 +300,6 @@ Deno.serve(async (req) => {
     }
 
     if (!trackedProfile) {
-      const syncProvider = Deno.env.get("BRIGHT_DATA_API_KEY")
-        ? "bright-data"
-        : "instaloader";
       const { data, error } = await admin
         .from("tracked_instagram_profiles")
         .insert({
@@ -331,7 +308,7 @@ Deno.serve(async (req) => {
           display_name: username,
           profile_url: `https://www.instagram.com/${username}/`,
           last_sync_status: "pending",
-          sync_provider: syncProvider,
+          sync_provider: "bright-data",
           created_by: actorId,
         })
         .select()
@@ -341,9 +318,10 @@ Deno.serve(async (req) => {
     }
 
     let payload: unknown;
-    const useBrightData = Boolean(Deno.env.get("BRIGHT_DATA_API_KEY"));
-    const syncProvider = useBrightData ? "bright-data" : "instaloader";
-    if (useBrightData && trackedProfile.sync_job_id) {
+    if (!Deno.env.get("BRIGHT_DATA_API_KEY"))
+      throw new Error("A API da Bright Data não está configurada");
+    const syncProvider = "bright-data";
+    if (trackedProfile.sync_job_id) {
       let snapshot;
       try {
         snapshot = await brightSnapshot(trackedProfile.sync_job_id);
@@ -363,7 +341,7 @@ Deno.serve(async (req) => {
       }
       if (snapshot.pending) return json({ pending: true, profile: trackedProfile });
       payload = snapshot.payload;
-    } else if (useBrightData) {
+    } else {
       const defaultFrom = new Date();
       defaultFrom.setDate(defaultFrom.getDate() - 29);
       const defaultTo = new Date();
@@ -392,8 +370,6 @@ Deno.serve(async (req) => {
         .single();
       if (error) throw error;
       return json({ pending: true, profile: data });
-    } else {
-      payload = await instaloaderProfile(username);
     }
 
     const parsed = parsePayload(payload, username);
