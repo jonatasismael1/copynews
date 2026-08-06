@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { promises as fs, createWriteStream } from "node:fs";
+import { promises as fs, createWriteStream, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -29,12 +29,16 @@ import {
 } from "./design-render.mjs";
 const required = [
   "SUPABASE_URL",
-  "SUPABASE_SECRET_KEY",
   "OPENROUTER_API_KEY",
   "COBALT_API_URL",
 ];
 for (const key of required)
   if (!process.env[key]) throw new Error(`Missing ${key}`);
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY ||
+  (process.env.SUPABASE_SECRET_KEY_FILE
+    ? readFileSync(process.env.SUPABASE_SECRET_KEY_FILE, "utf8").trim()
+    : "");
+if (!supabaseSecretKey) throw new Error("Missing SUPABASE_SECRET_KEY");
 const supabaseHost = new URL(process.env.SUPABASE_URL).hostname;
 const expectedSupabaseHost = process.env.EXPECTED_SUPABASE_HOST?.trim();
 if (expectedSupabaseHost && supabaseHost !== expectedSupabaseHost)
@@ -43,7 +47,7 @@ if (expectedSupabaseHost && supabaseHost !== expectedSupabaseHost)
   );
 const db = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SECRET_KEY,
+  supabaseSecretKey,
   { auth: { persistSession: false } },
 );
 const workerId = process.env.WORKER_ID || `worker-${randomUUID().slice(0, 8)}`;
