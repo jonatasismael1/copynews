@@ -35,6 +35,12 @@ const required = [
 ];
 for (const key of required)
   if (!process.env[key]) throw new Error(`Missing ${key}`);
+const supabaseHost = new URL(process.env.SUPABASE_URL).hostname;
+const expectedSupabaseHost = process.env.EXPECTED_SUPABASE_HOST?.trim();
+if (expectedSupabaseHost && supabaseHost !== expectedSupabaseHost)
+  throw new Error(
+    `SUPABASE_URL points to ${supabaseHost}; expected ${expectedSupabaseHost}`,
+  );
 const db = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY,
@@ -56,6 +62,7 @@ createServer((req, res) => {
         ok: true,
         workerId,
         busy,
+        databaseHost: supabaseHost,
         commit: process.env.APP_COMMIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || null,
         deploymentId: process.env.DEPLOYMENT_ID || process.env.RAILWAY_DEPLOYMENT_ID || null,
         capabilities: ["design-video-render-v1"],
@@ -65,7 +72,9 @@ createServer((req, res) => {
   }
   res.writeHead(404);
   res.end();
-}).listen(Number(process.env.PORT || 8080), () => log("worker.started"));
+}).listen(Number(process.env.PORT || 8080), () =>
+  log("worker.started", { databaseHost: supabaseHost })
+);
 async function claim() {
   const { data: rows, error } = await db
     .from("processing_jobs")
