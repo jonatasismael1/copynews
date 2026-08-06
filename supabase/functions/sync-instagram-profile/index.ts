@@ -162,6 +162,26 @@ function localDay(value: string) {
 const brightBaseUrl = "https://api.brightdata.com/datasets/v3";
 const brightPostDataset = "gd_lk5ns7kz21pck8jpis";
 
+async function instaloaderProfile(username: string) {
+  const baseUrl = env("INSTALOADER_SERVICE_URL").replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/profile`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": env("INSTALOADER_SERVICE_API_KEY"),
+    },
+    body: JSON.stringify({ profile: username, limit: 12 }),
+    signal: AbortSignal.timeout(65_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = text((payload as Record<string, unknown>).detail) ||
+      `Instaloader HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return payload;
+}
+
 async function brightFetch(path: string, init?: RequestInit) {
   const response = await fetch(`${brightBaseUrl}${path}`, {
     ...init,
@@ -300,6 +320,9 @@ Deno.serve(async (req) => {
     }
 
     if (!trackedProfile) {
+      const syncProvider = Deno.env.get("BRIGHT_DATA_API_KEY")
+        ? "bright-data"
+        : "instaloader";
       const { data, error } = await admin
         .from("tracked_instagram_profiles")
         .insert({
@@ -308,7 +331,7 @@ Deno.serve(async (req) => {
           display_name: username,
           profile_url: `https://www.instagram.com/${username}/`,
           last_sync_status: "pending",
-          sync_provider: "bright-data",
+          sync_provider: syncProvider,
           created_by: actorId,
         })
         .select()
@@ -318,7 +341,9 @@ Deno.serve(async (req) => {
     }
 
     let payload: unknown;
-    if (trackedProfile.sync_job_id) {
+    const useBrightData = Boolean(Deno.env.get("BRIGHT_DATA_API_KEY"));
+    const syncProvider = useBrightData ? "bright-data" : "instaloader";
+    if (useBrightData && trackedProfile.sync_job_id) {
       let snapshot;
       try {
         snapshot = await brightSnapshot(trackedProfile.sync_job_id);
@@ -338,7 +363,7 @@ Deno.serve(async (req) => {
       }
       if (snapshot.pending) return json({ pending: true, profile: trackedProfile });
       payload = snapshot.payload;
-    } else {
+    } else if (useBrightData) {
       const defaultFrom = new Date();
       defaultFrom.setDate(defaultFrom.getDate() - 29);
       const defaultTo = new Date();
@@ -367,6 +392,8 @@ Deno.serve(async (req) => {
         .single();
       if (error) throw error;
       return json({ pending: true, profile: data });
+    } else {
+      payload = await instaloaderProfile(username);
     }
 
     const parsed = parsePayload(payload, username);
@@ -391,7 +418,7 @@ Deno.serve(async (req) => {
           shares: null,
           collected_at: new Date().toISOString(),
           raw_payload: {
-            provider: "bright-data",
+            provider: syncProvider,
             authored_post_codes: authoredPosts.map((post) => post.code),
             collaboration_post_codes: collaborationPosts.map((post) => post.code),
           },
@@ -409,6 +436,7 @@ Deno.serve(async (req) => {
         last_sync_at: new Date().toISOString(),
         last_sync_status: "success",
         last_error: null,
+        sync_provider: syncProvider,
         sync_job_id: null,
         sync_job_stage: null,
         sync_job_context: null,
@@ -434,7 +462,7 @@ Deno.serve(async (req) => {
         credit_text: `@${username}`,
         source_type: "external",
         thumbnail_url: post.thumbnail,
-        metadata_provider: "bright-data",
+        metadata_provider: syncProvider,
         metadata_fetched_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -491,7 +519,7 @@ Deno.serve(async (req) => {
         reposts: 0,
         clicks: 0,
         followers_gained: 0,
-        raw_payload: { provider: "bright-data", post: post.raw },
+        raw_payload: { provider: syncProvider, post: post.raw },
         created_by: actorId,
       });
       if (metricError) throw metricError;

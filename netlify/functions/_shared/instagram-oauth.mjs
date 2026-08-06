@@ -1,5 +1,11 @@
-export const supabaseUrl = "https://bfrhtnwgzhcubfrvrylf.supabase.co";
-export const publishableKey = "sb_publishable_HZNBxkBFePGeE3PQ8rUsog_ocz-wR5g";
+export const supabaseUrl =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  "https://bfrhtnwgzhcubfrvrylf.supabase.co";
+export const publishableKey =
+  process.env.SUPABASE_PUBLISHABLE_KEY ||
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  "sb_publishable_HZNBxkBFePGeE3PQ8rUsog_ocz-wR5g";
 
 export const cors = {
   "Access-Control-Allow-Origin": "https://copynews.netlify.app",
