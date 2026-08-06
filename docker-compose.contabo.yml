@@ -3,8 +3,8 @@ services:
     image: ghcr.io/jonatasismael1/copynews-worker:latest
     environment:
       PORT: "8080"
-      SUPABASE_URL: ${SUPABASE_URL}
-      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
+      SUPABASE_URL: "https://supabase1.dbe.digital"
+      SUPABASE_SECRET_KEY_FILE: "/run/secrets/copynews_supabase_secret_key"
       EXPECTED_SUPABASE_HOST: ${EXPECTED_SUPABASE_HOST:-supabase1.dbe.digital}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4.1-mini}
@@ -20,6 +20,8 @@ services:
       TEMP_MEDIA_TTL_MINUTES: ${TEMP_MEDIA_TTL_MINUTES:-120}
       TRANSCRIPTION_CHUNK_SECONDS: ${TRANSCRIPTION_CHUNK_SECONDS:-600}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Maceio}
+    secrets:
+      - copynews_supabase_secret_key
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
       interval: 30s
@@ -32,3 +34,7 @@ services:
         condition: any
         delay: 5s
         max_attempts: 10
+
+secrets:
+  copynews_supabase_secret_key:
+    external: true
