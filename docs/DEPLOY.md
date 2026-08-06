@@ -9,7 +9,7 @@
 
 ## Netlify
 
-Conecte o repositório, use `npm run build` e publique `dist`. Cadastre apenas `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_APP_TIMEZONE`.
+Conecte o repositório, use `npm run build` e publique `dist`. Cadastre `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` e `VITE_APP_TIMEZONE`. Repita a URL e a chave pública como `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` para as funções server-side do login do Instagram.
 
 ## Contabo / Portainer worker
 

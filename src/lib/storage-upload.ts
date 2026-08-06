@@ -5,9 +5,14 @@ export const RESUMABLE_UPLOAD_THRESHOLD = 6 * 1024 * 1024;
 export const RESUMABLE_UPLOAD_CHUNK_SIZE = 6 * 1024 * 1024;
 
 export function storageResumableEndpoint(projectUrl: string) {
-  const projectId = new URL(projectUrl).hostname.split(".")[0];
-  if (!projectId) throw new Error("Projeto de armazenamento inválido.");
-  return `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+  const url = new URL(projectUrl);
+  const basePath = url.pathname.replace(/\/$/, "");
+  if (url.hostname.endsWith(".supabase.co")) {
+    const projectId = url.hostname.split(".")[0];
+    if (!projectId) throw new Error("Projeto de armazenamento inválido.");
+    return `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+  }
+  return `${url.origin}${basePath}/storage/v1/upload/resumable`;
 }
 
 type StorageUploadOptions = {
