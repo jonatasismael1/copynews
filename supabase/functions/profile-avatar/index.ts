@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { externalizeStorageUrl } from "../_shared/public-url.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -75,7 +76,7 @@ Deno.serve(async (req) => {
       .getPublicUrl(path);
     const { error: updateError } = await admin
       .from("profiles")
-      .update({ avatar_url: publicUrl.publicUrl })
+      .update({ avatar_url: externalizeStorageUrl(publicUrl.publicUrl) })
       .eq("id", user.id);
     if (updateError) {
       await admin.storage.from("profile-avatars").remove([path]);
@@ -93,7 +94,7 @@ Deno.serve(async (req) => {
       entity_type: "profile",
       entity_id: user.id,
     });
-    return json({ avatar_url: publicUrl.publicUrl });
+    return json({ avatar_url: externalizeStorageUrl(publicUrl.publicUrl) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
     const status =

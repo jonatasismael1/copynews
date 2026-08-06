@@ -34,7 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useLookups, useNewsDesign, useNewsItem } from "@/hooks/use-data";
 import { supabase } from "@/lib/supabase";
-import { statusLabels, type NewsStatus } from "@/lib/constants";
+import { processingStepLabel, statusLabels, type NewsStatus } from "@/lib/constants";
 import {
   isAppleMobile,
   prepareMediaFiles,
@@ -788,7 +788,7 @@ export function NewsDetailPage() {
                   <p className="font-semibold">
                     {job.status === "failed"
                       ? "Falha no processamento"
-                      : `Processando: ${job.current_step}`}
+                      : processingStepLabel(job.current_step)}
                   </p>
                   <span className="text-sm font-bold">{job.progress}%</span>
                 </div>
@@ -930,7 +930,7 @@ export function NewsDetailPage() {
 
       <ResponsiveSection
         title="Destaque"
-        summary={`${Math.max(highlightOptions.length, 1)} opção${highlightOptions.length === 1 ? "" : "ões"} · ${highlight.length} caracteres`}
+        summary={`${Math.max(highlightOptions.length, 1)} ${highlightOptions.length === 1 ? "opção" : "opções"} · ${highlight.length} caracteres`}
         defaultOpen
         actions={
           <>
