@@ -115,6 +115,47 @@ type MediaLoadError = {
   message: string;
 };
 
+type PrepareMediaErrorBody = {
+  error?: string;
+  code?: string;
+};
+
+function friendlyPrepareMediaError(code?: string): MediaLoadError {
+  if (code === "MEDIA_URL_MISSING" || code === "SOURCE_UNAVAILABLE") {
+    return {
+      code: code === "MEDIA_URL_MISSING" ? "MEDIA_URL_MISSING" : "MEDIA_UNAVAILABLE",
+      message:
+        "A mídia original não está mais disponível. Escolha o arquivo na galeria para continuar.",
+    };
+  }
+  if (code === "UNSUPPORTED_FORMAT") {
+    return {
+      code: "MEDIA_UNSUPPORTED",
+      message:
+        "Esse formato não abriu no editor. Escolha uma imagem ou vídeo compatível na galeria.",
+    };
+  }
+  return {
+    code: "MEDIA_PROCESSING",
+    message:
+      "Não conseguimos carregar a mídia automaticamente. Tente novamente ou escolha o arquivo na galeria.",
+  };
+}
+
+async function prepareMediaError(
+  error: unknown,
+  data: unknown,
+): Promise<MediaLoadError> {
+  let detail = data as PrepareMediaErrorBody | null;
+  try {
+    const context = (error as { context?: Response } | null)?.context;
+    if (context) detail = await context.clone().json();
+  } catch {
+    // A resposta genérica do SDK não deve aparecer para o usuário.
+  }
+  return friendlyPrepareMediaError(detail?.code);
+}
+
 function formatMediaTime(value: number) {
   if (!Number.isFinite(value) || value < 0) return "00:00";
   const minutes = Math.floor(value / 60);
@@ -797,24 +838,8 @@ export function NewsDesignPage() {
           { body: { news_item_id: news.id, media_index: activeSlideIndex } },
         );
         if (error || !data?.url) {
-          let detail = data as
-            | { error?: string; code?: MediaLoadError["code"] }
-            | null;
-          try {
-            detail = await (
-              error as unknown as { context?: Response }
-            )?.context?.clone().json();
-          } catch {
-            // Keep the SDK error if the function body is unavailable.
-          }
-          throw Object.assign(
-            new Error(
-              detail?.error ||
-                error?.message ||
-                "Não foi possível preparar a mídia original.",
-            ),
-            { code: detail?.code || "MEDIA_UNAVAILABLE" },
-          );
+          const detail = await prepareMediaError(error, data);
+          throw Object.assign(new Error(detail.message), { code: detail.code });
         }
         if (!cancelled) {
           setMediaUrl(data.url);
@@ -2203,12 +2228,12 @@ export function NewsDesignPage() {
             {activeMediaError && !sourceLoading && !mediaLoading && (
               <div className="absolute inset-0 grid place-items-center bg-black/65 p-4">
                 <div
-                  className="w-full max-w-sm rounded-2xl border border-red-400/25 bg-[#241417] p-4 text-center shadow-2xl"
-                  role="alert"
+                  className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#1b1b1b] p-4 text-center shadow-2xl"
+                  role="status"
                 >
-                  <TriangleAlert className="mx-auto text-red-300" />
+                  <ImagePlus className="mx-auto text-[#fb0039]" />
                   <p className="mt-2 text-sm font-bold">
-                    Não foi possível abrir a mídia
+                    Adicione a mídia da arte
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-white/65">
                     {activeMediaError.message}
@@ -2220,7 +2245,7 @@ export function NewsDesignPage() {
                       onClick={retryMedia}
                     >
                       <RotateCcw />
-                      Tentar novamente
+                      Buscar novamente
                     </Button>
                     <Button
                       className="bg-white text-black hover:bg-white/90"
@@ -2228,7 +2253,7 @@ export function NewsDesignPage() {
                       disabled={!canEdit}
                     >
                       <ImagePlus />
-                      Escolher outra
+                      Escolher da galeria
                     </Button>
                   </div>
                 </div>

@@ -56,10 +56,11 @@ async function fingerprint(value: string) {
 
 async function signedUrl(
   admin: ReturnType<typeof createClient>,
+  bucket: string,
   path: string,
 ) {
   const { data, error } = await admin.storage
-    .from("news-designs")
+    .from(bucket)
     .createSignedUrl(path, 3600);
   if (error || !data?.signedUrl)
     failure("STORAGE_SIGN_FAILED", "Não foi possível abrir a mídia preparada.");
@@ -124,7 +125,7 @@ Deno.serve(async (req) => {
 
     if (!sourcePaths.length && design?.media_asset_path) {
       return response({
-        url: await signedUrl(admin, design.media_asset_path),
+        url: await signedUrl(admin, "news-designs", design.media_asset_path),
         path: design.media_asset_path,
         mime_type: design.media_mime_type || "image/jpeg",
         source: "saved",
@@ -165,7 +166,7 @@ Deno.serve(async (req) => {
           .eq("id", design.id);
       }
       return response({
-        url: await signedUrl(admin, path),
+        url: await signedUrl(admin, "news-designs", path),
         path,
         mime_type: mimeType,
         source: "prepared",
@@ -174,16 +175,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: blob, error: downloadError } = await admin.storage
-      .from("temporary-media")
-      .download(sourcePath, {}, { cache: "no-store" });
-    if (downloadError || !blob) {
+    const extension = sourcePath.split(".").pop()?.toLowerCase();
+    const mimeType =
+      Object.entries(extensions).find(([, candidate]) => candidate === extension)?.[0] ||
+      "application/octet-stream";
+    if (!allowedMimeTypes.has(mimeType))
+      failure(
+        "UNSUPPORTED_FORMAT",
+        `O formato ${extension || "desconhecido"} não é compatível com o editor.`,
+        415,
+      );
+
+    let sourceUrl: string;
+    try {
+      sourceUrl = await signedUrl(admin, "temporary-media", sourcePath);
+    } catch (error) {
       console.error(
         JSON.stringify({
           code: "SOURCE_UNAVAILABLE",
           news_item_id,
           sourcePath,
-          message: downloadError?.message,
+          message: error instanceof Error ? error.message : String(error),
         }),
       );
       failure(
@@ -193,83 +205,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    const mimeType = blob.type.split(";")[0].toLowerCase();
-    if (!allowedMimeTypes.has(mimeType))
-      failure(
-        "UNSUPPORTED_FORMAT",
-        `O formato ${mimeType || "desconhecido"} não é compatível com o editor.`,
-        415,
-      );
-    const sizeLimit = mimeType.startsWith("video/")
-      ? 200 * 1024 * 1024
-      : 15 * 1024 * 1024;
-    if (blob.size > sizeLimit)
-      failure(
-        "FILE_TOO_LARGE",
-        `A mídia ultrapassa o limite de ${mimeType.startsWith("video/") ? 200 : 15} MB.`,
-        413,
-      );
-
-    const destinationPath =
-      `${folder}/source-${sourceId}.${extensions[mimeType]}`;
-    const { error: uploadError } = await admin.storage
-      .from("news-designs")
-      .upload(destinationPath, blob, {
-        contentType: mimeType,
-        cacheControl: "31536000",
-        upsert: true,
-      });
-    if (uploadError) {
-      console.error(
-        JSON.stringify({
-          code: "STORAGE_UPLOAD_FAILED",
-          news_item_id,
-          destinationPath,
-          message: uploadError.message,
-        }),
-      );
-      failure(
-        "STORAGE_UPLOAD_FAILED",
-        "Não foi possível preparar a mídia no Storage.",
-        500,
-      );
-    }
-
-    if (design?.id) {
-      // The legacy columns continue pointing to the first slide for backward
-      // compatibility. All carousel slide paths are versioned in config_json.
-      if (requestedIndex !== 0) {
-        return response({
-          url: await signedUrl(admin, destinationPath),
-          path: destinationPath,
-          mime_type: mimeType,
-          source: "normalized",
-          index: requestedIndex,
-          count: sourcePaths.length,
-        });
-      }
-      const { error: updateError } = await userClient
-        .from("news_designs")
-        .update({
-          media_asset_path: destinationPath,
-          media_mime_type: mimeType,
-        })
-        .eq("id", design.id);
-      if (updateError)
-        console.error(
-          JSON.stringify({
-            code: "DESIGN_ASSOCIATION_FAILED",
-            designId: design.id,
-            message: updateError.message,
-          }),
-        );
-    }
-
     return response({
-      url: await signedUrl(admin, destinationPath),
-      path: destinationPath,
+      url: sourceUrl,
+      path: null,
+      source_path: sourcePath,
       mime_type: mimeType,
-      source: "normalized",
+      source: "temporary",
       index: requestedIndex,
       count: sourcePaths.length,
     });

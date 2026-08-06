@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSourceContext } from "./source-context.mjs";
 
-test("não usa OCR bruto como fonte quando não há conteúdo editorial", () => {
-  assert.throws(
-    () => buildSourceContext({ transcript: "", ocr: { text: "Logo 7 Segundos" } }),
-    (error) => error.code === "INSUFFICIENT_SOURCE",
-  );
+test("inclui o OCR entre as fontes enviadas para a reescrita", () => {
+  const context = buildSourceContext({
+    transcript: "",
+    ocr: { text: "Prefeitura anuncia novo calendário" },
+  });
+  assert.equal(context.ocr_text, "Prefeitura anuncia novo calendário");
 });
 
 test("permite vídeo sem fala quando o OCR extraiu um título limpo", () => {
@@ -20,10 +21,10 @@ test("permite vídeo sem fala quando o OCR extraiu um título limpo", () => {
   assert.equal(context.transcript, null);
   assert.equal(context.original_title, "Prefeitura anuncia novo calendário");
   assert.equal("raw_ocr_text" in context, false);
-  assert.equal("ocr_text" in context, false);
+  assert.equal(context.ocr_text, "Logo e telefone 82 99999-9999");
 });
 
-test("mantém título, legenda, corpo e OCR em campos separados", () => {
+test("mantém título, legenda, corpo, transcrição e OCR em campos separados", () => {
   const context = buildSourceContext({
     metadata: { title: "Título original", caption: "Legenda original", articleBody: "Corpo da matéria" },
     transcript: "Transcrição",
@@ -33,7 +34,7 @@ test("mantém título, legenda, corpo e OCR em campos separados", () => {
   assert.equal(context.original_caption, "Legenda original");
   assert.equal(context.clean_original_caption, "Legenda original");
   assert.equal(context.article_body, "Corpo da matéria");
-  assert.equal("ocr_text" in context, false);
+  assert.equal(context.ocr_text, "Logo e outros textos");
 });
 
 test("bloqueia geração quando todas as fontes factuais estão vazias", () => {

@@ -19,6 +19,7 @@ export function buildSourceContext(results) {
         text(results.metadata?.caption),
     article_body: text(results.metadata?.articleBody),
     transcript: text(results.transcript),
+    ocr_text: text(results.ocr?.text) || text(results.ocr_text),
     editorial_tone: text(results.editorial_tone),
     available_categories: Array.isArray(results.available_categories)
       ? results.available_categories.filter(
@@ -32,7 +33,8 @@ export function buildSourceContext(results) {
     !context.original_title &&
     !context.clean_original_caption &&
     !context.article_body &&
-    !context.transcript
+    !context.transcript &&
+    !context.ocr_text
   ) {
     throw Object.assign(
       new Error("Não foi encontrado conteúdo factual na legenda, na fala ou nos textos do vídeo"),

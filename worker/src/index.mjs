@@ -784,7 +784,7 @@ async function processJob(job) {
         process.env.OPENROUTER_API_KEY,
         process.env.OPENROUTER_REWRITE_MODEL ||
           process.env.OPENROUTER_MODEL ||
-          "openai/gpt-5.6-terra",
+          "openai/gpt-4.1",
       );
       if (results.transcription_empty) {
         const sourceKind = results.media_kind || "video";

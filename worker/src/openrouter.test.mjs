@@ -572,12 +572,16 @@ test("usa parâmetros conservadores e JSON Schema estrito no OpenRouter", async 
     );
     assert.match(request.messages[0].content, /Nunca use OCR bruto/);
     assert.match(request.messages[1].content, /TÍTULO ORIGINAL:/);
+    assert.match(
+      request.messages[1].content,
+      /Reescreva o texto a seguir, em tom jornalístico/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("usa controles compatíveis com GPT-5.6 no OpenRouter", async () => {
+test("desativa o raciocínio nos modelos GPT-5.6", async () => {
   const originalFetch = globalThis.fetch;
   let request;
   globalThis.fetch = async (_url, options) => {
@@ -602,13 +606,13 @@ test("usa controles compatíveis com GPT-5.6 no OpenRouter", async () => {
     );
     assert.equal(request.temperature, undefined);
     assert.equal(request.top_p, undefined);
-    assert.deepEqual(request.reasoning, { effort: "medium" });
+    assert.deepEqual(request.reasoning, { effort: "none", exclude: true });
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("conclui sem bloquear quando três tentativas de reescrita falham", async () => {
+test("entrega a reescrita para revisão sem voltar ao texto original", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = async () => {
@@ -628,9 +632,9 @@ test("conclui sem bloquear quando três tentativas de reescrita falham", async (
       "key",
       "model",
     );
-    assert.equal(result.sourceMode, "manual_review");
-    assert.equal(result.title, originalTitle);
-    assert.match(result.warnings.join(" "), /concluído sem bloqueio/i);
+    assert.equal(result.sourceMode, "title_only");
+    assert.equal(result.title, "Motorista causa atropelamento e morre após fuga");
+    assert.match(result.warnings.join(" "), /entregue sem bloqueio/i);
     assert.equal(calls, 3);
   } finally {
     globalThis.fetch = originalFetch;
