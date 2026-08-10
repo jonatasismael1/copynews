@@ -231,7 +231,9 @@ async function brightFetch(path: string, init?: RequestInit) {
   }
   if (!response.ok) {
     const detail = errorText(payload) || `HTTP ${response.status}`;
-    const message = response.status === 400
+    const message = /customer is not active|account is not active/i.test(detail)
+      ? "A conta da Bright Data está inativa. Reative-a no painel da Bright Data ou cadastre uma chave ativa."
+      : response.status === 400
       ? "A Bright Data recusou os parâmetros do relatório. Tente atualizar novamente."
       : response.status === 401 || response.status === 403
       ? "A credencial da Bright Data precisa ser revisada."

@@ -91,6 +91,9 @@ function readableSyncError(value: unknown) {
   if (/bright data http 400/i.test(detail)) {
     return "A Bright Data recusou a consulta. Tente atualizar novamente.";
   }
+  if (/customer is not active|account is not active/i.test(detail)) {
+    return "A conta da Bright Data está inativa. Reative-a no painel da Bright Data ou cadastre uma chave ativa.";
+  }
   return detail || "Não foi possível sincronizar o perfil";
 }
 
