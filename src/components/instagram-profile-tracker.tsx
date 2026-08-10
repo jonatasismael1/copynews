@@ -80,7 +80,18 @@ function brightDate(date: string) {
 }
 
 function reportEndDate() {
-  return brightDate(todayKey(new Date(Date.now() + 86_400_000)));
+  return brightDate(todayKey());
+}
+
+function readableSyncError(value: unknown) {
+  const detail = typeof value === "string" ? value.trim() : "";
+  if (/error sending request|172\.\d+\.\d+\.\d+|fetch failed|network/i.test(detail)) {
+    return "Não foi possível conectar ao serviço de relatórios. Tente novamente.";
+  }
+  if (/bright data http 400/i.test(detail)) {
+    return "A Bright Data recusou a consulta. Tente atualizar novamente.";
+  }
+  return detail || "Não foi possível sincronizar o perfil";
 }
 
 function downloadWeeklyReport(rows: DailyReportRow[], profiles: TrackedInstagramProfile[]) {
@@ -131,7 +142,7 @@ async function functionError(error: unknown) {
   } catch {
     // Keep the SDK error when the response body is unavailable.
   }
-  return detail;
+  return readableSyncError(detail);
 }
 
 export function InstagramProfileTracker({
@@ -230,9 +241,19 @@ export function InstagramProfileTracker({
     if (!fixedProfiles.length) return;
     setSyncingAll(true);
     try {
-      await Promise.all(fixedProfiles.map((profile) =>
-        runSync({ profile_id: profile.id })
-      ));
+      const failures: string[] = [];
+      let updated = 0;
+      // Avoid opening several paid collector jobs at the exact same time.
+      for (const profile of fixedProfiles) {
+        try {
+          await runSync({ profile_id: profile.id });
+          updated += 1;
+        } catch (error) {
+          failures.push(`@${profile.username}: ${readableSyncError(
+            error instanceof Error ? error.message : error,
+          )}`);
+        }
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tracked-instagram-profiles"] }),
         queryClient.invalidateQueries({ queryKey: ["publications"] }),
@@ -240,7 +261,12 @@ export function InstagramProfileTracker({
         queryClient.invalidateQueries({ queryKey: ["instagram-daily-report"] }),
       ]);
       await onSynced();
-      toast.success(`${fixedProfiles.length} perfis atualizados`);
+      if (updated) toast.success(`${updated} ${updated === 1 ? "perfil atualizado" : "perfis atualizados"}`);
+      if (failures.length) {
+        toast.error(
+          `${failures.length} ${failures.length === 1 ? "perfil não foi atualizado" : "perfis não foram atualizados"}. ${failures[0]}`,
+        );
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar os perfis");
     } finally {
@@ -376,7 +402,9 @@ export function InstagramProfileTracker({
                   </span>
                 </div>
                 {profile.last_error && (
-                  <p className="mt-2 line-clamp-2 text-xs text-destructive">{profile.last_error}</p>
+                  <p className="mt-2 line-clamp-2 text-xs text-destructive">
+                    {readableSyncError(profile.last_error)}
+                  </p>
                 )}
               </div>
             );

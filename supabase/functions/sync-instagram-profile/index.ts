@@ -162,22 +162,85 @@ function localDay(value: string) {
 const brightBaseUrl = "https://api.brightdata.com/datasets/v3";
 const brightPostDataset = "gd_lk5ns7kz21pck8jpis";
 
+class BrightDataError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null = null,
+    readonly diagnostic: string | null = null,
+  ) {
+    super(message);
+    this.name = "BrightDataError";
+  }
+}
+
+function errorText(value: unknown): string | null {
+  if (typeof value === "string") return text(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = errorText(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  for (const key of ["message", "error", "detail", "description", "errors"]) {
+    const found = errorText(record[key]);
+    if (found) return found;
+  }
+  return null;
+}
+
+function friendlyError(error: unknown) {
+  if (error instanceof BrightDataError) return error.message;
+  const detail = error instanceof Error ? error.message : "";
+  if (/error sending request|172\.\d+\.\d+\.\d+|fetch failed|network/i.test(detail)) {
+    return "Não foi possível conectar à Bright Data agora. Tente novamente em instantes.";
+  }
+  return detail || "Não foi possível atualizar o relatório do Instagram";
+}
+
 async function brightFetch(path: string, init?: RequestInit) {
-  const response = await fetch(`${brightBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${env("BRIGHT_DATA_API_KEY")}`,
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-    signal: AbortSignal.timeout(65_000),
-  });
-  const payload = await response.json().catch(() => ({}));
+  let response: Response;
+  try {
+    response = await fetch(`${brightBaseUrl}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${env("BRIGHT_DATA_API_KEY")}`,
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+      signal: AbortSignal.timeout(65_000),
+    });
+  } catch (error) {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    throw new BrightDataError(
+      "Não foi possível conectar à Bright Data agora. Tente novamente em instantes.",
+      null,
+      diagnostic,
+    );
+  }
+  const raw = await response.text();
+  let payload: unknown = {};
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = raw;
+    }
+  }
   if (!response.ok) {
-    const message = text((payload as Record<string, unknown>).message) ||
-      text((payload as Record<string, unknown>).error) ||
-      `Bright Data HTTP ${response.status}`;
-    throw new Error(message);
+    const detail = errorText(payload) || `HTTP ${response.status}`;
+    const message = response.status === 400
+      ? "A Bright Data recusou os parâmetros do relatório. Tente atualizar novamente."
+      : response.status === 401 || response.status === 403
+      ? "A credencial da Bright Data precisa ser revisada."
+      : response.status === 429
+      ? "A Bright Data recebeu muitas consultas ao mesmo tempo. Aguarde um instante e tente novamente."
+      : response.status >= 500
+      ? "A Bright Data está temporariamente indisponível. Tente novamente em instantes."
+      : "Não foi possível concluir a consulta na Bright Data.";
+    throw new BrightDataError(message, response.status, detail);
   }
   return payload;
 }
@@ -344,14 +407,28 @@ Deno.serve(async (req) => {
     } else {
       const defaultFrom = new Date();
       defaultFrom.setDate(defaultFrom.getDate() - 29);
+      // Bright Data rejects future dates in some collector revisions. Today is
+      // enough because returned posts add the current day to the report.
       const defaultTo = new Date();
-      defaultTo.setDate(defaultTo.getDate() + 1);
-      const snapshotId = await brightStart({
-        url: `https://www.instagram.com/${username}/`,
-        start_date: dateInput(body.start_date, defaultFrom),
-        end_date: dateInput(body.end_date, defaultTo),
-        post_type: "",
-      });
+      let snapshotId: string;
+      try {
+        snapshotId = await brightStart({
+          url: `https://www.instagram.com/${username}/`,
+          start_date: dateInput(body.start_date, defaultFrom),
+          end_date: dateInput(body.end_date, defaultTo),
+          post_type: "",
+        });
+      } catch (startError) {
+        await admin.from("tracked_instagram_profiles").update({
+          last_sync_status: "error",
+          last_error: friendlyError(startError),
+          sync_job_id: null,
+          sync_job_stage: null,
+          sync_job_context: null,
+          sync_job_started_at: null,
+        }).eq("id", trackedProfile.id);
+        throw startError;
+      }
       const { data, error } = await admin.from("tracked_instagram_profiles")
         .update({
           last_sync_status: "pending",
@@ -511,8 +588,14 @@ Deno.serve(async (req) => {
       metrics_available: ["views", "likes", "comments"],
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected error";
-    const status = message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 400;
+    const rawMessage = error instanceof Error ? error.message : "Unexpected error";
+    const message = friendlyError(error);
+    const status = rawMessage === "Unauthorized" ? 401 : rawMessage === "Forbidden" ? 403 : 400;
+    console.error(JSON.stringify({
+      event: "sync_instagram_profile_failed",
+      status: error instanceof BrightDataError ? error.status : null,
+      diagnostic: error instanceof BrightDataError ? error.diagnostic : rawMessage,
+    }));
     return json({ error: message }, status);
   }
 });
