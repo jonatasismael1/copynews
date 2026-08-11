@@ -88,12 +88,6 @@ function readableSyncError(value: unknown) {
   if (/error sending request|172\.\d+\.\d+\.\d+|fetch failed|network/i.test(detail)) {
     return "Não foi possível conectar ao serviço de relatórios. Tente novamente.";
   }
-  if (/bright data http 400/i.test(detail)) {
-    return "A Bright Data recusou a consulta. Tente atualizar novamente.";
-  }
-  if (/customer is not active|account is not active/i.test(detail)) {
-    return "A conta da Bright Data está inativa. Reative-a no painel da Bright Data ou cadastre uma chave ativa.";
-  }
   return detail || "Não foi possível sincronizar o perfil";
 }
 
@@ -215,7 +209,7 @@ export function InstagramProfileTracker({
       };
       await new Promise((resolve) => window.setTimeout(resolve, 8_000));
     }
-    throw new Error("A Bright Data demorou mais de 8 minutos para concluir a consulta");
+    throw new Error("A coleta do Instagram demorou mais de 8 minutos para concluir");
   }
 
   const sync = useMutation({

@@ -87,84 +87,6 @@ function instagramShortcode(url: URL) {
   return url.pathname.match(/\/(?:p|reel|reels|tv)\/([^/?#]+)/i)?.[1] ?? null;
 }
 
-function textValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function collectObjects(
-  value: unknown,
-  output: Record<string, unknown>[] = [],
-  seen = new Set<object>(),
-) {
-  if (!value || typeof value !== "object" || seen.has(value)) return output;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) collectObjects(item, output, seen);
-  } else {
-    const record = value as Record<string, unknown>;
-    output.push(record);
-    for (const item of Object.values(record)) collectObjects(item, output, seen);
-  }
-  return output;
-}
-
-export function parseInstaloaderPublication(
-  payload: unknown,
-  expectedShortcode: string,
-) {
-  const post = collectObjects(payload).find((item) => {
-    const code = textValue(item.shortcode) || textValue(item.code);
-    const permalink = textValue(item.url) || textValue(item.post_url) ||
-      textValue(item.permalink);
-    return code === expectedShortcode ||
-      (permalink?.match(/\/(?:p|reel|reels|tv)\/([^/?#]+)/i)?.[1] ===
-        expectedShortcode);
-  });
-  if (!post) return null;
-  const owner = post.owner && typeof post.owner === "object"
-    ? post.owner as Record<string, unknown>
-    : null;
-  const timestamp = post.date_utc || post.date || post.taken_at ||
-    post.taken_at_timestamp;
-  const publishedAt = typeof timestamp === "number"
-    ? new Date(timestamp * 1000).toISOString()
-    : textValue(timestamp);
-  return {
-    caption: textValue(post.caption) || textValue(post.caption_text) ||
-      textValue(post.title),
-    author: textValue(post.owner_username) || textValue(post.username) ||
-      textValue(owner?.username),
-    publishedAt,
-    thumbnail: textValue(post.display_url) || textValue(post.thumbnail_url) ||
-      textValue(post.image_url) || textValue(post.url_thumbnail),
-  };
-}
-
-async function readWithInstaloader(
-  profile: string | null,
-  shortcode: string | null,
-) {
-  const baseUrl = Deno.env.get("INSTALOADER_SERVICE_URL");
-  const apiKey = Deno.env.get("INSTALOADER_SERVICE_API_KEY");
-  if (!baseUrl || !apiKey || !profile || !shortcode) return null;
-  try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/profile`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
-      body: JSON.stringify({ profile: profile.replace(/^@/, ""), limit: 12 }),
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) throw new Error(`Instaloader HTTP ${response.status}`);
-    return parseInstaloaderPublication(await response.json(), shortcode);
-  } catch (error) {
-    console.warn(JSON.stringify({
-      event: "instaloader.failed",
-      message: error instanceof Error ? error.message : "Unexpected error",
-    }));
-    return null;
-  }
-}
-
 function instagramDate(shortcode: string | null) {
   if (!shortcode) return null;
   const alphabet =
@@ -268,16 +190,6 @@ export async function inspectPublicationUrl(raw: string) {
     publishedAt = publishedAt || instagramDate(externalId);
     title = firstMeaningfulLine(caption, author || "Publicação do Instagram");
     provider = "instagram-public-meta";
-    const instaloader = await readWithInstaloader(author, externalId);
-    if (instaloader) {
-      caption = instaloader.caption || caption;
-      author = instaloader.author || author;
-      publishedAt = instaloader.publishedAt || publishedAt;
-      title = firstMeaningfulLine(caption, author || "Publicação do Instagram");
-      provider = "dbe-instaloader";
-      // Prefer the original image returned by Instaloader over a cropped OG image.
-      thumbnail = instaloader.thumbnail || thumbnail;
-    }
   } else if (url.hostname.includes("tiktok")) {
     externalId = tiktokId(url);
     publishedAt = publishedAt || tiktokDate(externalId);

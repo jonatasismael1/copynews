@@ -6,15 +6,15 @@ Atualizada em 14 de julho de 2026. Conversão de referência: **US$ 1 = R$ 5,12*
 
 Premissa: 15 publicações por usuário/dia, 30 dias, total de 450 publicações por usuário/mês. A transcrição vem desativada e é ligada apenas nos vídeos em que a fala é necessária.
 
-| Usuários | Posts/mês | OpenRouter | Railway | Total mensal |
-|---:|---:|---:|---:|---:|
-| 1 | 450 | US$ 2,92 / R$ 14,95 | US$ 6 / R$ 30,72 | **US$ 8,92 / R$ 45,67** |
-| 5 | 2.250 | US$ 13,40 / R$ 68,61 | US$ 10 / R$ 51,20 | **US$ 23,40 / R$ 119,81** |
-| 10 | 4.500 | US$ 26,59 / R$ 136,14 | US$ 16 / R$ 81,92 | **US$ 42,59 / R$ 218,06** |
+| Usuários | Posts/mês | OpenRouter |
+|---:|---:|---:|
+| 1 | 450 | US$ 2,92 / R$ 14,95 |
+| 5 | 2.250 | US$ 13,40 / R$ 68,61 |
+| 10 | 4.500 | US$ 26,59 / R$ 136,14 |
 
 O OpenRouter cobra 5,5% na compra de créditos, com taxa mínima de US$ 0,80. A primeira recarga mínima custa **US$ 5,80 / R$ 29,70**, mas o saldo restante continua disponível.
 
-Faixas prudentes do Railway: US$ 5–8 para 1 usuário, US$ 7–14 para 5 e US$ 10–24 para 10. Tamanho e duração dos vídeos, RAM, picos simultâneos e tráfego de mídia explicam a variação.
+O worker e a API do Instagram usam a infraestrutura Contabo/Portainer existente. A coleta do Instagram usa Apify; acompanhe o consumo e os limites diretamente na conta Apify.
 
 ## Efeito da transcrição
 
@@ -64,7 +64,6 @@ Os usuários do Copy News não são assentos do Netlify. Dez jornalistas no apli
 - [OpenRouter: Whisper Large V3](https://openrouter.ai/openai/whisper-large-v3/pricing)
 - [OpenRouter: Gemini 2.5 Flash Lite](https://openrouter.ai/google/gemini-2.5-flash-lite/providers)
 - [OpenRouter: taxas](https://openrouter.ai/pricing)
-- [Railway](https://railway.com/pricing)
 - [Supabase](https://supabase.com/pricing)
 - [Netlify](https://www.netlify.com/pricing/)
 

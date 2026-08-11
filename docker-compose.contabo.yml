@@ -13,8 +13,6 @@ services:
       OPENROUTER_VISION_MODEL: ${OPENROUTER_VISION_MODEL:-openai/gpt-4.1-mini}
       COBALT_API_URL: ${COBALT_API_URL:-https://cobalt.dbe.digital}
       COBALT_API_KEY: ${COBALT_API_KEY}
-      INSTALOADER_SERVICE_URL: ${INSTALOADER_SERVICE_URL:-https://instaloader.dbe.digital}
-      INSTALOADER_SERVICE_API_KEY: ${INSTALOADER_SERVICE_API_KEY}
       WORKER_ID: ${WORKER_ID:-contabo-worker-1}
       TEMP_MEDIA_BUCKET: ${TEMP_MEDIA_BUCKET:-temporary-media}
       TEMP_MEDIA_TTL_MINUTES: ${TEMP_MEDIA_TTL_MINUTES:-120}

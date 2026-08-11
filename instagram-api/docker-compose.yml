@@ -1,0 +1,17 @@
+services:
+  instagram-api:
+    build: .
+    image: copy-news-instagram-api:latest
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    env_file: .env
+    environment:
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Maceio}
+      APIFY_TOKEN: ${APIFY_TOKEN:?configure APIFY_TOKEN}
+      APIFY_ACTOR_ID: ${APIFY_ACTOR_ID:-apidojo/instagram-scraper}
+      MAX_POSTS_PER_PROFILE: ${MAX_POSTS_PER_PROFILE:-20}
+      TRACKING_DAYS: ${TRACKING_DAYS:-30}
+    init: true
+    shm_size: "512mb"
+    stop_grace_period: 30s

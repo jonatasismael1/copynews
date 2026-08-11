@@ -67,8 +67,8 @@ createServer((req, res) => {
         workerId,
         busy,
         databaseHost: supabaseHost,
-        commit: process.env.APP_COMMIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || null,
-        deploymentId: process.env.DEPLOYMENT_ID || process.env.RAILWAY_DEPLOYMENT_ID || null,
+        commit: process.env.APP_COMMIT_SHA || null,
+        deploymentId: process.env.DEPLOYMENT_ID || null,
         capabilities: ["design-video-render-v1"],
       }),
     );

@@ -10,7 +10,6 @@ import {
   parseArticleMetadata,
   parseInstagramEmbedImage,
   parseInstagramMetadata,
-  parseInstaloaderMetadata,
 } from "./adapters.mjs";
 
 test("identifica links do YouTube sem confundir outros domínios", () => {
@@ -98,22 +97,22 @@ test("prefere a imagem vertical completa do embed à prévia quadrada", () => {
   );
 });
 
-test("normaliza a origem de túnel da Railway", async () => {
+test("normaliza a origem de túnel do worker", async () => {
   const original = global.fetch;
   global.fetch = async () =>
     new Response(
       JSON.stringify({
         status: "tunnel",
-        url: "https://old-host.up.railway.app/tunnel?id=abc",
+        url: "https://old-worker.dbe.digital/tunnel?id=abc",
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
   const result = await acquireMedia("https://example.com", {
-    cobaltUrl: "https://current.up.railway.app/",
+    cobaltUrl: "https://worker.dbe.digital/",
   });
   assert.equal(
     result.mediaUrl,
-    "https://current.up.railway.app/tunnel?id=abc",
+    "https://worker.dbe.digital/tunnel?id=abc",
   );
   global.fetch = original;
 });
@@ -144,37 +143,6 @@ test("preserva todos os itens de um carrossel", async () => {
   } finally {
     global.fetch = original;
   }
-});
-
-test("normaliza a publicação retornada pelo Instaloader", () => {
-  const result = parseInstaloaderMetadata(
-    {
-      profile: { username: "portal" },
-      posts: [{
-        shortcode: "ABC123",
-        caption: "Legenda completa",
-        owner_username: "portal",
-        date_utc: "2026-08-01T12:30:00Z",
-        display_url: "https://cdn.test/ABC123.jpg",
-      }],
-    },
-    "https://www.instagram.com/reel/ABC123/",
-  );
-  assert.equal(result.provider, "dbe-instaloader");
-  assert.equal(result.caption, "Legenda completa");
-  assert.equal(result.author, "portal");
-  assert.equal(result.publishedAt, "2026-08-01T12:30:00Z");
-  assert.equal(result.mediaItems[0].url, "https://cdn.test/ABC123.jpg");
-});
-
-test("ignora resposta do Instaloader sem a publicação solicitada", () => {
-  assert.equal(
-    parseInstaloaderMetadata(
-      { posts: [{ shortcode: "OUTRO", caption: "Não usar" }] },
-      "https://www.instagram.com/p/ABC123/",
-    ),
-    null,
-  );
 });
 
 test("extrai a legenda completa e o autor dos metadados do Instagram", () => {
