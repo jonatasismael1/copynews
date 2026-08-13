@@ -238,19 +238,16 @@ export function InstagramProfileTracker({
     if (!fixedProfiles.length) return;
     setSyncingAll(true);
     try {
-      const failures: string[] = [];
-      let updated = 0;
-      // Avoid opening several paid collector jobs at the exact same time.
-      for (const profile of fixedProfiles) {
-        try {
-          await runSync({ profile_id: profile.id });
-          updated += 1;
-        } catch (error) {
-          failures.push(`@${profile.username}: ${readableSyncError(
-            error instanceof Error ? error.message : error,
-          )}`);
-        }
+      let request: { all_profiles: true; requested_at?: string } = { all_profiles: true };
+      let result: { profiles?: TrackedInstagramProfile[]; run?: { status?: string; profiles_failed?: Array<{ username: string; error: string }> } } | null = null;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const { data, error } = await supabase.functions.invoke("sync-instagram-profile", { body: request });
+        if (error) throw new Error(await functionError(error));
+        if (!data?.pending) { result = data; break; }
+        request = { all_profiles: true, requested_at: String(data.requested_at) };
+        await new Promise((resolve) => window.setTimeout(resolve, 8_000));
       }
+      if (!result) throw new Error("A coleta do Instagram demorou mais de 8 minutos para concluir");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["tracked-instagram-profiles"] }),
         queryClient.invalidateQueries({ queryKey: ["publications"] }),
@@ -258,12 +255,10 @@ export function InstagramProfileTracker({
         queryClient.invalidateQueries({ queryKey: ["instagram-daily-report"] }),
       ]);
       await onSynced();
-      if (updated) toast.success(`${updated} ${updated === 1 ? "perfil atualizado" : "perfis atualizados"}`);
-      if (failures.length) {
-        toast.error(
-          `${failures.length} ${failures.length === 1 ? "perfil não foi atualizado" : "perfis não foram atualizados"}. ${failures[0]}`,
-        );
-      }
+      const failures = result.run?.profiles_failed || [];
+      const updated = result.profiles?.length || fixedProfiles.length;
+      if (updated - failures.length > 0) toast.success(`${updated - failures.length} ${updated - failures.length === 1 ? "perfil atualizado" : "perfis atualizados"}`);
+      if (failures.length) toast.error(`${failures.length} ${failures.length === 1 ? "perfil não foi atualizado" : "perfis não foram atualizados"}. @${failures[0].username}: ${readableSyncError(failures[0].error)}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não foi possível atualizar os perfis");
     } finally {

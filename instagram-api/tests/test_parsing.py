@@ -1,4 +1,7 @@
 from src.collector import parse_item
+from src.notifications import WhatsAppNotificationService, safe_error
+from types import SimpleNamespace
+from datetime import datetime, timezone
 
 
 def test_parse_real_apidojo_shape_preserves_missing_metrics():
@@ -32,3 +35,25 @@ def test_parse_apidojo_flattened_owner_fields():
     result = parse_item({"id": "1", "code": "ABC", "createdAt": "2026-08-11T01:00:05.000Z", "owner.username": "francesfmagreste", "coowners": None})
     assert result["owner_username"] == "francesfmagreste"
     assert result["collaborators"] == []
+
+
+def test_negative_provider_metrics_are_treated_as_missing():
+    result = parse_item({"id": "1", "shortCode": "ABC", "timestamp": "2026-08-11T01:00:05Z", "likesCount": -1, "commentsCount": 2})
+    assert result["likes"] is None
+    assert result["comments"] == 2
+
+
+def test_success_message_uses_real_run_values():
+    now = datetime.now(timezone.utc)
+    run = SimpleNamespace(trigger="scheduled", profiles=["one", "two"], posts_found=42, posts_updated=38, posts_new=4, collaborations_found=7, views_monitored=284320, started_at=now, finished_at=now)
+    message = WhatsAppNotificationService().success_message(run)
+    assert "Perfis: 2" in message
+    assert "Posts encontrados: 42" in message
+    assert "Views monitoradas: 284.320" in message
+    assert "Tipo: Automática" in message
+
+
+def test_error_sanitizer_redacts_credentials_and_urls():
+    message = safe_error("token=secret failed at https://internal.example/path")
+    assert "secret" not in message
+    assert "internal.example" not in message

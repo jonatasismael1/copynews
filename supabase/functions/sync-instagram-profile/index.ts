@@ -49,6 +49,26 @@ Deno.serve(async (request) => {
     }
 
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    if (body.all_profiles === true) {
+      const apiBase = env("INSTAGRAM_ANALYTICS_API_URL").replace(/\/$/, "");
+      const apiHeaders = { "X-API-Key": env("INSTAGRAM_ANALYTICS_API_KEY") };
+      const requestedAt = typeof body.requested_at === "string" ? body.requested_at : null;
+      if (!requestedAt) {
+        const startedAt = new Date().toISOString();
+        const start = await fetch(`${apiBase}/instagram/collect`, { method: "POST", headers: apiHeaders });
+        if (!start.ok) throw new Error(`Instagram API HTTP ${start.status}: ${await start.text()}`);
+        return json({ pending: true, all_profiles: true, requested_at: startedAt }, 202);
+      }
+      const runsResponse = await fetch(`${apiBase}/instagram/runs?limit=5`, { headers: apiHeaders });
+      if (!runsResponse.ok) throw new Error(`Instagram API HTTP ${runsResponse.status}: ${await runsResponse.text()}`);
+      const runs = await runsResponse.json() as Array<Record<string, unknown>>;
+      const run = runs.find((item) => item.trigger === "manual" && String(item.started_at || "") >= requestedAt);
+      if (!run || run.status === "running") return json({ pending: true, all_profiles: true, requested_at: requestedAt }, 202);
+      if (run.status === "error") return json({ error: run.error || "A coleta do Instagram falhou" }, 502);
+      const { data: fixedProfiles, error: fixedError } = await service.from("tracked_instagram_profiles").select("*").eq("is_fixed", true).order("username");
+      if (fixedError) throw fixedError;
+      return json({ pending: false, all_profiles: true, profiles: fixedProfiles || [], run });
+    }
     let query = service.from("tracked_instagram_profiles").select("*");
     if (body.profile_id) query = query.eq("id", String(body.profile_id));
     else query = query.eq("username", username(body.profile));

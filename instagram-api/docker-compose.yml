@@ -9,9 +9,14 @@ services:
     environment:
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Maceio}
       APIFY_TOKEN: ${APIFY_TOKEN:?configure APIFY_TOKEN}
-      APIFY_ACTOR_ID: ${APIFY_ACTOR_ID:-apidojo/instagram-scraper}
+      APIFY_ACTOR_ID: ${APIFY_ACTOR_ID:-apify/instagram-scraper}
       MAX_POSTS_PER_PROFILE: ${MAX_POSTS_PER_PROFILE:-20}
       TRACKING_DAYS: ${TRACKING_DAYS:-30}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-}
+      INSTAGRAM_WHATSAPP_ALERTS_ENABLED: ${INSTAGRAM_WHATSAPP_ALERTS_ENABLED:-false}
+      INSTAGRAM_ALERT_PHONE: ${INSTAGRAM_ALERT_PHONE:-}
     init: true
     shm_size: "512mb"
     stop_grace_period: 30s

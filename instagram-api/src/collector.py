@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import SessionLocal
 from .models import CollectionRun, InstagramPost, PostMetricsHistory, TrackedProfile
+from .notifications import WhatsAppNotificationService, safe_error
 
 log = logging.getLogger(__name__)
 settings = get_settings()
@@ -111,12 +112,13 @@ async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
         return run["id"], items
 
 
-def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict], collected_at: datetime, target_date: date | None = None) -> int:
+def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict], collected_at: datetime, target_date: date | None = None) -> dict:
     by_username = {profile.username.lower(): profile for profile in profiles}
     current_date = collected_at.astimezone(ZoneInfo(settings.app_timezone)).date()
     first_date = target_date or (current_date - timedelta(days=settings.report_days - 1))
     last_date = target_date or current_date
-    saved = 0
+    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "views": 0}
+    found_ids: set[str] = set()
     for raw in items:
         data = parse_item(raw)
         if not data["instagram_id"] or not data["url"]:
@@ -124,6 +126,12 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
         published_date = data["published_at"].astimezone(ZoneInfo(settings.app_timezone)).date() if data["published_at"] else None
         if not published_date or not (first_date <= published_date <= last_date):
             continue
+        if data["instagram_id"] not in found_ids:
+            found_ids.add(data["instagram_id"])
+            stats["found"] += 1
+            stats["views"] += data["views"] or 0
+            was_known = session.scalar(select(func.count()).select_from(InstagramPost).where(InstagramPost.instagram_id == data["instagram_id"])) or 0
+            stats["updated" if was_known else "new"] += 1
         participants = [data["source_username"], data["owner_username"], *data["collaborators"]]
         item_profiles = []
         for username in participants:
@@ -141,27 +149,72 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
             else:
                 for key in ("shortcode", "url", "caption", "published_at", "owner_username", "collaborators", "media_type", "thumbnail_url", "raw_payload"):
                     setattr(post, key, data[key])
+            if data["owner_username"] and data["owner_username"] != profile.username.lower():
+                stats["collaborations"] += 1
             latest = session.scalar(select(PostMetricsHistory).where(PostMetricsHistory.post_id == post.id).order_by(PostMetricsHistory.collected_at.desc()).limit(1))
             metrics = (data["likes"], data["comments"], data["views"], data["plays"])
             previous = (latest.likes, latest.comments, latest.views, latest.plays) if latest else None
             if metrics != previous:
                 session.add(PostMetricsHistory(post_id=post.id, collected_at=collected_at, likes=metrics[0], comments=metrics[1], views=metrics[2], plays=metrics[3]))
-            saved += 1
+            stats["saved"] += 1
     for profile in profiles:
         profile.last_sync_at = collected_at
         profile.last_sync_status = "success"
         profile.last_error = None
         profile.sync_provider = "apify"
-    return saved
+    return stats
+
+
+def _profile_failures(items: list[dict], profiles: list[TrackedProfile]) -> list[dict]:
+    known = {profile.username.lower() for profile in profiles}
+    failures: list[dict] = []
+    for item in items:
+        error = item.get("error") or item.get("errorDescription")
+        if not error:
+            continue
+        source = str(item.get("inputUrl") or item.get("inputSource") or "").rstrip("/").split("/")[-1].lower()
+        if source in known and not any(value["username"] == source for value in failures):
+            failures.append({"username": source, "error": safe_error(error)})
+    return failures
+
+
+async def _notify_run(run_id: uuid.UUID) -> None:
+    try:
+        service = WhatsAppNotificationService()
+        with SessionLocal() as session:
+            run = session.get(CollectionRun, run_id)
+            if not run:
+                return
+            if run.status == "success":
+                result = await service.send_collection_success(run)
+            elif run.status == "partial":
+                result = await service.send_collection_partial(run)
+            else:
+                result = await service.send_collection_failure(run)
+            run.notification_status = result.status
+            run.notification_sent_at = datetime.now(timezone.utc) if result.status == "sent" else None
+            run.notification_error = result.error
+            session.commit()
+    except Exception as exc:
+        log.warning("notification failed response_status=internal_error error=%s", safe_error(exc))
+        try:
+            with SessionLocal() as session:
+                run = session.get(CollectionRun, run_id)
+                if run:
+                    run.notification_status = "failed"
+                    run.notification_error = safe_error(exc)
+                    session.commit()
+        except Exception:
+            log.exception("notification status persistence failed")
 
 
 def ingest_items(items: list[dict], target_date: date) -> dict:
     with SessionLocal() as session:
         profiles = list(session.scalars(select(TrackedProfile).where(TrackedProfile.organization_id == settings.default_organization_id, TrackedProfile.is_fixed.is_(True))).all())
         now = datetime.now(timezone.utc)
-        saved = _persist(session, profiles, items, now, target_date)
+        stats = _persist(session, profiles, items, now, target_date)
         session.commit()
-        return {"status": "success", "provider": "apify", "target_date": target_date.isoformat(), "items_received": len(items), "posts_saved": saved}
+        return {"status": "success", "provider": "apify", "target_date": target_date.isoformat(), "items_received": len(items), "posts_saved": stats["saved"]}
 
 
 async def collect(usernames: list[str] | None = None, trigger: str = "manual") -> dict:
@@ -176,7 +229,8 @@ async def collect(usernames: list[str] | None = None, trigger: str = "manual") -
             if not profiles:
                 raise LookupError("Nenhum perfil ativo encontrado")
             names = [x.username for x in profiles]
-            run = CollectionRun(id=uuid.uuid4(), organization_id=settings.default_organization_id, status="running", trigger=trigger, profiles=names)
+            notification_status = "pending" if settings.instagram_whatsapp_alerts_enabled else "disabled"
+            run = CollectionRun(id=uuid.uuid4(), organization_id=settings.default_organization_id, status="running", trigger=trigger, profiles=names, notification_status=notification_status)
             session.add(run)
             for profile in profiles:
                 profile.last_sync_status = "pending"
@@ -186,22 +240,37 @@ async def collect(usernames: list[str] | None = None, trigger: str = "manual") -
                 apify_run_id, items = await _run_actor(names)
                 now = datetime.now(timezone.utc)
                 run.apify_run_id = apify_run_id
-                run.posts_received = _persist(session, profiles, items, now)
-                run.status = "success"
+                stats = _persist(session, profiles, items, now)
+                failures = _profile_failures(items, profiles)
+                failed_names = {item["username"] for item in failures}
+                run.profiles_failed = failures
+                run.profiles_succeeded = [name for name in names if name.lower() not in failed_names]
+                run.posts_received = stats["saved"]
+                run.posts_found = stats["found"]
+                run.posts_new = stats["new"]
+                run.posts_updated = stats["updated"]
+                run.collaborations_found = stats["collaborations"]
+                run.views_monitored = stats["views"]
+                run.status = "partial" if failures else "success"
                 run.finished_at = now
                 session.commit()
-                return {"run_id": str(run.id), "apify_run_id": apify_run_id, "profiles": names, "posts_received": run.posts_received, "status": "success"}
+                result = {"run_id": str(run.id), "apify_run_id": apify_run_id, "profiles": names, "posts_received": run.posts_received, "status": run.status}
+                await _notify_run(run.id)
+                return result
             except Exception as exc:
                 session.rollback()
                 run = session.get(CollectionRun, run.id)
                 run.status = "error"
-                run.error = str(exc)[:2000]
+                run.error = safe_error(exc, 1000)
+                run.profiles_failed = [{"username": name, "error": safe_error(exc)} for name in names]
+                run.profiles_succeeded = []
                 run.finished_at = datetime.now(timezone.utc)
                 for profile in profiles:
                     current = session.get(TrackedProfile, profile.id)
                     current.last_sync_status = "error"
-                    current.last_error = str(exc)[:2000]
+                    current.last_error = safe_error(exc, 1000)
                 session.commit()
+                await _notify_run(run.id)
                 raise
 
 
@@ -214,5 +283,5 @@ async def collect_profile(profile_id: str) -> dict:
     return await collect([username], "manual")
 
 
-async def collect_all(organization_id=None) -> dict:
-    return await collect(None, "scheduled")
+async def collect_all(organization_id=None, trigger: str = "scheduled") -> dict:
+    return await collect(None, trigger)

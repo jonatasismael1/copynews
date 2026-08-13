@@ -10,6 +10,7 @@ from .collector import collect_all, collect_profile, ingest_items
 from .config import get_settings
 from .db import engine, get_db
 from .models import CollectionRun, InstagramPost, MetricSnapshot, PostMetricsHistory, ProfileSnapshot, Publication, TrackedProfile
+from .notifications import WhatsAppNotificationService
 from .schemas import ProfileCreate, ProfileOut
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -22,13 +23,13 @@ async def scheduled_collection():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    for hour in (7, 12, 19, 22): scheduler.add_job(scheduled_collection, "cron", hour=hour, minute=0, id=f"collect-{hour}", max_instances=1, coalesce=True)
+    for hour in (14, 21): scheduler.add_job(scheduled_collection, "cron", hour=hour, minute=0, id=f"collect-{hour}", max_instances=1, coalesce=True)
     scheduler.start()
     yield
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Copy News Instagram Analytics", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Copy News Instagram Analytics", version="2.3.0", lifespan=lifespan)
 
 
 def authorize(x_api_key: str | None = Header(default=None)):
@@ -41,7 +42,7 @@ async def queue_collect(profile_id: str):
 
 
 async def queue_collect_all():
-    await collect_all(settings.default_organization_id)
+    await collect_all(settings.default_organization_id, trigger="manual")
 
 
 @app.get("/health")
@@ -50,7 +51,7 @@ def health():
         with engine.connect() as conn: conn.execute(text("select 1"))
         database = "ok"
     except Exception: database = "error"
-    return {"status": "ok" if database == "ok" else "degraded", "database": database, "scheduler": scheduler.running, "time": datetime.now(timezone.utc)}
+    return {"status": "ok" if database == "ok" else "degraded", "database": database, "scheduler": scheduler.running, "schedule": ["14:00", "21:00"], "timezone": settings.app_timezone, "time": datetime.now(timezone.utc)}
 
 
 @app.get("/profiles", response_model=list[ProfileOut], dependencies=[Depends(authorize)])
@@ -112,7 +113,15 @@ def instagram_collect(background: BackgroundTasks):
 @app.get("/instagram/runs", dependencies=[Depends(authorize)])
 def collection_runs(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
     rows = db.scalars(select(CollectionRun).where(CollectionRun.organization_id == settings.default_organization_id).order_by(desc(CollectionRun.started_at)).limit(limit)).all()
-    return [{"id": x.id, "status": x.status, "trigger": x.trigger, "apify_run_id": x.apify_run_id, "profiles": x.profiles, "posts_received": x.posts_received, "error": x.error, "started_at": x.started_at, "finished_at": x.finished_at} for x in rows]
+    return [{"id": x.id, "status": x.status, "trigger": x.trigger, "apify_run_id": x.apify_run_id, "profiles": x.profiles, "profiles_succeeded": x.profiles_succeeded, "profiles_failed": x.profiles_failed, "posts_received": x.posts_received, "posts_found": x.posts_found, "posts_new": x.posts_new, "posts_updated": x.posts_updated, "collaborations_found": x.collaborations_found, "views_monitored": x.views_monitored, "notification_status": x.notification_status, "notification_sent_at": x.notification_sent_at, "notification_error": x.notification_error, "error": x.error, "started_at": x.started_at, "finished_at": x.finished_at} for x in rows]
+
+
+@app.post("/admin/notifications/test", dependencies=[Depends(authorize)])
+async def test_notification():
+    result = await WhatsAppNotificationService().send_test()
+    if result.status == "failed":
+        raise HTTPException(502, result.error or "Falha no envio da notificação")
+    return {"status": result.status}
 
 
 @app.get("/instagram/profiles/{username}/posts", dependencies=[Depends(authorize)])

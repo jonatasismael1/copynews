@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     tracking_days: int = 30
     report_days: int = 7
     request_timeout_seconds: float = 360
+    evolution_api_url: str = ""
+    evolution_api_key: str = ""
+    evolution_instance: str = ""
+    instagram_whatsapp_alerts_enabled: bool = False
+    instagram_alert_phone: str = ""
+    notification_timeout_seconds: float = 8
+    notification_max_attempts: int = 3
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 @lru_cache
