@@ -2,12 +2,11 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import httpx
 
 from .config import get_settings
+from .notifications_utils import safe_error
 
 log = logging.getLogger(__name__)
 settings = get_settings()
@@ -19,109 +18,12 @@ class NotificationResult:
     error: str | None = None
 
 
-def safe_error(value: object, limit: int = 240) -> str:
-    message = " ".join(str(value or "Erro desconhecido").split())
-    message = re.sub(r"(?i)(api[_ -]?key|token|authorization|password|senha)\s*[:=]\s*\S+", r"\1=[oculto]", message)
-    message = re.sub(r"https?://[^\s]+", "[url omitida]", message)
-    return message[:limit]
-
-
-def _number(value: int) -> str:
-    return f"{max(0, value):,}".replace(",", ".")
-
-
 class WhatsAppNotificationService:
     def __init__(self) -> None:
         self.enabled = settings.instagram_whatsapp_alerts_enabled
 
     def _configured(self) -> bool:
         return bool(settings.evolution_api_url and settings.evolution_api_key and settings.evolution_instance and settings.instagram_alert_phone)
-
-    def _time(self, run) -> str:
-        moment = run.finished_at or datetime.now(ZoneInfo(settings.app_timezone))
-        return moment.astimezone(ZoneInfo(settings.app_timezone)).strftime("%H:%M")
-
-    def _duration(self, run) -> int:
-        if not run.finished_at or not run.started_at:
-            return 0
-        return max(0, round((run.finished_at - run.started_at).total_seconds()))
-
-    def _posting_times(self, run) -> str:
-        return f"({', '.join(run.posting_times)})" if run.posting_times else "nenhuma postagem hoje"
-
-    def _scope(self, run, failed: bool = False) -> str:
-        profiles = run.profiles_failed if failed and run.profiles_failed else run.profiles
-        if len(profiles) == 1:
-            return f"Perfil: @{profiles[0]}"
-        label = "Perfis afetados" if failed else "Perfis"
-        return f"{label}: {len(profiles)}"
-
-    def _profile_section(self, summary: dict) -> str:
-        times = f"({', '.join(summary['posting_times'])})" if summary["posting_times"] else "nenhuma postagem hoje"
-        return "\n".join([
-            f"📊 @{summary['username']}",
-            f"Posts encontrados: {summary['posts_found']}",
-            f"Posts atualizados: {summary['posts_updated']}",
-            f"Novos posts: {summary['posts_new']}",
-            f"Collabs feitas: {summary['collaborations_made']}",
-            f"Collabs recebidas: {summary['collaborations_received']}",
-            f"Views monitoradas: {_number(summary['views_monitored'])}",
-            f"Reels: {summary['reels_count']} | Posts: {summary['posts_count']} | Carrosséis: {summary['carousels_count']}",
-            f"Horários: {times}",
-        ])
-
-    def success_message(self, run) -> str:
-        title = "✅ Atualização manual concluída" if run.trigger == "manual" else "✅ Coleta do Instagram concluída"
-        individual = []
-        if len(run.profiles) > 1:
-            individual = ["📋 DESEMPENHO POR PERFIL", ""]
-            for summary in run.profile_summaries:
-                individual.extend([self._profile_section(summary), ""])
-            individual.extend(["📈 CONSOLIDADO GERAL", ""])
-        return "\n".join([title, "", *individual, self._scope(run),
-            f"Posts encontrados: {run.posts_found}",
-            f"Posts atualizados: {run.posts_updated}",
-            f"Novos posts: {run.posts_new}",
-            f"Collabs feitas: {run.collaborations_made}",
-            f"Collabs recebidas: {run.collaborations_received}",
-            f"Views monitoradas: {_number(run.views_monitored)}", "",
-            f"Quantidade de Reels: {run.reels_count}",
-            f"Quantidade de Post: {run.posts_count}",
-            f"Quantidade de Carrossel: {run.carousels_count}", "",
-            f"Horário de postagens: {self._posting_times(run)}", "",
-            f"Tipo: {'Manual' if run.trigger == 'manual' else 'Automática'}",
-            f"Horário: {self._time(run)}", f"Duração: {self._duration(run)}s",
-        ])
-
-    def partial_message(self, run) -> str:
-        failed = run.profiles_failed or []
-        errors = [f"@{item.get('username')}: {safe_error(item.get('error'))}" if isinstance(item, dict) else f"@{item}" for item in failed]
-        individual = ["📋 DESEMPENHO POR PERFIL", ""]
-        for summary in run.profile_summaries:
-            individual.extend([self._profile_section(summary), ""])
-        individual.extend(["📈 CONSOLIDADO GERAL", ""])
-        return "\n".join([
-            "⚠️ Coleta do Instagram concluída parcialmente", "", *individual,
-            f"Perfis processados: {len(run.profiles)}",
-            f"Sucesso: {len(run.profiles_succeeded)}", f"Falha: {len(failed)}", "",
-            f"Posts encontrados: {run.posts_found}",
-            f"Posts atualizados: {run.posts_updated}",
-            f"Novos posts: {run.posts_new}",
-            f"Collabs feitas: {run.collaborations_made}",
-            f"Collabs recebidas: {run.collaborations_received}",
-            f"Views monitoradas: {_number(run.views_monitored)}", "",
-            f"Quantidade de Reels: {run.reels_count}",
-            f"Quantidade de Post: {run.posts_count}",
-            f"Quantidade de Carrossel: {run.carousels_count}", "",
-            f"Horário de postagens: {self._posting_times(run)}", "", "Perfil com erro:", *errors,
-            "", f"Horário: {self._time(run)}",
-        ])
-
-    def failure_message(self, run) -> str:
-        return "\n".join([
-            "❌ Erro na coleta do Instagram", "", self._scope(run, failed=True), "",
-            f"Motivo: {safe_error(run.error)}", "", f"Horário: {self._time(run)}",
-        ])
 
     async def send_text(self, message: str) -> NotificationResult:
         if not self.enabled:
@@ -132,9 +34,9 @@ class WhatsAppNotificationService:
         headers = {"apikey": settings.evolution_api_key, "Content-Type": "application/json"}
         body = {"number": re.sub(r"\D", "", settings.instagram_alert_phone), "text": message}
         last_error = "Falha desconhecida"
-        timeout = httpx.Timeout(settings.notification_timeout_seconds)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            for attempt in range(1, max(1, min(settings.notification_max_attempts, 3)) + 1):
+        attempts = max(1, min(settings.notification_max_attempts, 3))
+        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.notification_timeout_seconds)) as client:
+            for attempt in range(1, attempts + 1):
                 try:
                     response = await client.post(url, headers=headers, json=body)
                     if 200 <= response.status_code < 300:
@@ -147,18 +49,41 @@ class WhatsAppNotificationService:
                 except (httpx.TimeoutException, httpx.NetworkError) as exc:
                     last_error = safe_error(exc)
                     log.warning("notification failed response_status=network_error attempt=%s", attempt)
-                if attempt < settings.notification_max_attempts:
+                if attempt < attempts:
                     await asyncio.sleep(attempt)
         return NotificationResult("failed", safe_error(last_error))
 
-    async def send_collection_success(self, run) -> NotificationResult:
-        return await self.send_text(self.success_message(run))
+    async def send_messages(self, messages: list[str]) -> NotificationResult:
+        if not messages:
+            return NotificationResult("disabled")
+        errors = []
+        sent = 0
+        for index, message in enumerate(messages):
+            result = await self.send_text(message)
+            if result.status == "sent":
+                sent += 1
+            elif result.status == "disabled":
+                return result
+            else:
+                errors.append(f"bloco {index + 1}: {result.error}")
+            if index < len(messages) - 1:
+                await asyncio.sleep(max(0, settings.notification_message_delay_seconds))
+        return NotificationResult("sent" if not errors else "failed", None if not errors else safe_error("; ".join(errors)))
 
-    async def send_collection_partial(self, run) -> NotificationResult:
-        return await self.send_text(self.partial_message(run))
+    async def send_collection_success(self, run, previous=None) -> NotificationResult:
+        from .reports import build_messages
+        return await self.send_messages(build_messages(run, previous))
+
+    async def send_collection_partial(self, run, previous=None) -> NotificationResult:
+        from .reports import build_messages
+        return await self.send_messages(build_messages(run, previous))
 
     async def send_collection_failure(self, run) -> NotificationResult:
-        return await self.send_text(self.failure_message(run))
+        from .reports import build_messages
+        return await self.send_messages(build_messages(run))
 
     async def send_test(self) -> NotificationResult:
         return await self.send_text("✅ Teste de notificações do Instagram funcionando.")
+
+
+__all__ = ["NotificationResult", "WhatsAppNotificationService", "safe_error"]

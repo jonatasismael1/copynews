@@ -131,7 +131,7 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
     current_date = collected_at.astimezone(ZoneInfo(settings.app_timezone)).date()
     first_date = target_date or (current_date - timedelta(days=settings.report_days - 1))
     last_date = target_date or current_date
-    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "views": 0, "reels": 0, "posts": 0, "carousels": 0, "posting_times": []}
+    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "internal_collaborations": 0, "external_collaborations": 0, "external_details": [], "views": 0, "reels": 0, "posts": 0, "carousels": 0, "posting_times": [], "contents": []}
     profile_summaries = {
         username: {"username": username, "posts_found": 0, "posts_new": 0, "posts_updated": 0, "collaborations_made": 0, "collaborations_received": 0, "views_monitored": 0, "reels_count": 0, "posts_count": 0, "carousels_count": 0, "posting_times": [], "_seen": set()}
         for username in by_username
@@ -156,7 +156,17 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
             tracked_collaborators = {name for name in data["collaborators"] if name in by_username and name != owner_username}
             if owner_username in by_username and data["collaborators"]:
                 stats["collaborations_made"] += 1
+            if owner_username in by_username and tracked_collaborators:
+                stats["internal_collaborations"] += 1
+            if owner_username not in by_username and tracked_collaborators:
+                stats["external_collaborations"] += 1
+                stats["external_details"].extend({"external": owner_username, "profile": name} for name in sorted(tracked_collaborators))
             stats["collaborations_received"] += len(tracked_collaborators)
+            stats["contents"].append({
+                "key": data["instagram_id"] or data["shortcode"], "instagram_id": data["instagram_id"], "shortcode": data["shortcode"],
+                "published_at": data["published_at"].isoformat(), "views": data["views"] or 0, "kind": _content_kind(data),
+                "owner": owner_username, "collaborators": data["collaborators"], "profiles": [],
+            })
         participants = [data["source_username"], data["owner_username"], *data["collaborators"]]
         item_profiles = []
         for username in participants:
@@ -180,6 +190,10 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
                     summary["collaborations_made"] += 1
                 elif data["owner_username"] and data["owner_username"] != profile_name:
                     summary["collaborations_received"] += 1
+                content_key = data["instagram_id"] or data["shortcode"]
+                content = next((value for value in stats["contents"] if value["key"] == content_key), None)
+                if content and profile_name not in content["profiles"]:
+                    content["profiles"].append(profile_name)
             if not post:
                 post = InstagramPost(tracked_profile_id=profile.id, **{k: data[k] for k in ("instagram_id", "shortcode", "url", "caption", "published_at", "owner_username", "collaborators", "media_type", "thumbnail_url", "raw_payload")})
                 session.add(post)
@@ -207,6 +221,8 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
         summary["posting_times"].sort()
         summary.pop("_seen", None)
         stats["profile_summaries"].append(summary)
+    stats["profile_appearances"] = sum(value["posts_found"] for value in stats["profile_summaries"])
+    stats["report_payload"] = {"date": current_date.isoformat(), "contents": stats["contents"], "external_collabs": stats["external_details"]}
     return stats
 
 
@@ -230,10 +246,23 @@ async def _notify_run(run_id: uuid.UUID) -> None:
             run = session.get(CollectionRun, run_id)
             if not run:
                 return
+            previous = None
+            local_finished = (run.finished_at or run.started_at).astimezone(ZoneInfo(settings.app_timezone))
+            if run.trigger == "scheduled" and local_finished.hour >= 20:
+                candidates = session.scalars(
+                    select(CollectionRun).where(
+                        CollectionRun.organization_id == run.organization_id,
+                        CollectionRun.id != run.id,
+                        CollectionRun.status.in_(["success", "partial"]),
+                        CollectionRun.trigger == "scheduled",
+                        CollectionRun.finished_at < run.finished_at,
+                    ).order_by(CollectionRun.finished_at.desc()).limit(10)
+                ).all()
+                previous = next((candidate for candidate in candidates if candidate.finished_at.astimezone(ZoneInfo(settings.app_timezone)).date() == local_finished.date() and 13 <= candidate.finished_at.astimezone(ZoneInfo(settings.app_timezone)).hour <= 16), None)
             if run.status == "success":
-                result = await service.send_collection_success(run)
+                result = await service.send_collection_success(run, previous)
             elif run.status == "partial":
-                result = await service.send_collection_partial(run)
+                result = await service.send_collection_partial(run, previous)
             else:
                 result = await service.send_collection_failure(run)
             run.notification_status = result.status
@@ -303,6 +332,11 @@ async def collect(usernames: list[str] | None = None, trigger: str = "manual") -
                 run.posting_times = stats["posting_times"]
                 run.profile_summaries = stats["profile_summaries"]
                 run.views_monitored = stats["views"]
+                run.unique_views = stats["views"]
+                run.profile_appearances = stats["profile_appearances"]
+                run.internal_collaborations = stats["internal_collaborations"]
+                run.external_collaborations = stats["external_collaborations"]
+                run.report_payload = stats["report_payload"]
                 run.status = "partial" if failures else "success"
                 run.finished_at = now
                 session.commit()

@@ -11,6 +11,7 @@ from .config import get_settings
 from .db import engine, get_db
 from .models import CollectionRun, InstagramPost, MetricSnapshot, PostMetricsHistory, ProfileSnapshot, Publication, TrackedProfile
 from .notifications import WhatsAppNotificationService
+from .historical_report import reconstruct
 from .schemas import ProfileCreate, ProfileOut
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -122,6 +123,18 @@ async def test_notification():
     if result.status == "failed":
         raise HTTPException(502, result.error or "Falha no envio da notificação")
     return {"status": result.status}
+
+
+@app.post("/admin/notifications/report-test", dependencies=[Depends(authorize)])
+async def test_historical_report(target_date: date, cutoff_hour: int = Query(21, ge=1, le=23), db: Session = Depends(get_db)):
+    current = reconstruct(db, target_date, cutoff_hour)
+    previous = reconstruct(db, target_date, 14) if cutoff_hour >= 21 else None
+    from .reports import build_messages
+    messages = build_messages(current, previous)
+    result = await WhatsAppNotificationService().send_messages(messages)
+    if result.status == "failed":
+        raise HTTPException(502, result.error or "Falha no envio do relatório")
+    return {"status": result.status, "messages_sent": len(messages), "date": target_date, "cutoff_hour": cutoff_hour, "unique_publications": current.posts_found, "appearances": current.profile_appearances, "unique_views": current.unique_views}
 
 
 @app.get("/instagram/profiles/{username}/posts", dependencies=[Depends(authorize)])
