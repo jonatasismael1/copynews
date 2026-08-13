@@ -131,8 +131,8 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
     current_date = collected_at.astimezone(ZoneInfo(settings.app_timezone)).date()
     first_date = target_date or (current_date - timedelta(days=settings.report_days - 1))
     last_date = target_date or current_date
-    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "views": 0, "reels": 0, "posts": 0, "carousels": 0}
-    found_ids: set[str] = set()
+    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "views": 0, "reels": 0, "posts": 0, "carousels": 0, "posting_times": []}
+    summarized_ids: set[str] = set()
     for raw in items:
         data = parse_item(raw)
         if not data["instagram_id"] or not data["url"]:
@@ -140,10 +140,11 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
         published_date = data["published_at"].astimezone(ZoneInfo(settings.app_timezone)).date() if data["published_at"] else None
         if not published_date or not (first_date <= published_date <= last_date):
             continue
-        if data["instagram_id"] not in found_ids:
-            found_ids.add(data["instagram_id"])
+        if published_date == current_date and data["instagram_id"] not in summarized_ids:
+            summarized_ids.add(data["instagram_id"])
             stats["found"] += 1
             stats["views"] += data["views"] or 0
+            stats["posting_times"].append(data["published_at"].astimezone(ZoneInfo(settings.app_timezone)).strftime("%H:%M"))
             was_known = session.scalar(select(func.count()).select_from(InstagramPost).where(InstagramPost.instagram_id == data["instagram_id"])) or 0
             stats["updated" if was_known else "new"] += 1
             stats[f"{_content_kind(data)}s"] += 1
@@ -182,6 +183,7 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
         profile.last_sync_status = "success"
         profile.last_error = None
         profile.sync_provider = "apify"
+    stats["posting_times"].sort()
     return stats
 
 
@@ -275,6 +277,7 @@ async def collect(usernames: list[str] | None = None, trigger: str = "manual") -
                 run.reels_count = stats["reels"]
                 run.posts_count = stats["posts"]
                 run.carousels_count = stats["carousels"]
+                run.posting_times = stats["posting_times"]
                 run.views_monitored = stats["views"]
                 run.status = "partial" if failures else "success"
                 run.finished_at = now

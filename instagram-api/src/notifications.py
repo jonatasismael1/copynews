@@ -46,6 +46,9 @@ class WhatsAppNotificationService:
             return 0
         return max(0, round((run.finished_at - run.started_at).total_seconds()))
 
+    def _posting_times(self, run) -> str:
+        return f"({', '.join(run.posting_times)})" if run.posting_times else "nenhuma postagem hoje"
+
     def _scope(self, run, failed: bool = False) -> str:
         profiles = run.profiles_failed if failed and run.profiles_failed else run.profiles
         if len(profiles) == 1:
@@ -66,6 +69,7 @@ class WhatsAppNotificationService:
             f"Quantidade de Reels: {run.reels_count}",
             f"Quantidade de Post: {run.posts_count}",
             f"Quantidade de Carrossel: {run.carousels_count}", "",
+            f"Horário de postagens: {self._posting_times(run)}", "",
             f"Tipo: {'Manual' if run.trigger == 'manual' else 'Automática'}",
             f"Horário: {self._time(run)}", f"Duração: {self._duration(run)}s",
         ])
@@ -85,7 +89,8 @@ class WhatsAppNotificationService:
             f"Views monitoradas: {_number(run.views_monitored)}", "",
             f"Quantidade de Reels: {run.reels_count}",
             f"Quantidade de Post: {run.posts_count}",
-            f"Quantidade de Carrossel: {run.carousels_count}", "", "Perfil com erro:", *errors,
+            f"Quantidade de Carrossel: {run.carousels_count}", "",
+            f"Horário de postagens: {self._posting_times(run)}", "", "Perfil com erro:", *errors,
             "", f"Horário: {self._time(run)}",
         ])
 

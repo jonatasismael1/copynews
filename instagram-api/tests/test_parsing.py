@@ -45,7 +45,7 @@ def test_negative_provider_metrics_are_treated_as_missing():
 
 def test_success_message_uses_real_run_values():
     now = datetime.now(timezone.utc)
-    run = SimpleNamespace(trigger="scheduled", profiles=["one", "two"], posts_found=42, posts_updated=38, posts_new=4, collaborations_made=3, collaborations_received=4, views_monitored=284320, reels_count=10, posts_count=27, carousels_count=5, started_at=now, finished_at=now)
+    run = SimpleNamespace(trigger="scheduled", profiles=["one", "two"], posts_found=42, posts_updated=38, posts_new=4, collaborations_made=3, collaborations_received=4, views_monitored=284320, reels_count=10, posts_count=27, carousels_count=5, posting_times=["07:58", "08:28", "19:55"], started_at=now, finished_at=now)
     message = WhatsAppNotificationService().success_message(run)
     assert "Perfis: 2" in message
     assert "Posts encontrados: 42" in message
@@ -55,6 +55,8 @@ def test_success_message_uses_real_run_values():
     assert "Quantidade de Reels: 10" in message
     assert "Quantidade de Post: 27" in message
     assert "Quantidade de Carrossel: 5" in message
+    assert "Horário de postagens: (07:58, 08:28, 19:55)" in message
+    assert message.index("Horário de postagens:") < message.index("Tipo:")
     assert "Tipo: Automática" in message
 
 
