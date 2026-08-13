@@ -70,6 +70,20 @@ def parse_item(item: dict) -> dict:
     }
 
 
+def _content_kind(data: dict) -> str:
+    raw = data["raw_payload"]
+    media_type = str(data.get("media_type") or "").lower()
+    product_type = str(raw.get("productType") or "").lower()
+    url = str(data.get("url") or "").lower()
+    children = raw.get("childPosts") if isinstance(raw.get("childPosts"), list) else []
+    images = raw.get("images") if isinstance(raw.get("images"), list) else []
+    if media_type in {"sidecar", "carousel"} or len(children) > 1 or len(images) > 1:
+        return "carousel"
+    if product_type in {"clips", "reels"} or media_type in {"video", "reel", "reels"} or "/reel/" in url:
+        return "reel"
+    return "post"
+
+
 async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
     actor = settings.apify_actor_id.replace("/", "~")
     endpoint = f"https://api.apify.com/v2/acts/{actor}/runs"
@@ -117,7 +131,7 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
     current_date = collected_at.astimezone(ZoneInfo(settings.app_timezone)).date()
     first_date = target_date or (current_date - timedelta(days=settings.report_days - 1))
     last_date = target_date or current_date
-    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "views": 0}
+    stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "views": 0, "reels": 0, "posts": 0, "carousels": 0}
     found_ids: set[str] = set()
     for raw in items:
         data = parse_item(raw)
@@ -132,6 +146,12 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
             stats["views"] += data["views"] or 0
             was_known = session.scalar(select(func.count()).select_from(InstagramPost).where(InstagramPost.instagram_id == data["instagram_id"])) or 0
             stats["updated" if was_known else "new"] += 1
+            stats[f"{_content_kind(data)}s"] += 1
+            owner_username = data["owner_username"] or ""
+            tracked_collaborators = {name for name in data["collaborators"] if name in by_username and name != owner_username}
+            if owner_username in by_username and data["collaborators"]:
+                stats["collaborations_made"] += 1
+            stats["collaborations_received"] += len(tracked_collaborators)
         participants = [data["source_username"], data["owner_username"], *data["collaborators"]]
         item_profiles = []
         for username in participants:
@@ -250,6 +270,11 @@ async def collect(usernames: list[str] | None = None, trigger: str = "manual") -
                 run.posts_new = stats["new"]
                 run.posts_updated = stats["updated"]
                 run.collaborations_found = stats["collaborations"]
+                run.collaborations_made = stats["collaborations_made"]
+                run.collaborations_received = stats["collaborations_received"]
+                run.reels_count = stats["reels"]
+                run.posts_count = stats["posts"]
+                run.carousels_count = stats["carousels"]
                 run.views_monitored = stats["views"]
                 run.status = "partial" if failures else "success"
                 run.finished_at = now
