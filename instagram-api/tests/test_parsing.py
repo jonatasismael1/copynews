@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 from src.collector import parse_item
 from src.notifications import safe_error
-from src.reports import build_messages, comparison
+from src.reports import _label, _volume_observation, build_messages, comparison
 from src.post_classification import apply_classification, classify_post_for_profile, empty_profile_summary, validate_profile_summary
 
 
@@ -72,3 +72,12 @@ def test_profile_origin_classification_closes_equations():
     assert summary["originated_by_profile"] == 2
     assert summary["received_internal"] == 1 and summary["received_external"] == 1
     assert summary["reels_count"] + summary["posts_count"] + summary["carousels_count"] == 4
+
+
+def test_own_publication_volume_thresholds_and_delmiro_display_name():
+    expected = {20: "Excepcional", 13: "Acima", 12: "ideal", 11: "ideal", 10: "aceitável", 9: "Abaixo", 8: "Abaixo", 7: "Muito abaixo", 1: "Muito abaixo", 0: "nenhuma"}
+    for count, fragment in expected.items():
+        rendered = " ".join(_volume_observation({"username": "francesfmdelmiro", "originated_by_profile": count}))
+        assert fragment.lower() in rendered.lower()
+        assert f"{count} publica" in rendered
+    assert _label("francesfmdelmiro") == "Delmiro"

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
-from statistics import median
 from zoneinfo import ZoneInfo
 
 from .config import get_settings
@@ -96,6 +95,51 @@ def comparison(current, previous) -> tuple[list[str], dict[str, int]]:
     return lines, dict(profile_growth)
 
 
+def _volume_observation(item: dict) -> list[str]:
+    label = _label(item["username"])
+    count = int(item.get("originated_by_profile", 0))
+    noun = "publicação própria" if count == 1 else "publicações próprias"
+    if count >= 20:
+        return [f"🌟 {label} — {count} {noun}", "Desempenho excepcional. Parabéns pelo ritmo de produção."]
+    if count >= 13:
+        return [f"🚀 {label} — {count} {noun}", "Acima da meta ideal de publicações próprias."]
+    if count >= 11:
+        return [f"✅ {label} — {count} {noun}", "Dentro do volume ideal."]
+    if count == 10:
+        return [f"🟢 {label} — {count} {noun}", "Volume aceitável, próximo da meta."]
+    if count >= 8:
+        return [f"🟡 {label} — {count} {noun}", "Abaixo do volume ideal."]
+    if count >= 1:
+        return [f"🔴 {label} — {count} {noun}", "Muito abaixo do volume esperado."]
+    return [f"🔴 {label} — 0 publicações próprias", "O perfil não originou nenhuma publicação no período."]
+
+
+def build_observations(run) -> str:
+    summaries = list(run.profile_summaries or [])
+    lines = ["📌 *OBSERVAÇÕES*"]
+    for item in summaries:
+        lines.extend(["", *_volume_observation(item)])
+    extras = []
+    for failure in run.profiles_failed or []:
+        if isinstance(failure, dict):
+            extras.append(f"⚠️ {_label(str(failure.get('username') or 'perfil'))}: {safe_error(failure.get('error'))}")
+    for item in (run.report_payload or {}).get("external_collabs", []):
+        extras.append(f"🤝 Collab externa: @{item.get('external')} → {_label(str(item.get('profile') or 'perfil'))}")
+    finished = (run.finished_at or run.started_at).astimezone(ZoneInfo(settings.app_timezone))
+    for item in summaries:
+        times = item.get("posting_times", [])
+        if not times:
+            extras.append(f"⏳ Sem publicação no período: {_label(item['username'])}")
+            continue
+        hour, minute = map(int, max(times).split(":"))
+        elapsed = finished.hour * 60 + finished.minute - (hour * 60 + minute)
+        if elapsed >= settings.alert_inactive_hours * 60:
+            extras.append(f"⏳ Sem publicar há {int(elapsed // 60)}h: {_label(item['username'])}")
+    if extras:
+        lines.extend(["", *dict.fromkeys(extras)])
+    return "\n".join(lines)
+
+
 def build_messages(run, previous=None) -> list[str]:
     if run.status == "error":
         profiles = run.profiles_failed or run.profiles
@@ -131,29 +175,5 @@ def build_messages(run, previous=None) -> list[str]:
     if previous is not None:
         evolution, growth = comparison(run, previous)
         messages.append("\n".join(evolution))
-    attention = []
-    for failure in run.profiles_failed or []:
-        if isinstance(failure, dict):
-            attention.append(f"⚠️ @{failure.get('username')}: {safe_error(failure.get('error'))}")
-    for item in (run.report_payload or {}).get("external_collabs", []):
-        attention.append(f"🤝 Collab externa: @{item.get('external')} → @{item.get('profile')}")
-    volumes = [int(item.get("posts_found", 0)) for item in summaries]
-    typical = median(volumes) if volumes else 0
-    if typical >= 2:
-        for item in summaries:
-            if int(item.get("posts_found", 0)) < typical * settings.alert_low_volume_ratio:
-                attention.append(f"📉 Volume abaixo do padrão: {_label(item['username'])} ({item.get('posts_found', 0)} publicações)")
-    finished = (run.finished_at or run.started_at).astimezone(ZoneInfo(settings.app_timezone))
-    for item in summaries:
-        times = item.get("posting_times", [])
-        if not times:
-            attention.append(f"⏳ Sem publicação no período: {_label(item['username'])}")
-            continue
-        hour, minute = map(int, max(times).split(":"))
-        last_minutes = hour * 60 + minute
-        current_minutes = finished.hour * 60 + finished.minute
-        if current_minutes >= last_minutes and current_minutes - last_minutes >= settings.alert_inactive_hours * 60:
-            attention.append(f"⏳ Sem publicar há {int((current_minutes - last_minutes) // 60)}h: {_label(item['username'])}")
-    if attention:
-        messages.append("\n".join(["⚠️ *PONTOS DE ATENÇÃO*", "", *dict.fromkeys(attention)]))
+    messages.append(build_observations(run))
     return messages

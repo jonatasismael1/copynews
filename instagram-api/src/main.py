@@ -137,6 +137,16 @@ async def test_historical_report(target_date: date, cutoff_hour: int = Query(21,
     return {"status": result.status, "messages_sent": len(messages), "date": target_date, "cutoff_hour": cutoff_hour, "unique_publications": current.posts_found, "appearances": current.profile_appearances, "unique_views": current.unique_views}
 
 
+@app.post("/admin/notifications/observations-test", dependencies=[Depends(authorize)])
+async def test_historical_observations(target_date: date, cutoff_hour: int = Query(21, ge=1, le=23), db: Session = Depends(get_db)):
+    from .reports import build_observations
+    current = reconstruct(db, target_date, cutoff_hour)
+    result = await WhatsAppNotificationService().send_text(build_observations(current))
+    if result.status == "failed":
+        raise HTTPException(502, result.error or "Falha no envio das observações")
+    return {"status": result.status, "messages_sent": 1, "date": target_date, "cutoff_hour": cutoff_hour}
+
+
 @app.get("/admin/notifications/report-audit", dependencies=[Depends(authorize)])
 def historical_report_audit(target_date: date, username: str = "francesfmagreste", cutoff_hour: int = Query(21, ge=1, le=23), db: Session = Depends(get_db)):
     current = reconstruct(db, target_date, cutoff_hour)
