@@ -81,3 +81,10 @@ def test_own_publication_volume_thresholds_and_delmiro_display_name():
         assert fragment.lower() in rendered.lower()
         assert f"{count} publica" in rendered
     assert _label("francesfmdelmiro") == "Delmiro"
+
+
+def test_half_day_uses_half_of_daily_volume_targets():
+    expected = {10: "Excepcional", 7: "Acima", 6: "ideal", 5: "aceitável", 4: "Abaixo", 3: "Muito abaixo", 0: "nenhuma"}
+    for count, fragment in expected.items():
+        rendered = " ".join(_volume_observation({"username": "francesfmagreste", "originated_by_profile": count}, half_day=True))
+        assert fragment.lower() in rendered.lower()

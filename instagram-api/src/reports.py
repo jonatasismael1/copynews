@@ -95,19 +95,24 @@ def comparison(current, previous) -> tuple[list[str], dict[str, int]]:
     return lines, dict(profile_growth)
 
 
-def _volume_observation(item: dict) -> list[str]:
+def _volume_observation(item: dict, half_day: bool = False) -> list[str]:
     label = _label(item["username"])
     count = int(item.get("originated_by_profile", 0))
     noun = "publicação própria" if count == 1 else "publicações próprias"
-    if count >= 20:
+    exceptional = 10 if half_day else 20
+    above = 7 if half_day else 13
+    ideal = 6 if half_day else 11
+    acceptable = 5 if half_day else 10
+    below = 4 if half_day else 8
+    if count >= exceptional:
         return [f"🌟 {label} — {count} {noun}", "Desempenho excepcional. Parabéns pelo ritmo de produção."]
-    if count >= 13:
+    if count >= above:
         return [f"🚀 {label} — {count} {noun}", "Acima da meta ideal de publicações próprias."]
-    if count >= 11:
+    if count >= ideal:
         return [f"✅ {label} — {count} {noun}", "Dentro do volume ideal."]
-    if count == 10:
+    if count == acceptable:
         return [f"🟢 {label} — {count} {noun}", "Volume aceitável, próximo da meta."]
-    if count >= 8:
+    if count >= below:
         return [f"🟡 {label} — {count} {noun}", "Abaixo do volume ideal."]
     if count >= 1:
         return [f"🔴 {label} — {count} {noun}", "Muito abaixo do volume esperado."]
@@ -116,9 +121,11 @@ def _volume_observation(item: dict) -> list[str]:
 
 def build_observations(run) -> str:
     summaries = list(run.profile_summaries or [])
+    report_hour = (run.finished_at or run.started_at).astimezone(ZoneInfo(settings.app_timezone)).hour
+    half_day = 12 <= report_hour < 18
     lines = ["📌 *OBSERVAÇÕES*"]
     for item in summaries:
-        lines.extend(["", *_volume_observation(item)])
+        lines.extend(["", *_volume_observation(item, half_day=half_day)])
     extras = []
     for failure in run.profiles_failed or []:
         if isinstance(failure, dict):
