@@ -132,6 +132,10 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
     first_date = target_date or (current_date - timedelta(days=settings.report_days - 1))
     last_date = target_date or current_date
     stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "views": 0, "reels": 0, "posts": 0, "carousels": 0, "posting_times": []}
+    profile_summaries = {
+        username: {"username": username, "posts_found": 0, "posts_new": 0, "posts_updated": 0, "collaborations_made": 0, "collaborations_received": 0, "views_monitored": 0, "reels_count": 0, "posts_count": 0, "carousels_count": 0, "posting_times": [], "_seen": set()}
+        for username in by_username
+    }
     summarized_ids: set[str] = set()
     for raw in items:
         data = parse_item(raw)
@@ -163,6 +167,19 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
             continue
         for profile in item_profiles:
             post = session.scalar(select(InstagramPost).where(InstagramPost.tracked_profile_id == profile.id, InstagramPost.instagram_id == data["instagram_id"]))
+            profile_name = profile.username.lower()
+            summary = profile_summaries[profile_name]
+            if published_date == current_date and data["instagram_id"] not in summary["_seen"]:
+                summary["_seen"].add(data["instagram_id"])
+                summary["posts_found"] += 1
+                summary["posts_updated" if post else "posts_new"] += 1
+                summary["views_monitored"] += data["views"] or 0
+                summary[f"{_content_kind(data)}s_count"] += 1
+                summary["posting_times"].append(data["published_at"].astimezone(ZoneInfo(settings.app_timezone)).strftime("%H:%M"))
+                if data["owner_username"] == profile_name and data["collaborators"]:
+                    summary["collaborations_made"] += 1
+                elif data["owner_username"] and data["owner_username"] != profile_name:
+                    summary["collaborations_received"] += 1
             if not post:
                 post = InstagramPost(tracked_profile_id=profile.id, **{k: data[k] for k in ("instagram_id", "shortcode", "url", "caption", "published_at", "owner_username", "collaborators", "media_type", "thumbnail_url", "raw_payload")})
                 session.add(post)
@@ -184,6 +201,12 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
         profile.last_error = None
         profile.sync_provider = "apify"
     stats["posting_times"].sort()
+    stats["profile_summaries"] = []
+    for username in sorted(profile_summaries):
+        summary = profile_summaries[username]
+        summary["posting_times"].sort()
+        summary.pop("_seen", None)
+        stats["profile_summaries"].append(summary)
     return stats
 
 
@@ -278,6 +301,7 @@ async def collect(usernames: list[str] | None = None, trigger: str = "manual") -
                 run.posts_count = stats["posts"]
                 run.carousels_count = stats["carousels"]
                 run.posting_times = stats["posting_times"]
+                run.profile_summaries = stats["profile_summaries"]
                 run.views_monitored = stats["views"]
                 run.status = "partial" if failures else "success"
                 run.finished_at = now

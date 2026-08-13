@@ -56,10 +56,29 @@ class WhatsAppNotificationService:
         label = "Perfis afetados" if failed else "Perfis"
         return f"{label}: {len(profiles)}"
 
+    def _profile_section(self, summary: dict) -> str:
+        times = f"({', '.join(summary['posting_times'])})" if summary["posting_times"] else "nenhuma postagem hoje"
+        return "\n".join([
+            f"📊 @{summary['username']}",
+            f"Posts encontrados: {summary['posts_found']}",
+            f"Posts atualizados: {summary['posts_updated']}",
+            f"Novos posts: {summary['posts_new']}",
+            f"Collabs feitas: {summary['collaborations_made']}",
+            f"Collabs recebidas: {summary['collaborations_received']}",
+            f"Views monitoradas: {_number(summary['views_monitored'])}",
+            f"Reels: {summary['reels_count']} | Posts: {summary['posts_count']} | Carrosséis: {summary['carousels_count']}",
+            f"Horários: {times}",
+        ])
+
     def success_message(self, run) -> str:
         title = "✅ Atualização manual concluída" if run.trigger == "manual" else "✅ Coleta do Instagram concluída"
-        return "\n".join([
-            title, "", self._scope(run),
+        individual = []
+        if len(run.profiles) > 1:
+            individual = ["📋 DESEMPENHO POR PERFIL", ""]
+            for summary in run.profile_summaries:
+                individual.extend([self._profile_section(summary), ""])
+            individual.extend(["📈 CONSOLIDADO GERAL", ""])
+        return "\n".join([title, "", *individual, self._scope(run),
             f"Posts encontrados: {run.posts_found}",
             f"Posts atualizados: {run.posts_updated}",
             f"Novos posts: {run.posts_new}",
@@ -77,8 +96,12 @@ class WhatsAppNotificationService:
     def partial_message(self, run) -> str:
         failed = run.profiles_failed or []
         errors = [f"@{item.get('username')}: {safe_error(item.get('error'))}" if isinstance(item, dict) else f"@{item}" for item in failed]
+        individual = ["📋 DESEMPENHO POR PERFIL", ""]
+        for summary in run.profile_summaries:
+            individual.extend([self._profile_section(summary), ""])
+        individual.extend(["📈 CONSOLIDADO GERAL", ""])
         return "\n".join([
-            "⚠️ Coleta do Instagram concluída parcialmente", "",
+            "⚠️ Coleta do Instagram concluída parcialmente", "", *individual,
             f"Perfis processados: {len(run.profiles)}",
             f"Sucesso: {len(run.profiles_succeeded)}", f"Falha: {len(failed)}", "",
             f"Posts encontrados: {run.posts_found}",

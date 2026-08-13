@@ -64,3 +64,12 @@ def test_error_sanitizer_redacts_credentials_and_urls():
     message = safe_error("token=secret failed at https://internal.example/path")
     assert "secret" not in message
     assert "internal.example" not in message
+
+
+def test_multi_profile_message_lists_profiles_before_consolidated():
+    now = datetime.now(timezone.utc)
+    summary = {"username": "radio", "posts_found": 2, "posts_updated": 1, "posts_new": 1, "collaborations_made": 0, "collaborations_received": 1, "views_monitored": 100, "reels_count": 1, "posts_count": 1, "carousels_count": 0, "posting_times": ["08:00", "09:00"]}
+    run = SimpleNamespace(trigger="manual", profiles=["radio", "radio2"], profile_summaries=[summary, {**summary, "username": "radio2"}], posts_found=3, posts_updated=2, posts_new=1, collaborations_made=1, collaborations_received=1, views_monitored=150, reels_count=1, posts_count=2, carousels_count=0, posting_times=["08:00", "09:00"], started_at=now, finished_at=now)
+    message = WhatsAppNotificationService().success_message(run)
+    assert message.index("@radio") < message.index("CONSOLIDADO GERAL")
+    assert message.index("@radio2") < message.index("CONSOLIDADO GERAL")

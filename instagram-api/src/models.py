@@ -134,6 +134,7 @@ class CollectionRun(Base):
     posts_count: Mapped[int] = mapped_column(Integer, default=0)
     carousels_count: Mapped[int] = mapped_column(Integer, default=0)
     posting_times: Mapped[list] = mapped_column(JSONB, default=list)
+    profile_summaries: Mapped[list] = mapped_column(JSONB, default=list)
     views_monitored: Mapped[int] = mapped_column(BigInteger, default=0)
     notification_status: Mapped[str] = mapped_column(String, default="pending")
     notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
