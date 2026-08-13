@@ -12,6 +12,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .models import CollectionRun, InstagramPost, PostMetricsHistory, TrackedProfile
 from .notifications import WhatsAppNotificationService, safe_error
+from .post_classification import apply_classification, classify_post_for_profile, empty_profile_summary, normalize_format, validate_profile_summary
 
 log = logging.getLogger(__name__)
 settings = get_settings()
@@ -71,17 +72,7 @@ def parse_item(item: dict) -> dict:
 
 
 def _content_kind(data: dict) -> str:
-    raw = data["raw_payload"]
-    media_type = str(data.get("media_type") or "").lower()
-    product_type = str(raw.get("productType") or "").lower()
-    url = str(data.get("url") or "").lower()
-    children = raw.get("childPosts") if isinstance(raw.get("childPosts"), list) else []
-    images = raw.get("images") if isinstance(raw.get("images"), list) else []
-    if media_type in {"sidecar", "carousel"} or len(children) > 1 or len(images) > 1:
-        return "carousel"
-    if product_type in {"clips", "reels"} or media_type in {"video", "reel", "reels"} or "/reel/" in url:
-        return "reel"
-    return "post"
+    return normalize_format(data.get("media_type"), data.get("raw_payload"), data.get("url"))
 
 
 async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
@@ -132,10 +123,7 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
     first_date = target_date or (current_date - timedelta(days=settings.report_days - 1))
     last_date = target_date or current_date
     stats = {"saved": 0, "found": 0, "new": 0, "updated": 0, "collaborations": 0, "collaborations_made": 0, "collaborations_received": 0, "internal_collaborations": 0, "external_collaborations": 0, "external_details": [], "views": 0, "reels": 0, "posts": 0, "carousels": 0, "posting_times": [], "contents": []}
-    profile_summaries = {
-        username: {"username": username, "posts_found": 0, "posts_new": 0, "posts_updated": 0, "collaborations_made": 0, "collaborations_received": 0, "views_monitored": 0, "reels_count": 0, "posts_count": 0, "carousels_count": 0, "posting_times": [], "_seen": set()}
-        for username in by_username
-    }
+    profile_summaries = {username: {**empty_profile_summary(username), "_seen": set(), "audit": []} for username in by_username}
     summarized_ids: set[str] = set()
     for raw in items:
         data = parse_item(raw)
@@ -151,7 +139,10 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
             stats["posting_times"].append(data["published_at"].astimezone(ZoneInfo(settings.app_timezone)).strftime("%H:%M"))
             was_known = session.scalar(select(func.count()).select_from(InstagramPost).where(InstagramPost.instagram_id == data["instagram_id"])) or 0
             stats["updated" if was_known else "new"] += 1
-            stats[f"{_content_kind(data)}s"] += 1
+            kind = _content_kind(data)
+            if kind == "other":
+                raise ValueError(f"Formato não reconhecido no conteúdo {data['shortcode'] or data['instagram_id']}")
+            stats[f"{kind}s"] += 1
             owner_username = data["owner_username"] or ""
             tracked_collaborators = {name for name in data["collaborators"] if name in by_username and name != owner_username}
             if owner_username in by_username and data["collaborators"]:
@@ -184,12 +175,10 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
                 summary["posts_found"] += 1
                 summary["posts_updated" if post else "posts_new"] += 1
                 summary["views_monitored"] += data["views"] or 0
-                summary[f"{_content_kind(data)}s_count"] += 1
+                classification = classify_post_for_profile(owner_username=data["owner_username"], coowners=data["collaborators"], profile_username=profile_name, monitored_profiles=set(by_username), media_type=data["media_type"], raw_payload=data["raw_payload"], url=data["url"])
+                apply_classification(summary, classification)
                 summary["posting_times"].append(data["published_at"].astimezone(ZoneInfo(settings.app_timezone)).strftime("%H:%M"))
-                if data["owner_username"] == profile_name and data["collaborators"]:
-                    summary["collaborations_made"] += 1
-                elif data["owner_username"] and data["owner_username"] != profile_name:
-                    summary["collaborations_received"] += 1
+                summary["audit"].append({"shortcode": data["shortcode"], "owner": data["owner_username"], "coowners": data["collaborators"], "classification": classification})
                 content_key = data["instagram_id"] or data["shortcode"]
                 content = next((value for value in stats["contents"] if value["key"] == content_key), None)
                 if content and profile_name not in content["profiles"]:
@@ -220,6 +209,7 @@ def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict]
         summary = profile_summaries[username]
         summary["posting_times"].sort()
         summary.pop("_seen", None)
+        validate_profile_summary(summary)
         stats["profile_summaries"].append(summary)
     stats["profile_appearances"] = sum(value["posts_found"] for value in stats["profile_summaries"])
     stats["report_payload"] = {"date": current_date.isoformat(), "contents": stats["contents"], "external_collabs": stats["external_details"]}

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from src.collector import parse_item
 from src.notifications import safe_error
 from src.reports import build_messages, comparison
+from src.post_classification import apply_classification, classify_post_for_profile, empty_profile_summary, validate_profile_summary
 
 
 def test_parse_real_apidojo_shape_preserves_missing_metrics():
@@ -30,7 +31,7 @@ def _run(**overrides):
 
 
 def test_report_is_split_and_uses_unique_metrics():
-    item = {"username": "one", "posts_found": 2, "views_monitored": 100, "reels_count": 1, "collaborations_made": 0, "collaborations_received": 1, "posting_times": ["08:00"]}
+    item = {**empty_profile_summary("one"), "posts_found": 2, "originated_by_profile": 1, "own_without_collab": 1, "received_by_collab": 1, "received_external": 1, "views_monitored": 100, "reels_count": 1, "posts_count": 1, "posting_times": ["08:00"]}
     messages = build_messages(_run(profile_summaries=[item, {**item, "username": "two"}]))
     assert len(messages) == 3
     assert "Publicações únicas: 42" in messages[0]
@@ -53,3 +54,21 @@ def test_evolution_separates_growth_and_new_content():
 def test_error_sanitizer_redacts_credentials_and_urls():
     message = safe_error("token=secret failed at https://internal.example/path")
     assert "secret" not in message and "internal.example" not in message
+
+
+def test_profile_origin_classification_closes_equations():
+    monitored = {"agreste", "arapiraca"}
+    summary = empty_profile_summary("agreste")
+    cases = [
+        classify_post_for_profile(owner_username="agreste", coowners=[], profile_username="agreste", monitored_profiles=monitored, media_type="image"),
+        classify_post_for_profile(owner_username="agreste", coowners=["arapiraca"], profile_username="agreste", monitored_profiles=monitored, media_type="video"),
+        classify_post_for_profile(owner_username="arapiraca", coowners=["agreste"], profile_username="agreste", monitored_profiles=monitored, media_type="carousel"),
+        classify_post_for_profile(owner_username="external", coowners=["agreste"], profile_username="agreste", monitored_profiles=monitored, media_type="image"),
+    ]
+    for case in cases:
+        summary["posts_found"] += 1
+        apply_classification(summary, case)
+    validate_profile_summary(summary)
+    assert summary["originated_by_profile"] == 2
+    assert summary["received_internal"] == 1 and summary["received_external"] == 1
+    assert summary["reels_count"] + summary["posts_count"] + summary["carousels_count"] == 4

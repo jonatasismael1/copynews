@@ -137,6 +137,15 @@ async def test_historical_report(target_date: date, cutoff_hour: int = Query(21,
     return {"status": result.status, "messages_sent": len(messages), "date": target_date, "cutoff_hour": cutoff_hour, "unique_publications": current.posts_found, "appearances": current.profile_appearances, "unique_views": current.unique_views}
 
 
+@app.get("/admin/notifications/report-audit", dependencies=[Depends(authorize)])
+def historical_report_audit(target_date: date, username: str = "francesfmagreste", cutoff_hour: int = Query(21, ge=1, le=23), db: Session = Depends(get_db)):
+    current = reconstruct(db, target_date, cutoff_hour)
+    summary = next((item for item in current.profile_summaries if item["username"] == username.lower()), None)
+    if not summary:
+        raise HTTPException(404, "Perfil não encontrado no relatório")
+    return {"date": target_date, "cutoff_hour": cutoff_hour, "profile": username.lower(), "totals": {key: value for key, value in summary.items() if key not in {"audit", "posting_times"}}, "publications": summary["audit"]}
+
+
 @app.get("/instagram/profiles/{username}/posts", dependencies=[Depends(authorize)])
 def instagram_posts(username: str, limit: int = Query(50, ge=1, le=200), db: Session = Depends(get_db)):
     profile = db.scalar(select(TrackedProfile).where(TrackedProfile.organization_id == settings.default_organization_id, func.lower(TrackedProfile.username) == username.lower()))

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from .config import get_settings
 from .notifications_utils import safe_error
+from .post_classification import validate_profile_summary
 
 settings = get_settings()
 
@@ -102,6 +103,8 @@ def build_messages(run, previous=None) -> list[str]:
         return ["\n".join(["❌ *ERRO NA COLETA DO INSTAGRAM*", "", scope, f"Motivo: {safe_error(run.error)}", f"Horário: {local_time(run.finished_at)}"])]
 
     summaries = list(run.profile_summaries or [])
+    for item in summaries:
+        validate_profile_summary(item)
     first, last, active = activity(run.posting_times or [])
     title = "📊 *INSTAGRAM • RESUMO DA REDE*"
     summary = "\n".join([
@@ -120,7 +123,8 @@ def build_messages(run, previous=None) -> list[str]:
         lines = [f"📍 *PERFIS • {index}/{len(chunks)}*"]
         for item in chunk:
             pfirst, plast, _ = activity(item.get("posting_times", []))
-            lines.extend(["", f"*{_label(item['username'])}*", f"Publicações: {item['posts_found']} • Reels: {item['reels_count']}", f"Views: {number(item['views_monitored'])}", f"Collabs: {item['collaborations_made']} iniciadas • {item['collaborations_received']} recebidas", f"Horários: {pfirst} → {plast}"])
+            label = _label(item["username"])
+            lines.extend(["", f"🟢 *{label.upper()}*", "", f"📊 *{item['posts_found']} publicações no perfil*", "", f"✍️ *Originadas pelo {label}: {item['originated_by_profile']}*", f"• Próprias: {item['own_without_collab']}", f"• Com collab: {item['originated_with_collab']}", "", f"📥 *Recebidas por collab: {item['received_by_collab']}*", f"• Da rede: {item['received_internal']}", f"• Externas: {item['received_external']}", "", "📱 *Formatos*", f"🎬 Reels: {item['reels_count']}", f"🖼️ Posts: {item['posts_count']}", f"🎠 Carrosséis: {item['carousels_count']}", "", f"👁️ Views: {number(item['views_monitored'])}", f"🕐 {pfirst} → {plast}"])
         profiles.append("\n".join(lines))
     messages = [summary, ranking, *profiles]
     growth = {}
