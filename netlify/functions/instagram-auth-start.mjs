@@ -6,6 +6,7 @@ import {
 } from "./_shared/instagram-oauth.mjs";
 
 const expectedRedirectUri = "https://copynews.netlify.app/auth/instagram/callback";
+const expectedInstagramAppId = "1485658370006304";
 
 export async function handler(event) {
   if (event.httpMethod === "OPTIONS")
@@ -31,6 +32,12 @@ export async function handler(event) {
     const payload = await response.json();
     if (response.ok && payload.authorization_url) {
       const authorizationUrl = new URL(payload.authorization_url);
+      if (
+        authorizationUrl.protocol !== "https:" ||
+        authorizationUrl.hostname !== "www.instagram.com" ||
+        authorizationUrl.pathname !== "/oauth/authorize" ||
+        authorizationUrl.searchParams.get("client_id") !== expectedInstagramAppId
+      ) return json({ error: "Fluxo OAuth do Instagram invalido" }, 500);
       if (authorizationUrl.searchParams.get("redirect_uri") !== expectedRedirectUri)
         return json({ error: "Redirect URI invalida" }, 500);
       console.info(JSON.stringify({ event: "oauth_url_created" }));
