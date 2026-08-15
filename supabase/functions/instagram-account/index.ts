@@ -84,8 +84,8 @@ async function exchangeCode(code: string, redirectUri: string) {
 
 async function exchangeInstagramCode(code: string, redirectUri: string) {
   const form = new URLSearchParams({
-    client_id: env("META_APP_ID"),
-    client_secret: env("META_APP_SECRET"),
+    client_id: env("INSTAGRAM_APP_ID"),
+    client_secret: env("INSTAGRAM_APP_SECRET"),
     grant_type: "authorization_code",
     redirect_uri: validRedirect(redirectUri),
     code,
@@ -106,7 +106,7 @@ async function exchangeInstagramCode(code: string, redirectUri: string) {
 
   const longUrl = new URL("https://graph.instagram.com/access_token");
   longUrl.searchParams.set("grant_type", "ig_exchange_token");
-  longUrl.searchParams.set("client_secret", env("META_APP_SECRET"));
+  longUrl.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
   longUrl.searchParams.set("access_token", payload.access_token);
   const longResponse = await fetch(longUrl, {
     signal: AbortSignal.timeout(20_000),
@@ -132,7 +132,7 @@ async function connectInstagramLoginAccount(
   expiresIn: number,
 ) {
   const instagram = await instagramGraph("me", token, {
-    fields: "id,user_id,username",
+    fields: "id,user_id,username,name,profile_picture_url,followers_count,media_count",
   });
   const accountId = String(instagram.user_id || instagram.id || "");
   if (!accountId) throw new Error("O Instagram não informou o ID da conta");
@@ -152,6 +152,8 @@ async function connectInstagramLoginAccount(
         account_name: instagram.username
           ? `@${instagram.username}`
           : "Instagram profissional",
+        username: instagram.username || null,
+        profile_picture_url: instagram.profile_picture_url || null,
         encrypted_access_token: encrypted,
         token_expires_at: expiresIn > 0
           ? new Date(Date.now() + expiresIn * 1000).toISOString()
@@ -161,6 +163,10 @@ async function connectInstagramLoginAccount(
           "instagram_business_manage_insights",
         ],
         status: "connected",
+        needs_attention: false,
+        refresh_error: null,
+        last_refresh_at: new Date().toISOString(),
+        data_source: "meta+apify",
         history_window_days: 90,
         sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
       },

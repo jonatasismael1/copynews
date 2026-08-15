@@ -64,6 +64,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.instagram-oauth]
 verify_jwt = false
+[functions.instagram-meta-probe]
+verify_jwt = false
 [functions.refresh-publication-metrics]
 verify_jwt = true
 [functions.sync-instagram-publications]

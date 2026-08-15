@@ -122,26 +122,28 @@ async function start(req: Request, body: Record<string, unknown>) {
     expires_at: new Date(now.getTime() + 10 * 60_000).toISOString(),
   });
   if (insertError) throw insertError;
-  const url = new URL(`https://www.facebook.com/${metaVersion()}/dialog/oauth`);
+  const url = new URL("https://www.instagram.com/oauth/authorize");
   url.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
   url.searchParams.set("redirect_uri", callbackUri());
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
   url.searchParams.set(
     "scope",
-    "instagram_basic,instagram_manage_insights,pages_read_engagement,pages_show_list",
+    "instagram_business_basic,instagram_business_manage_insights",
   );
   console.info(JSON.stringify({ event: "oauth_url_created" }));
   return json({ authorization_url: url.toString() });
 }
 
 async function exchangeCode(code: string) {
-  const shortUrl = new URL(`https://graph.facebook.com/${metaVersion()}/oauth/access_token`);
-  shortUrl.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
-  shortUrl.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
-  shortUrl.searchParams.set("redirect_uri", callbackUri());
-  shortUrl.searchParams.set("code", code);
-  const response = await fetch(shortUrl, { signal: AbortSignal.timeout(20_000) });
+  const form = new URLSearchParams({
+    client_id: env("INSTAGRAM_APP_ID"), client_secret: env("INSTAGRAM_APP_SECRET"),
+    grant_type: "authorization_code", redirect_uri: callbackUri(), code,
+  });
+  const response = await fetch("https://api.instagram.com/oauth/access_token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form, signal: AbortSignal.timeout(20_000),
+  });
   const payload = await response.json();
   if (!response.ok || !payload.access_token) {
     throw new OAuthStepError("code_exchange_failed", {
@@ -151,11 +153,10 @@ async function exchangeCode(code: string) {
       errorCode: payload.code || payload.error?.code || null,
     });
   }
-  const url = new URL(`https://graph.facebook.com/${metaVersion()}/oauth/access_token`);
-  url.searchParams.set("grant_type", "fb_exchange_token");
-  url.searchParams.set("client_id", env("INSTAGRAM_APP_ID"));
+  const url = new URL("https://graph.instagram.com/access_token");
+  url.searchParams.set("grant_type", "ig_exchange_token");
   url.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
-  url.searchParams.set("fb_exchange_token", payload.access_token);
+  url.searchParams.set("access_token", payload.access_token);
   const longResponse = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   const longPayload = await longResponse.json();
   if (!longResponse.ok || !longPayload.access_token) {
@@ -170,7 +171,7 @@ async function exchangeCode(code: string) {
 }
 
 async function graph(path: string, token: string, params: Record<string, string> = {}) {
-  const url = new URL(`https://graph.facebook.com/${metaVersion()}/${path.replace(/^\//, "")}`);
+  const url = new URL(`https://graph.instagram.com/${metaVersion()}/${path.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   url.searchParams.set("access_token", token);
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
@@ -210,21 +211,11 @@ async function callback(body: Record<string, unknown>) {
   try {
   const token = await exchangeCode(String(body.code));
   recordStage("token_exchanged");
-  const accountsPayload = await graph("me/accounts", token.accessToken, {
-    fields: "id,name,access_token,tasks,instagram_business_account{id,username,name,profile_picture_url,followers_count,media_count}",
-    limit: "100",
-  });
-  const managedPages = (accountsPayload.data || []).filter(
-    (page: Record<string, unknown>) =>
-      page.access_token &&
-      (page.instagram_business_account as Record<string, unknown> | undefined)?.id,
-  );
-  const selectedPage = managedPages[0] as Record<string, unknown> | undefined;
-  const instagram = selectedPage?.instagram_business_account as
-    | { id?: string; username?: string; name?: string }
-    | undefined;
-  if (!selectedPage || !instagram?.id) throw new OAuthStepError("profile_missing_user_id");
-  const providerAccountId = String(instagram.id);
+  const instagram = await graph("me", token.accessToken, {
+    fields: "id,user_id,username,name,profile_picture_url,followers_count,media_count",
+  }) as { id?: string; user_id?: string; username?: string; name?: string; profile_picture_url?: string };
+  const providerAccountId = String(instagram.user_id || instagram.id || "");
+  if (!providerAccountId) throw new OAuthStepError("profile_missing_user_id");
   recordStage("profile_loaded");
   const { error: disconnectError } = await admin.from("connected_accounts").update({
     status: "disconnected",
@@ -239,15 +230,21 @@ async function callback(body: Record<string, unknown>) {
     page_id: oauthState.page_id,
     provider: "instagram",
     provider_account_id: providerAccountId,
-    provider_page_id: String(selectedPage.id || ""),
+    provider_page_id: null,
+    username: instagram.username || null,
     account_name: instagram.username ? `@${instagram.username}` : "Instagram profissional",
+    profile_picture_url: instagram.profile_picture_url || null,
     encrypted_access_token: await encryptToken(
-      String(selectedPage.access_token || token.accessToken),
+      token.accessToken,
       env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
     ),
     token_expires_at: token.expiresIn > 0 ? new Date(Date.now() + token.expiresIn * 1000).toISOString() : null,
-    scopes: ["instagram_basic", "instagram_manage_insights", "pages_read_engagement", "pages_show_list"],
+    scopes: ["instagram_business_basic", "instagram_business_manage_insights"],
     status: "connected",
+    needs_attention: false,
+    refresh_error: null,
+    last_refresh_at: new Date().toISOString(),
+    data_source: "meta+apify",
     history_window_days: 90,
     sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
   }, { onConflict: "provider,provider_account_id,user_id" }).select("id").single();

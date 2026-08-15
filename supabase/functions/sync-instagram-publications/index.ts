@@ -72,10 +72,10 @@ async function insight(
     );
     const item = payload.data?.[0];
     const value = item?.values?.[0]?.value ?? item?.total_value?.value ?? item?.value;
-    return { value: Number(value || 0), payload };
+    return { value: value == null ? null : Number(value), payload };
   } catch (error) {
     return {
-      value: 0,
+      value: null,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -161,9 +161,18 @@ Deno.serve(async (req) => {
             token_expires_at: refreshed.expiresIn > 0
               ? new Date(Date.now() + refreshed.expiresIn * 1000).toISOString()
               : account.token_expires_at,
+            last_refresh_at: new Date().toISOString(),
+            refresh_error: null,
+            needs_attention: false,
           }).eq("id", account.id);
         } catch (error) {
-          if (expiresAt <= Date.now()) throw error;
+          const message = error instanceof Error ? error.message.slice(0, 240) : "Falha na renovação";
+          await admin.from("connected_accounts").update({
+            refresh_error: message,
+            needs_attention: true,
+            status: expiresAt <= Date.now() ? "expired" : "connected",
+          }).eq("id", account.id);
+          if (expiresAt <= Date.now()) continue;
         }
       }
       const initialFrom = account.last_sync_at
@@ -229,14 +238,14 @@ Deno.serve(async (req) => {
           source: "api",
           views: metrics.views.value,
           reach: metrics.reach.value,
-          impressions: 0,
-          likes: Number(item.like_count || 0),
-          comments: Number(item.comments_count || 0),
+          impressions: null,
+          likes: item.like_count == null ? null : Number(item.like_count),
+          comments: item.comments_count == null ? null : Number(item.comments_count),
           shares: metrics.shares.value,
           saves: metrics.saved.value,
           reposts: metrics.reposts.value,
-          clicks: 0,
-          followers_gained: 0,
+          clicks: null,
+          followers_gained: null,
           raw_payload: { media: item, insights: metrics },
           created_by: account.user_id,
         });

@@ -447,6 +447,7 @@ export function SettingsPage() {
             <div className="mt-5 divide-y border-t">
               {connectedAccounts.length ? connectedAccounts.map((account) => (
                 <div key={account.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <ProfileAvatar src={account.profile_picture_url} name={account.username || account.account_name} className="size-11" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">
                       Instagram • {account.account_name || account.provider_account_id}
@@ -461,6 +462,15 @@ export function SettingsPage() {
                         ? `Última atualização: ${new Date(account.last_sync_at).toLocaleString("pt-BR")}`
                         : "Ainda sem atualização de métricas"}
                     </p>
+                    <p className="text-xs text-muted-foreground">
+                      {account.token_expires_at
+                        ? `Conexão válida até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`
+                        : "Validade não informada pela Meta"}
+                      {account.data_source ? ` • Fonte: ${account.data_source}` : ""}
+                    </p>
+                    {account.needs_attention && (
+                      <p className="text-xs font-medium text-destructive">A conexão precisa ser renovada.</p>
+                    )}
                   </div>
                   <Badge variant={account.status === "connected" ? "success" : "danger"}>
                     {account.status === "connected" ? "Conectada" : "Desconectada"}

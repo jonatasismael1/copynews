@@ -316,7 +316,7 @@ export function useConnectedAccounts(enabled = true) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("connected_accounts")
-        .select("id,user_id,page_id,provider,provider_account_id,account_name,status,last_sync_at,token_expires_at,profiles!connected_accounts_user_id_fkey(name)")
+        .select("id,user_id,page_id,provider,provider_account_id,username,account_name,profile_picture_url,status,last_sync_at,token_expires_at,last_refresh_at,needs_attention,refresh_error,data_source,profiles!connected_accounts_user_id_fkey(name)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
