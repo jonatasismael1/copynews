@@ -127,6 +127,11 @@ async function start(req: Request, body: Record<string, unknown>) {
   url.searchParams.set("redirect_uri", callbackUri());
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
+  // Keep this flow on Instagram Business Login. Without this flag Meta may
+  // redirect the user to the Facebook Login flow, which is a different API
+  // product and rejects our Instagram Login client configuration.
+  url.searchParams.set("enable_fb_login", "0");
+  url.searchParams.set("force_authentication", "1");
   url.searchParams.set(
     "scope",
     "instagram_business_basic,instagram_business_manage_insights",
