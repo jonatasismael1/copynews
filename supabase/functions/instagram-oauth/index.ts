@@ -217,14 +217,6 @@ async function callback(body: Record<string, unknown>) {
   const providerAccountId = String(instagram.user_id || instagram.id || "");
   if (!providerAccountId) throw new OAuthStepError("profile_missing_user_id");
   recordStage("profile_loaded");
-  const { error: disconnectError } = await admin.from("connected_accounts").update({
-    status: "disconnected",
-    encrypted_access_token: "disconnected",
-    token_expires_at: null,
-    updated_at: new Date().toISOString(),
-  }).eq("user_id", oauthState.user_id).eq("provider", "instagram").eq("status", "connected")
-    .neq("provider_account_id", providerAccountId);
-  if (disconnectError) throw disconnectError;
   const { data: account, error: accountError } = await admin.from("connected_accounts").upsert({
     user_id: oauthState.user_id,
     page_id: oauthState.page_id,
@@ -247,7 +239,7 @@ async function callback(body: Record<string, unknown>) {
     data_source: "meta+apify",
     history_window_days: 90,
     sync_from: new Date(Date.now() - 90 * 86400000).toISOString(),
-  }, { onConflict: "provider,provider_account_id,user_id" }).select("id").single();
+  }, { onConflict: "provider,provider_account_id,user_id" }).select("id,provider_account_id,username").single();
   if (accountError) throw accountError;
   recordStage("account_saved");
   const { data: usedState, error: usedStateError } = await admin.from("oauth_states")
@@ -266,7 +258,8 @@ async function callback(body: Record<string, unknown>) {
   });
   recordStage("callback_completed");
   return json({
-    redirect_url: redirectUrl({ instagram: "connected" }),
+    redirect_url: redirectUrl({ instagram: "connected", account_id: account.id }),
+    account_id: account.id,
     completed_stages: completedStages,
   });
   } catch (error) {

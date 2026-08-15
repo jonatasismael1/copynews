@@ -85,6 +85,7 @@ export function SettingsPage() {
     const connection = searchParams.get("instagram");
     if (!connection) return;
     const reason = searchParams.get("reason");
+    const connectedAccountId = searchParams.get("account_id");
     setSearchParams({}, { replace: true });
     if (connection !== "connected") {
       toast.error(
@@ -98,14 +99,9 @@ export function SettingsPage() {
     void (async () => {
       try {
         const refreshed = await refetchAccounts();
-        const account = refreshed.data?.find(
-          (candidate) =>
-            candidate.user_id === profile?.id && candidate.status === "connected",
-        );
-        if (!account) throw new Error("connected_account_not_found");
         const { error } = await supabase.functions.invoke(
           "sync-instagram-publications",
-          { body: { account_id: account.id } },
+          { body: connectedAccountId ? { account_id: connectedAccountId, sync_all: profile?.role === "admin" } : { sync_all: profile?.role === "admin" } },
         );
         if (error) throw error;
         queryClient.invalidateQueries({ queryKey: ["publications"] });
@@ -440,7 +436,7 @@ export function SettingsPage() {
                 {connectingInstagram
                   ? "Conectando..."
                   : ownConnectedAccount
-                    ? "Reconectar Instagram"
+                    ? "Conectar outra conta"
                     : "Entrar com Instagram"}
               </Button>
             </form>
