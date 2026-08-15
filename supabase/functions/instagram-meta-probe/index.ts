@@ -35,6 +35,11 @@ Deno.serve(async (req) => {
     const mediaPayload = await request(`${profile.user_id || profile.id}/media`, token, { fields: "id,permalink,caption,timestamp,media_type,media_product_type,thumbnail_url,media_url,like_count,comments_count", limit: "5" });
     const media = mediaPayload.data || [];
     const availableFields = [...new Set(media.flatMap((item: Record<string, unknown>) => Object.keys(item)))].sort();
+    const mediaTypes = media.reduce((counts: Record<string, number>, item: Record<string, unknown>) => {
+      const key = String(item.media_product_type || item.media_type || "unknown");
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
     const insightMetrics: Record<string, boolean> = {};
     if (media[0]?.id) {
       for (const metric of ["views", "plays", "reach", "impressions", "shares", "saved"]) {
@@ -67,7 +72,7 @@ Deno.serve(async (req) => {
       signal: AbortSignal.timeout(120_000),
     });
     const syncPayload = await syncResponse.json().catch(() => ({}));
-    return json({ ok: true, account_id: account.id, profile: { id: String(profile.user_id || profile.id), username: profile.username || null, media_count: profile.media_count ?? null }, long_lived: refreshed.refreshed, expires_at: expiresAt, media_tested: media.length, media_fields: availableFields, insights: insightMetrics, collaborators_available: collaboratorsAvailable, apify_needed_for_collabs: !collaboratorsAvailable, sync: { ok: syncResponse.ok, imported: Number(syncPayload.imported || 0), error: syncResponse.ok ? null : String(syncPayload.error || "sync_failed").slice(0, 240) } });
+    return json({ ok: true, account_id: account.id, profile: { id: String(profile.user_id || profile.id), username: profile.username || null, media_count: profile.media_count ?? null, fields: Object.keys(profile).sort() }, long_lived: refreshed.refreshed, expires_at: expiresAt, media_tested: media.length, media_types: mediaTypes, media_fields: availableFields, insights: insightMetrics, collaborators_available: collaboratorsAvailable, apify_needed_for_collabs: !collaboratorsAvailable, sync: { ok: syncResponse.ok, imported: Number(syncPayload.imported || 0), error: syncResponse.ok ? null : String(syncPayload.error || "sync_failed").slice(0, 240) } });
   } catch (error) {
     const message = error instanceof Error ? error.message.replace(/IGA[A-Za-z0-9_-]+/g, "[token]").slice(0, 300) : "Probe failed";
     return json({ ok: false, error: message }, 400);
