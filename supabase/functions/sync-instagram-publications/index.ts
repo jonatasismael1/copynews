@@ -45,7 +45,9 @@ async function graph(
   const url = new URL(
     path.startsWith("http")
       ? path
-      : `https://${instagramLogin ? "graph.instagram.com" : "graph.facebook.com"}/${version()}/${path.replace(/^\//, "")}`,
+      : instagramLogin
+      ? `https://graph.instagram.com/${path.replace(/^\//, "")}`
+      : `https://graph.facebook.com/${version()}/${path.replace(/^\//, "")}`,
   );
   for (const [key, value] of Object.entries(params))
     url.searchParams.set(key, value);
@@ -179,13 +181,20 @@ Deno.serve(async (req) => {
         ? new Date(Date.parse(account.last_sync_at) - 24 * 60 * 60 * 1000)
         : new Date(account.sync_from || Date.now() - 90 * 86400000);
       const since = String(Math.floor(initialFrom.getTime() / 1000));
-      let next: string | null = `${account.provider_account_id}/media`;
+      // Instagram Login tokens address the authorized account through `me`.
+      // Using the numeric id returned by the token exchange produces
+      // "Unknown path components: /media" on graph.instagram.com.
+      let next: string | null = instagramLogin
+        ? "me/media"
+        : `${account.provider_account_id}/media`;
       let params: Record<string, string> = {
         fields:
           "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,username,like_count,comments_count",
-        since,
         limit: "100",
       };
+      // Media collections only support time-based pagination on the Facebook
+      // Login variant. Instagram Login uses cursor pagination.
+      if (!instagramLogin) params.since = since;
       const media: Record<string, unknown>[] = [];
       for (let page = 0; next && page < 10; page += 1) {
         const payload = await graph(next, token, params, instagramLogin);
@@ -252,15 +261,31 @@ Deno.serve(async (req) => {
         if (metricError) throw metricError;
         snapshots += 1;
       }
+      const detectedUsername = media.find((item) =>
+        typeof item.username === "string" && item.username.trim()
+      )?.username;
       await admin
         .from("connected_accounts")
-        .update({ last_sync_at: new Date().toISOString() })
+        .update({
+          last_sync_at: new Date().toISOString(),
+          data_source: "meta",
+          ...(detectedUsername
+            ? {
+              username: String(detectedUsername),
+              account_name: `@${String(detectedUsername)}`,
+            }
+            : {}),
+        })
         .eq("id", account.id);
       summaries.push({ account_id: account.id, imported, snapshots });
     }
     return json({ accounts: summaries, imported: summaries.reduce((sum, item) => sum + item.imported, 0) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected error";
+    const message = error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null
+      ? JSON.stringify(error)
+      : String(error || "Unexpected error");
     return json(
       { error: message },
       message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 400,
