@@ -202,6 +202,7 @@ Deno.serve(async (req) => {
 
     const summaries = [];
     const reportSummaries: Array<Record<string, unknown>> = [];
+    const reportFailures: Array<{ username: string; reason: string }> = [];
     for (const account of accounts || []) {
       if (!identity.scheduled && identity.role === "admin" && body.account_id &&
           account.user_id !== identity.userId && body.sync_all !== true) {
@@ -249,6 +250,26 @@ Deno.serve(async (req) => {
           if (expiresAt <= Date.now()) continue;
         }
       }
+      try {
+        await graph(
+          instagramLogin ? "me/media" : `${account.provider_account_id}/media`,
+          token,
+          { fields: "id", limit: "1" },
+          instagramLogin,
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message.slice(0, 240) : "Acesso revogado pela Meta";
+        await admin.from("connected_accounts").update({
+          status: "disconnected",
+          needs_attention: true,
+          refresh_error: reason,
+        }).eq("id", account.id);
+        reportFailures.push({
+          username: String(account.username || account.account_name || "instagram").replace(/^@/, ""),
+          reason: "Acesso da Meta expirado ou revogado. Reconecte a conta no Copy News.",
+        });
+        continue;
+      }
       const initialFrom = account.last_sync_at
         ? new Date(Date.parse(account.last_sync_at) - 24 * 60 * 60 * 1000)
         : new Date(account.sync_from || Date.now() - 90 * 86400000);
@@ -262,13 +283,14 @@ Deno.serve(async (req) => {
       let params: Record<string, string> = {
         fields:
           "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,username,like_count,comments_count",
-        limit: "100",
+        limit: instagramLogin ? "20" : "100",
       };
       // Media collections only support time-based pagination on the Facebook
       // Login variant. Instagram Login uses cursor pagination.
       if (!instagramLogin) params.since = since;
       const media: Record<string, unknown>[] = [];
-      for (let page = 0; next && page < 10; page += 1) {
+      const maxPages = instagramLogin ? 1 : 10;
+      for (let page = 0; next && page < maxPages; page += 1) {
         const payload = await graph(next, token, params, instagramLogin);
         media.push(...(payload.data || []));
         next = payload.paging?.next || null;
@@ -304,11 +326,28 @@ Deno.serve(async (req) => {
           metadata_fetched_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        const { data: publication, error: publicationError } = await admin
+        // Public URLs are globally unique in Copy News and may already exist
+        // from a manual/Apify import. Reuse that row so onboarding another
+        // official account never fails on publications_url_unique.
+        const { data: existingByUrl, error: existingByUrlError } = await admin
           .from("publications")
-          .upsert(row, { onConflict: "connected_account_id,external_media_id" })
-          .select("id")
-          .single();
+          .select("id,connected_account_id,external_media_id")
+          .ilike("published_url", String(item.permalink))
+          .maybeSingle();
+        if (existingByUrlError) throw existingByUrlError;
+        const publicationResult = existingByUrl
+          ? await admin.from("publications").update({
+            ...row,
+            connected_account_id: existingByUrl.connected_account_id || account.id,
+            external_media_id: existingByUrl.connected_account_id
+              ? existingByUrl.external_media_id
+              : mediaId,
+          }).eq("id", existingByUrl.id).select("id").single()
+          : await admin.from("publications")
+            .upsert(row, { onConflict: "connected_account_id,external_media_id" })
+            .select("id")
+            .single();
+        const { data: publication, error: publicationError } = publicationResult;
         if (publicationError) throw publicationError;
         imported += 1;
         const metricNames = ["views", "reach", "shares", "saved", "reposts"];
@@ -353,6 +392,8 @@ Deno.serve(async (req) => {
         .update({
           last_sync_at: new Date().toISOString(),
           data_source: "meta",
+          needs_attention: false,
+          refresh_error: null,
           ...(detectedUsername
             ? {
               username: String(detectedUsername),
@@ -377,7 +418,7 @@ Deno.serve(async (req) => {
       });
     }
     let notificationStatus = "disabled";
-    if (reportSummaries.length) {
+    if (reportSummaries.length || reportFailures.length) {
       const messages = reportSummaries.map((item, index) => {
         const times = item.postingTimes as string[];
         return [
@@ -393,6 +434,13 @@ Deno.serve(async (req) => {
           `🕐 Horários de postagens: ${times.length ? `(${times.join(", ")})` : "—"}`,
         ].join("\n");
       });
+      for (const failure of reportFailures) {
+        messages.push([
+          "⚠️ *CONTA META PRECISA DE ATENÇÃO*", "",
+          `Perfil: @${failure.username}`,
+          `Motivo: ${failure.reason}`,
+        ].join("\n"));
+      }
       const totals = reportSummaries.reduce((sum, item) => ({
         found: sum.found + Number(item.found), reels: sum.reels + Number(item.reels),
         posts: sum.posts + Number(item.posts), carousels: sum.carousels + Number(item.carousels),
@@ -402,7 +450,12 @@ Deno.serve(async (req) => {
       }), { found: 0, reels: 0, posts: 0, carousels: 0, views: 0, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0 });
       const stamp = localDateTime();
       messages.push([
-        "📊 *INSTAGRAM • RESUMO DA REDE*", `📅 ${stamp.date} • Atualização ${stamp.time}`, "",
+        reportFailures.length
+          ? "⚠️ *INSTAGRAM • COLETA PARCIAL*"
+          : "📊 *INSTAGRAM • RESUMO DA REDE*",
+        `📅 ${stamp.date} • Atualização ${stamp.time}`, "",
+        `Perfis com sucesso: ${reportSummaries.length}`,
+        `Perfis que precisam reconectar: ${reportFailures.length}`, "",
         "🧾 *PUBLICAÇÕES*", `Publicações encontradas: ${totals.found}`,
         `Reels: ${totals.reels} • Carrosséis: ${totals.carousels} • Posts: ${totals.posts}`, "",
         "👀 *AUDIÊNCIA*", `Views monitoradas: ${number(totals.views)}`, `Alcance: ${number(totals.reach)}`,
