@@ -214,8 +214,8 @@ async function callback(body: Record<string, unknown>) {
   const token = await exchangeCode(String(body.code));
   recordStage("token_exchanged");
   const instagram = await graph("me", token.accessToken, {
-    fields: "id,user_id,username,name,profile_picture_url,followers_count,media_count",
-  }) as { id?: string; user_id?: string; username?: string; name?: string; profile_picture_url?: string };
+    fields: "user_id,username",
+  }) as { id?: string; user_id?: string; username?: string };
   const providerAccountId = String(instagram.user_id || instagram.id || "");
   if (!providerAccountId) throw new OAuthStepError("profile_missing_user_id");
   recordStage("profile_loaded");
@@ -227,7 +227,7 @@ async function callback(body: Record<string, unknown>) {
     provider_page_id: null,
     username: instagram.username || null,
     account_name: instagram.username ? `@${instagram.username}` : "Instagram profissional",
-    profile_picture_url: instagram.profile_picture_url || null,
+    profile_picture_url: null,
     encrypted_access_token: await encryptToken(
       token.accessToken,
       env("CONNECTED_ACCOUNT_ENCRYPTION_KEY"),
