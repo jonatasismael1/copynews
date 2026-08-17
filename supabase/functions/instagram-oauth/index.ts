@@ -169,7 +169,11 @@ async function exchangeCode(code: string) {
       errorCode: longPayload.error?.code || null,
     });
   }
-  return { accessToken: String(longPayload.access_token), expiresIn: Number(longPayload.expires_in || 0) };
+  return {
+    accessToken: String(longPayload.access_token),
+    expiresIn: Number(longPayload.expires_in || 0),
+    userId: payload.user_id ? String(payload.user_id) : "",
+  };
 }
 
 async function graph(path: string, token: string, params: Record<string, string> = {}) {
@@ -213,12 +217,20 @@ async function callback(body: Record<string, unknown>) {
   try {
   const token = await exchangeCode(String(body.code));
   recordStage("token_exchanged");
-  const instagram = await graph("me", token.accessToken, {
-    fields: "user_id,username",
-  }) as { id?: string; user_id?: string; username?: string };
-  const providerAccountId = String(instagram.user_id || instagram.id || "");
+  let instagram: { id?: string; user_id?: string; username?: string } = {};
+  try {
+    instagram = await graph("me", token.accessToken, {
+      fields: "id,username",
+    }) as typeof instagram;
+    recordStage("profile_loaded");
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "profile_lookup_skipped",
+      reason: error instanceof OAuthStepError ? error.reason : "profile_failed",
+    }));
+  }
+  const providerAccountId = String(token.userId || instagram.user_id || instagram.id || "");
   if (!providerAccountId) throw new OAuthStepError("profile_missing_user_id");
-  recordStage("profile_loaded");
   const { data: account, error: accountError } = await admin.from("connected_accounts").upsert({
     user_id: oauthState.user_id,
     page_id: oauthState.page_id,
