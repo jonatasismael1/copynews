@@ -16,7 +16,6 @@ function env(name: string) {
   if (!value) throw new Error(`Missing environment variable: ${name}`);
   return value;
 }
-const metaVersion = () => Deno.env.get("META_GRAPH_API_VERSION") || "v25.0";
 const callbackUri = () => {
   const expected = "https://copynews.netlify.app/auth/instagram/callback";
   if (env("INSTAGRAM_REDIRECT_URI") !== expected)
@@ -159,25 +158,43 @@ async function exchangeCode(code: string) {
   url.searchParams.set("grant_type", "ig_exchange_token");
   url.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
   url.searchParams.set("access_token", payload.access_token);
-  const longResponse = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-  const longPayload = await longResponse.json();
-  if (!longResponse.ok || !longPayload.access_token) {
-    throw new OAuthStepError("long_token_failed", {
-      provider: "meta",
+  let longFailure: { status: number; errorType: unknown; errorCode: unknown } | null = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const longResponse = await fetch(url, {
+      signal: AbortSignal.timeout(20_000),
+    });
+    const longPayload = await longResponse.json();
+    if (longResponse.ok && longPayload.access_token) {
+      return {
+        accessToken: String(longPayload.access_token),
+        expiresIn: Number(longPayload.expires_in || 0),
+        userId: payload.user_id ? String(payload.user_id) : "",
+        longLived: true,
+      };
+    }
+    longFailure = {
       status: longResponse.status,
       errorType: longPayload.error?.type || null,
       errorCode: longPayload.error?.code || null,
-    });
+    };
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
   }
+  // A valid short-lived token is enough to finish the connection and run the
+  // first sync. The sync job retries the long-lived exchange before expiry.
+  console.warn(JSON.stringify({
+    event: "long_token_exchange_deferred",
+    details: { provider: "meta", ...longFailure },
+  }));
   return {
-    accessToken: String(longPayload.access_token),
-    expiresIn: Number(longPayload.expires_in || 0),
+    accessToken: String(payload.access_token),
+    expiresIn: Number(payload.expires_in || 3600),
     userId: payload.user_id ? String(payload.user_id) : "",
+    longLived: false,
   };
 }
 
 async function graph(path: string, token: string, params: Record<string, string> = {}) {
-  const url = new URL(`https://graph.instagram.com/${metaVersion()}/${path.replace(/^\//, "")}`);
+  const url = new URL(`https://graph.instagram.com/${path.replace(/^\//, "")}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   url.searchParams.set("access_token", token);
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
@@ -248,7 +265,7 @@ async function callback(body: Record<string, unknown>) {
     scopes: ["instagram_business_basic", "instagram_business_manage_insights"],
     status: "connected",
     needs_attention: false,
-    refresh_error: null,
+    refresh_error: token.longLived ? null : "long_token_exchange_pending",
     last_refresh_at: new Date().toISOString(),
     data_source: "meta+apify",
     history_window_days: 90,

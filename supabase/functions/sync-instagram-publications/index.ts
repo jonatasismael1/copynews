@@ -18,6 +18,55 @@ function env(name: string) {
   return value;
 }
 const version = () => Deno.env.get("META_GRAPH_API_VERSION") || "v25.0";
+const reportTimezone = () =>
+  (Deno.env.get("APP_TIMEZONE") || "America/Maceio").replace(/["']/g, "").trim();
+
+function number(value: number) {
+  return Math.max(0, Math.round(value)).toLocaleString("pt-BR");
+}
+
+function localDateTime(value = new Date()) {
+  return {
+    date: new Intl.DateTimeFormat("pt-BR", {
+      timeZone: reportTimezone(), day: "2-digit", month: "2-digit", year: "numeric",
+    }).format(value),
+    time: new Intl.DateTimeFormat("pt-BR", {
+      timeZone: reportTimezone(), hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(value),
+  };
+}
+
+async function sendEvolutionMessages(messages: string[]) {
+  if (Deno.env.get("INSTAGRAM_WHATSAPP_ALERTS_ENABLED") !== "true") return "disabled";
+  const baseUrl = env("EVOLUTION_API_URL").replace(/\/$/, "");
+  const apiKey = env("EVOLUTION_API_KEY");
+  const instance = env("EVOLUTION_INSTANCE");
+  const number = env("INSTAGRAM_ALERT_PHONE").replace(/\D/g, "");
+  for (const message of messages) {
+    let sent = false;
+    for (let attempt = 1; attempt <= 2 && !sent; attempt += 1) {
+      try {
+        const response = await fetch(`${baseUrl}/message/sendText/${instance}`, {
+          method: "POST",
+          headers: { apikey: apiKey, "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ number, text: message }),
+          signal: AbortSignal.timeout(8_000),
+        });
+        sent = response.ok;
+        console.info(JSON.stringify({
+          event: sent ? "notification_sent" : "notification_failed",
+          response_status: response.status,
+          attempt,
+        }));
+      } catch {
+        console.warn(JSON.stringify({ event: "notification_failed", response_status: "network_error", attempt }));
+      }
+    }
+    if (!sent) return "failed";
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  }
+  return "sent";
+}
 
 async function refreshInstagramToken(token: string) {
   const url = new URL("https://graph.instagram.com/refresh_access_token");
@@ -29,6 +78,22 @@ async function refreshInstagramToken(token: string) {
     throw new Error(
       payload.error?.message || "Não foi possível renovar o acesso do Instagram",
     );
+  }
+  return {
+    accessToken: String(payload.access_token),
+    expiresIn: Number(payload.expires_in || 0),
+  };
+}
+
+async function exchangeLongInstagramToken(token: string) {
+  const url = new URL("https://graph.instagram.com/access_token");
+  url.searchParams.set("grant_type", "ig_exchange_token");
+  url.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
+  url.searchParams.set("access_token", token);
+  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error?.message || "Não foi possível obter o token longo do Instagram");
   }
   return {
     accessToken: String(payload.access_token),
@@ -132,6 +197,7 @@ Deno.serve(async (req) => {
     if (accountError) throw accountError;
 
     const summaries = [];
+    const reportSummaries: Array<Record<string, unknown>> = [];
     for (const account of accounts || []) {
       if (!identity.scheduled && identity.role === "admin" && body.account_id &&
           account.user_id !== identity.userId && body.sync_all !== true) {
@@ -152,7 +218,9 @@ Deno.serve(async (req) => {
         expiresAt - Date.now() < 7 * 86400000
       ) {
         try {
-          const refreshed = await refreshInstagramToken(token);
+          const refreshed = account.refresh_error === "long_token_exchange_pending"
+            ? await exchangeLongInstagramToken(token)
+            : await refreshInstagramToken(token);
           token = refreshed.accessToken;
           const encrypted = await encryptToken(
             token,
@@ -205,6 +273,12 @@ Deno.serve(async (req) => {
 
       let imported = 0;
       let snapshots = 0;
+      let views = 0;
+      let reach = 0;
+      let likes = 0;
+      let comments = 0;
+      let shares = 0;
+      let saves = 0;
       for (const item of media) {
         const mediaId = String(item.id);
         const row = {
@@ -241,6 +315,12 @@ Deno.serve(async (req) => {
           ] as const),
         );
         const metrics = Object.fromEntries(entries);
+        views += Number(metrics.views.value || 0);
+        reach += Number(metrics.reach.value || 0);
+        likes += Number(item.like_count || 0);
+        comments += Number(item.comments_count || 0);
+        shares += Number(metrics.shares.value || 0);
+        saves += Number(metrics.saved.value || 0);
         const { error: metricError } = await admin.from("metric_snapshots").insert({
           publication_id: publication.id,
           captured_at: new Date().toISOString(),
@@ -278,8 +358,65 @@ Deno.serve(async (req) => {
         })
         .eq("id", account.id);
       summaries.push({ account_id: account.id, imported, snapshots });
+      const reels = media.filter((item) => item.media_product_type === "REELS").length;
+      const carousels = media.filter((item) => item.media_type === "CAROUSEL_ALBUM").length;
+      const posts = Math.max(0, media.length - reels - carousels);
+      const postingTimes = media.map((item) => {
+        const value = new Date(String(item.timestamp));
+        return new Intl.DateTimeFormat("pt-BR", {
+          timeZone: reportTimezone(), hour: "2-digit", minute: "2-digit", hour12: false,
+        }).format(value);
+      }).sort();
+      reportSummaries.push({
+        username: String(detectedUsername || account.username || account.account_name || "instagram").replace(/^@/, ""),
+        found: media.length, reels, carousels, posts, views, reach, likes, comments, shares, saves, postingTimes,
+      });
     }
-    return json({ accounts: summaries, imported: summaries.reduce((sum, item) => sum + item.imported, 0) });
+    let notificationStatus = "disabled";
+    if (reportSummaries.length) {
+      const messages = reportSummaries.map((item, index) => {
+        const times = item.postingTimes as string[];
+        return [
+          `📍 *PERFIL • ${index + 1}/${reportSummaries.length}*`, "",
+          `🟢 *@${String(item.username).toUpperCase()}*`, "",
+          `📊 *${item.found} publicações no perfil*`, "",
+          `✍️ *Originadas pelo perfil: ${item.found}*`,
+          `• Próprias/identificadas pela Meta: ${item.found}`,
+          "• Com collab confirmada: 0", "",
+          "📥 *Recebidas por collab: não expostas neste endpoint da Meta*", "",
+          "📱 *Formatos*",
+          `🎬 Reels: ${item.reels}`,
+          `🖼️ Posts: ${item.posts}`,
+          `🎠 Carrosséis: ${item.carousels}`, "",
+          `👁️ Views: ${number(Number(item.views))}`,
+          `📣 Alcance: ${number(Number(item.reach))}`,
+          `🕐 Horários de postagens: ${times.length ? `(${times.join(", ")})` : "—"}`,
+        ].join("\n");
+      });
+      const totals = reportSummaries.reduce((sum, item) => ({
+        found: sum.found + Number(item.found), reels: sum.reels + Number(item.reels),
+        posts: sum.posts + Number(item.posts), carousels: sum.carousels + Number(item.carousels),
+        views: sum.views + Number(item.views), reach: sum.reach + Number(item.reach),
+        likes: sum.likes + Number(item.likes), comments: sum.comments + Number(item.comments),
+        shares: sum.shares + Number(item.shares), saves: sum.saves + Number(item.saves),
+      }), { found: 0, reels: 0, posts: 0, carousels: 0, views: 0, reach: 0, likes: 0, comments: 0, shares: 0, saves: 0 });
+      const stamp = localDateTime();
+      messages.push([
+        "📊 *INSTAGRAM • RESUMO DA REDE*", `📅 ${stamp.date} • Atualização ${stamp.time}`, "",
+        "🧾 *PUBLICAÇÕES*", `Publicações encontradas: ${totals.found}`,
+        `Reels: ${totals.reels} • Carrosséis: ${totals.carousels} • Posts: ${totals.posts}`, "",
+        "👀 *AUDIÊNCIA*", `Views monitoradas: ${number(totals.views)}`, `Alcance: ${number(totals.reach)}`,
+        `Curtidas: ${number(totals.likes)} • Comentários: ${number(totals.comments)}`,
+        `Compartilhamentos: ${number(totals.shares)} • Salvamentos: ${number(totals.saves)}`, "",
+        `Tipo: ${identity.scheduled ? "Automática" : "Manual"}`, "Fonte: Meta — API oficial",
+      ].join("\n"));
+      notificationStatus = await sendEvolutionMessages(messages);
+    }
+    return json({
+      accounts: summaries,
+      imported: summaries.reduce((sum, item) => sum + item.imported, 0),
+      notification_status: notificationStatus,
+    });
   } catch (error) {
     const message = error instanceof Error
       ? error.message
