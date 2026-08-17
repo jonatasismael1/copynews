@@ -91,6 +91,8 @@ export function SettingsPage() {
       toast.error(
         reason === "missing_code"
           ? "O Instagram não retornou o código de autorização. Tente novamente."
+          : reason === "instagram_role_required"
+          ? "Esta conta ainda não tem acesso ao app. Adicione-a como Instagram Tester no painel da Meta, aceite o convite nessa conta e tente novamente."
           : "Não foi possível conectar o Instagram. Tente novamente.",
       );
       return;

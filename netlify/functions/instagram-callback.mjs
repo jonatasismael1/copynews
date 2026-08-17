@@ -35,6 +35,7 @@ export async function handler(event) {
     const safeStages = new Set([
       "state_validated",
       "token_exchanged",
+      "access_validated",
       "profile_loaded",
       "account_saved",
       "callback_completed",

@@ -90,15 +90,19 @@ async function exchangeLongInstagramToken(token: string) {
   url.searchParams.set("grant_type", "ig_exchange_token");
   url.searchParams.set("client_secret", env("INSTAGRAM_APP_SECRET"));
   url.searchParams.set("access_token", token);
-  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-  const payload = await response.json();
-  if (!response.ok || !payload.access_token) {
-    throw new Error(payload.error?.message || "Não foi possível obter o token longo do Instagram");
+  let lastMessage = "Não foi possível obter o token longo do Instagram";
+  for (const method of ["GET", "POST"]) {
+    const response = await fetch(url, { method, signal: AbortSignal.timeout(20_000) });
+    const payload = await response.json();
+    if (response.ok && payload.access_token) {
+      return {
+        accessToken: String(payload.access_token),
+        expiresIn: Number(payload.expires_in || 0),
+      };
+    }
+    lastMessage = payload.error?.message || lastMessage;
   }
-  return {
-    accessToken: String(payload.access_token),
-    expiresIn: Number(payload.expires_in || 0),
-  };
+  throw new Error(lastMessage);
 }
 
 async function graph(
@@ -380,10 +384,6 @@ Deno.serve(async (req) => {
           `📍 *PERFIL • ${index + 1}/${reportSummaries.length}*`, "",
           `🟢 *@${String(item.username).toUpperCase()}*`, "",
           `📊 *${item.found} publicações no perfil*`, "",
-          `✍️ *Originadas pelo perfil: ${item.found}*`,
-          `• Próprias/identificadas pela Meta: ${item.found}`,
-          "• Com collab confirmada: 0", "",
-          "📥 *Recebidas por collab: não expostas neste endpoint da Meta*", "",
           "📱 *Formatos*",
           `🎬 Reels: ${item.reels}`,
           `🖼️ Posts: ${item.posts}`,

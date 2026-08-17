@@ -160,23 +160,23 @@ async function exchangeCode(code: string) {
   url.searchParams.set("access_token", payload.access_token);
   let longFailure: { status: number; errorType: unknown; errorCode: unknown } | null = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const longResponse = await fetch(url, {
-      signal: AbortSignal.timeout(20_000),
-    });
-    const longPayload = await longResponse.json();
-    if (longResponse.ok && longPayload.access_token) {
-      return {
-        accessToken: String(longPayload.access_token),
-        expiresIn: Number(longPayload.expires_in || 0),
-        userId: payload.user_id ? String(payload.user_id) : "",
-        longLived: true,
+    for (const method of ["GET", "POST"]) {
+      const longResponse = await fetch(url, { method, signal: AbortSignal.timeout(20_000) });
+      const longPayload = await longResponse.json();
+      if (longResponse.ok && longPayload.access_token) {
+        return {
+          accessToken: String(longPayload.access_token),
+          expiresIn: Number(longPayload.expires_in || 0),
+          userId: payload.user_id ? String(payload.user_id) : "",
+          longLived: true,
+        };
+      }
+      longFailure = {
+        status: longResponse.status,
+        errorType: longPayload.error?.type || null,
+        errorCode: longPayload.error?.code || null,
       };
     }
-    longFailure = {
-      status: longResponse.status,
-      errorType: longPayload.error?.type || null,
-      errorCode: longPayload.error?.code || null,
-    };
     if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
   }
   // A valid short-lived token is enough to finish the connection and run the
@@ -234,6 +234,15 @@ async function callback(body: Record<string, unknown>) {
   try {
   const token = await exchangeCode(String(body.code));
   recordStage("token_exchanged");
+  try {
+    await graph("me/media", token.accessToken, { fields: "id", limit: "1" });
+    recordStage("access_validated");
+  } catch (error) {
+    throw new OAuthStepError(
+      "instagram_role_required",
+      error instanceof OAuthStepError ? error.details : {},
+    );
+  }
   let instagram: { id?: string; user_id?: string; username?: string } = {};
   try {
     instagram = await graph("me", token.accessToken, {
