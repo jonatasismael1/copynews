@@ -37,6 +37,10 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [
+          /^\/auth\/instagram\/callback(?:[/?]|$)/,
+          /^\/\.netlify\/functions\//,
+        ],
         cleanupOutdatedCaches: true,
       },
     }),
