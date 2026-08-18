@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
         downloadUrls = (data || [])
           .filter((item) => item.signedUrl)
           .map((item, index) => ({
-            url: externalizeStorageUrl(item.signedUrl),
+            url: externalizeStorageUrl(item.signedUrl, new URL(req.url).origin),
             index,
           }));
       }

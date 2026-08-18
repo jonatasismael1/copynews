@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       .getPublicUrl(path);
     const { error: updateError } = await admin
       .from("profiles")
-      .update({ avatar_url: externalizeStorageUrl(publicUrl.publicUrl) })
+      .update({ avatar_url: externalizeStorageUrl(publicUrl.publicUrl, new URL(req.url).origin) })
       .eq("id", user.id);
     if (updateError) {
       await admin.storage.from("profile-avatars").remove([path]);
@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
       entity_type: "profile",
       entity_id: user.id,
     });
-    return json({ avatar_url: externalizeStorageUrl(publicUrl.publicUrl) });
+    return json({ avatar_url: externalizeStorageUrl(publicUrl.publicUrl, new URL(req.url).origin) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
     const status =

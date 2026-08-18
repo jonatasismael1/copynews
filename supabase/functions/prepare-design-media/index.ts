@@ -58,13 +58,14 @@ async function signedUrl(
   admin: ReturnType<typeof createClient>,
   bucket: string,
   path: string,
+  requestOrigin: string,
 ) {
   const { data, error } = await admin.storage
     .from(bucket)
     .createSignedUrl(path, 3600);
   if (error || !data?.signedUrl)
     failure("STORAGE_SIGN_FAILED", "Não foi possível abrir a mídia preparada.");
-  return externalizeStorageUrl(data.signedUrl);
+  return externalizeStorageUrl(data.signedUrl, requestOrigin);
 }
 
 Deno.serve(async (req) => {
@@ -125,7 +126,7 @@ Deno.serve(async (req) => {
 
     if (!sourcePaths.length && design?.media_asset_path) {
       return response({
-        url: await signedUrl(admin, "news-designs", design.media_asset_path),
+        url: await signedUrl(admin, "news-designs", design.media_asset_path, new URL(req.url).origin),
         path: design.media_asset_path,
         mime_type: design.media_mime_type || "image/jpeg",
         source: "saved",
@@ -166,7 +167,7 @@ Deno.serve(async (req) => {
           .eq("id", design.id);
       }
       return response({
-        url: await signedUrl(admin, "news-designs", path),
+        url: await signedUrl(admin, "news-designs", path, new URL(req.url).origin),
         path,
         mime_type: mimeType,
         source: "prepared",
@@ -188,7 +189,7 @@ Deno.serve(async (req) => {
 
     let sourceUrl: string;
     try {
-      sourceUrl = await signedUrl(admin, "temporary-media", sourcePath);
+      sourceUrl = await signedUrl(admin, "temporary-media", sourcePath, new URL(req.url).origin);
     } catch (error) {
       console.error(
         JSON.stringify({
