@@ -10,6 +10,8 @@ import type {
   Profile,
   Publication,
   DesignTemplate,
+  DistributionRecipient,
+  NewsSendHistory,
 } from "@/lib/database.types";
 import type {
   CreateNewsInput,
@@ -38,6 +40,51 @@ export function useNews() {
         categories: { name: string } | null;
         processing_jobs: ProcessingJob[];
       })[];
+    },
+  });
+}
+
+export function useDistribution() {
+  return useQuery({
+    queryKey: ["distribution"],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("news-distribution", { body: { action: "list" } });
+      if (error) throw error;
+      return data as { recipients: DistributionRecipient[]; history: NewsSendHistory[] };
+    },
+  });
+}
+
+async function distributionAction(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke("news-distribution", { body });
+  if (error) {
+    let detail = error.message;
+    try {
+      const payload = await (error as unknown as { context?: Response }).context?.clone().json();
+      if (payload?.error) detail = payload.error;
+    } catch { /* response body unavailable */ }
+    throw new Error(detail);
+  }
+  return data;
+}
+
+export function useManageDistributionRecipient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: distributionAction,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["distribution"] }),
+    onError: (error) => toast.error(message(error)),
+  });
+}
+
+export function useSendNews() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ newsId, recipientId, forceResend = false }: { newsId: string; recipientId: string; forceResend?: boolean }) =>
+      distributionAction({ action: "send", news_id: newsId, recipient_id: recipientId, force_resend: forceResend }),
+    onSuccess: (_data, input) => {
+      queryClient.invalidateQueries({ queryKey: ["distribution"] });
+      queryClient.invalidateQueries({ queryKey: ["news", input.newsId] });
     },
   });
 }

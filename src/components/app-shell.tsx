@@ -10,6 +10,7 @@ import {
   Newspaper,
   PlusCircle,
   Settings,
+  Send,
   UserRound,
   Users,
   X,
@@ -25,6 +26,7 @@ const items = [
   ["/noticias", "Notícias", Newspaper],
   ["/criar", "Criar notícia", PlusCircle],
   ["/publicacoes", "Publicações", FileText],
+  ["/enviar", "Enviar", Send],
   ["/usuarios", "Usuários", Users],
   ["/configuracoes", "Configurações", Settings],
 ] as const;
@@ -34,6 +36,7 @@ const mobileLabels: Record<(typeof items)[number][0], string> = {
   "/noticias": "Notícias",
   "/criar": "Criar",
   "/publicacoes": "Posts",
+  "/enviar": "Enviar",
   "/usuarios": "Usuários",
   "/configuracoes": "Ajustes",
 };

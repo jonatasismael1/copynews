@@ -37,6 +37,9 @@ const PublicationsPage = lazy(() =>
 const UsersPage = lazy(() =>
   import("@/pages/users").then((module) => ({ default: module.UsersPage })),
 );
+const SendPage = lazy(() =>
+  import("@/pages/send").then((module) => ({ default: module.SendPage })),
+);
 const SettingsPage = lazy(() =>
   import("@/pages/settings").then((module) => ({
     default: module.SettingsPage,
@@ -108,6 +111,7 @@ export function App() {
         <Route path="noticias/:id/arte" element={page(<NewsDesignPage />)} />
         <Route path="criar" element={page(<CreateNewsPage />)} />
         <Route path="publicacoes" element={page(<PublicationsPage />)} />
+        <Route path="enviar" element={page(<SendPage />)} />
         <Route path="usuarios" element={page(<UsersPage />)} />
         <Route path="configuracoes" element={page(<SettingsPage />)} />
       </Route>
