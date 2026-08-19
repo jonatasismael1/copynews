@@ -283,12 +283,14 @@ Deno.serve(async (req) => {
       let params: Record<string, string> = {
         fields:
           "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,username,like_count,comments_count",
-        limit: instagramLogin ? "20" : "100",
+        limit: instagramLogin ? "50" : "100",
       };
       // Media collections only support time-based pagination on the Facebook
       // Login variant. Instagram Login uses cursor pagination.
       if (!instagramLogin) params.since = since;
       const media: Record<string, unknown>[] = [];
+      // Up to 50 recent items are enough for the daily report while avoiding
+      // the previous 20-item truncation on high-volume days.
       const maxPages = instagramLogin ? 1 : 10;
       for (let page = 0; next && page < maxPages; page += 1) {
         const payload = await graph(next, token, params, instagramLogin);

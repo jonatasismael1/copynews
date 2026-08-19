@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     apify_token: str = Field(min_length=20)
     apify_actor_id: str = "apify/instagram-scraper"
     app_timezone: str = "America/Maceio"
-    max_posts_per_profile: int = 20
+    max_posts_per_profile: int = 50
     tracking_days: int = 30
     report_days: int = 7
     request_timeout_seconds: float = 360
