@@ -47,7 +47,8 @@ async function fetchToFile(url, path) {
   await fs.writeFile(path, bytes); return { bytes, contentType: (response.headers.get("content-type") || "").split(";")[0].toLowerCase() };
 }
 async function cobaltSources(sourceUrl) {
-  const response = await fetch(process.env.COBALT_API_URL.replace(/\/$/, ""), { method: "POST", headers: { "content-type": "application/json", ...(process.env.COBALT_API_KEY ? { Authorization: `Api-Key ${process.env.COBALT_API_KEY}` } : {}) }, body: JSON.stringify({ url: sourceUrl, downloadMode: "auto", videoQuality: "1080", filenameStyle: "basic" }), signal: AbortSignal.timeout(45_000) });
+  const endpoint = `${process.env.COBALT_API_URL.replace(/\/+$/, "")}/`;
+  const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", ...(process.env.COBALT_API_KEY ? { Authorization: `Api-Key ${process.env.COBALT_API_KEY}` } : {}) }, body: JSON.stringify({ url: sourceUrl, downloadMode: "auto", videoQuality: "1080", filenameStyle: "basic" }), signal: AbortSignal.timeout(45_000) });
   const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === "error") throw new Error("Não foi possível obter a mídia original");
   if (payload.status === "picker") return (payload.picker || []).filter((item) => item.url).map((item, index) => ({ url: item.url, filename: item.filename || `arquivo-${index + 1}` }));
   if (["redirect", "tunnel"].includes(payload.status) && payload.url) { let url = payload.url; if (payload.status === "tunnel") { const tunnel = new URL(url); const base = new URL(process.env.COBALT_API_URL); tunnel.protocol = base.protocol; tunnel.host = base.host; url = tunnel.toString(); } return [{ url, filename: payload.filename || "arquivo" }]; }
