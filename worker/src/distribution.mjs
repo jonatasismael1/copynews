@@ -96,8 +96,9 @@ export function createDistributionProcessor({ db, workerId, log }) {
 
   async function processPreview(preview) {
     const dir = join(tmpdir(), `copy-news-preview-${preview.id}`); const framesDir = join(dir, "frames"); await fs.mkdir(framesDir, { recursive: true });
+    let metadata = null;
     try {
-      const metadata = await extractMetadata(preview.source_url); const sources = await cobaltSources(preview.source_url); const files = [];
+      metadata = await extractMetadata(preview.source_url); const sources = await cobaltSources(preview.source_url); const files = [];
       for (const [index, source] of sources.entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded }); }
       let mediaKind = files.length > 1 ? "carousel" : "video";
       for (const [index, file] of files.entries()) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; const output = join(framesDir, `frame-${index}-%02d.jpg`); await execute("ffmpeg", image ? ["-y", "-v", "error", "-i", file.input, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output] : ["-y", "-v", "error", "-i", file.input, "-vf", "fps=1/5,scale=960:-1", "-frames:v", "4", "-q:v", "4", output]); }
@@ -107,7 +108,11 @@ export function createDistributionProcessor({ db, workerId, log }) {
       const caption = String(metadata?.caption || "").trim(); const captionState = caption ? "found" : metadata?.provider === "none" ? "failed" : "absent";
       await db.from("distribution_direct_previews").update({ status: "ready", media_kind: mediaKind, media_count: files.length, original_title: ocr?.title ? normalizeHeadlineCase(ocr.title, caption) : null, original_caption: caption || null, title_state: titleState, caption_state: captionState, error_message: null, lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
       log("distribution.preview.ready", { previewId: preview.id, mediaKind, mediaCount: files.length, titleState, captionState });
-    } catch (error) { const retry = preview.attempts < 3; await db.from("distribution_direct_previews").update({ status: retry ? "queued" : "failed", error_message: safeError(error), lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id); log("distribution.preview.failed", { previewId: preview.id, retry, message: safeError(error) }); }
+    } catch (error) {
+      const caption = String(metadata?.caption || "").trim();
+      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: "unavailable", media_count: 0, original_title: null, original_caption: caption || null, title_state: "failed", caption_state: caption ? "found" : metadata?.provider === "none" ? "failed" : "absent", error_message: safeError(error), lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
+      log("distribution.preview.ready_without_media", { previewId: preview.id, message: safeError(error) });
+    }
     finally { await fs.rm(dir, { recursive: true, force: true }); }
   }
 
@@ -134,12 +139,20 @@ export function createDistributionProcessor({ db, workerId, log }) {
       await step("link", () => evolution.text(phone, `🔗 *Publicação para ser feita:*\n${news.source_url}`));
       if (!steps.media?.length || steps.media.some((item) => item.status !== "sent")) {
         const paths = news.temporary_media_paths?.length ? news.temporary_media_paths : [news.temporary_media_path].filter(Boolean); const files = [];
-        if (paths.length) {
-          for (const [index, storagePath] of paths.entries()) { const { data, error } = await db.storage.from("temporary-media").download(storagePath); if (error || !data) throw new Error("Mídia temporária indisponível"); const input = join(dir, `source-${index}${extname(storagePath) || ".bin"}`); const bytes = Buffer.from(await data.arrayBuffer()); await fs.writeFile(input, bytes); files.push({ input, bytes, contentType: data.type || "", filename: storagePath.split("/").pop() || `arquivo-${index + 1}` }); }
-        } else {
-          for (const [index, source] of (await cobaltSources(news.source_url)).entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded, filename: source.filename }); }
-        }
+        let mediaError = null;
+        try {
+          if (paths.length) {
+            for (const [index, storagePath] of paths.entries()) { const { data, error } = await db.storage.from("temporary-media").download(storagePath); if (error || !data) throw new Error("Mídia temporária indisponível"); const input = join(dir, `source-${index}${extname(storagePath) || ".bin"}`); const bytes = Buffer.from(await data.arrayBuffer()); await fs.writeFile(input, bytes); files.push({ input, bytes, contentType: data.type || "", filename: storagePath.split("/").pop() || `arquivo-${index + 1}` }); }
+          } else {
+            for (const [index, source] of (await cobaltSources(news.source_url)).entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded, filename: source.filename }); }
+          }
+        } catch (error) { mediaError = error; }
         const mediaSteps = [];
+        if (mediaError) {
+          try { const id = await evolution.text(phone, "⚠️ Não foi possível te enviar a mídia, só o link."); mediaSteps.push({ status: "sent", message_id: id, media_unavailable: true }); sent += 1; }
+          catch (error) { mediaSteps.push({ status: "failed", error: safeError(error), media_unavailable: true }); failed += 1; }
+          steps.media = mediaSteps; await persist(); await sleep(700);
+        }
         for (const [index, file] of files.entries()) {
           try {
             const header = imageMime(file.bytes); let path = file.input; let mime; let filename;
