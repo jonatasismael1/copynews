@@ -83,7 +83,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
     return claimError || !data ? null : data;
   }
 
-  async function process(job) {
+  async function processJob(job) {
     const dir = join(tmpdir(), `copy-news-distribution-${job.id}`); await fs.mkdir(dir, { recursive: true });
     const steps = { link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, ...(job.steps || {}) };
     const evolution = new EvolutionService(log); let sent = 0; let failed = 0;
@@ -130,7 +130,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
       const retry = job.attempts < 3; await persist({ status: retry ? "queued" : "failed", error_message: safeError(error), lease_owner: null, lease_expires_at: null, ...(retry ? {} : { sent_at: new Date().toISOString() }) }); log("distribution.failed", { jobId: job.id, retry, message: safeError(error) });
     } finally { await fs.rm(dir, { recursive: true, force: true }); }
   }
-  return { configured, claim, process };
+  return { configured, claim, process: processJob };
 }
 
 export { imageMime, isCompatibleVideo, probeVideo };
