@@ -10,6 +10,7 @@ const safeError = (error) => String(error?.message || error || "Falha inesperada
 const normalizePhone = (value) => { const phone = String(value || "").replace(/\D/g, ""); if (!/^55[1-9][0-9]{9,10}$/.test(phone)) throw new Error("Telefone inválido"); return phone; };
 const messageId = (payload) => String(payload?.key?.id || payload?.data?.key?.id || payload?.messageId || payload?.id || "") || null;
 const safeFilename = (value, fallback) => (String(value || fallback).normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || fallback).slice(0, 100);
+const expectsVideo = (value) => /instagram\.com\/(?:reel|reels|tv)\//i.test(String(value || ""));
 
 async function capture(command, args) {
   return new Promise((resolve, reject) => {
@@ -102,6 +103,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
       for (const [index, source] of sources.entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded }); }
       let mediaKind = files.length > 1 ? "carousel" : "video";
       for (const [index, file] of files.entries()) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; const output = join(framesDir, `frame-${index}-%02d.jpg`); await execute("ffmpeg", image ? ["-y", "-v", "error", "-i", file.input, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output] : ["-y", "-v", "error", "-i", file.input, "-vf", "fps=1/5,scale=960:-1", "-frames:v", "4", "-q:v", "4", output]); }
+      if (expectsVideo(preview.source_url) && mediaKind === "image") throw new Error("A origem retornou apenas a capa do Reel, sem o vídeo");
       const frames = await Promise.all((await fs.readdir(framesDir)).sort().slice(0, 8).map(async (name) => (await fs.readFile(join(framesDir, name))).toString("base64")));
       let ocr = null; let titleState = "absent";
       try { ocr = frames.length ? await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini") : null; titleState = ocr?.title ? "found" : "absent"; } catch { titleState = "failed"; }
@@ -148,6 +150,10 @@ export function createDistributionProcessor({ db, workerId, log }) {
           }
         } catch (error) { mediaError = error; }
         const mediaSteps = [];
+        if (!mediaError && expectsVideo(news.source_url) && files.length === 1 && imageMime(files[0].bytes)) {
+          mediaError = new Error("A origem retornou apenas a capa do Reel, sem o vídeo");
+          files.length = 0;
+        }
         if (mediaError) {
           try { const id = await evolution.text(phone, "⚠️ Não foi possível te enviar a mídia, só o link."); mediaSteps.push({ status: "sent", message_id: id, media_unavailable: true }); sent += 1; }
           catch (error) { mediaSteps.push({ status: "failed", error: safeError(error), media_unavailable: true }); failed += 1; }
