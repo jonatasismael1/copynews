@@ -47,6 +47,12 @@ async function fetchToFile(url, path) {
   const bytes = Buffer.from(await response.arrayBuffer()); if (!bytes.length || bytes.length > 100 * 1024 * 1024) throw new Error("Arquivo vazio ou acima de 100 MB");
   await fs.writeFile(path, bytes); return { bytes, contentType: (response.headers.get("content-type") || "").split(";")[0].toLowerCase() };
 }
+async function downloadVideoWithYtDlp(sourceUrl, dir, basename = "instagram-reel") {
+  const output = join(dir, `${basename}.mp4`); const template = join(dir, `${basename}.%(ext)s`);
+  await execute("yt-dlp", ["--no-playlist", "--no-part", "--no-write-thumbnail", "--force-overwrites", "--max-filesize", "200M", "--socket-timeout", "20", "--retries", "2", "--format", "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/best[vcodec^=avc1][acodec^=mp4a]/best[ext=mp4]/best", "--remux-video", "mp4", "--output", template, sourceUrl]);
+  const stats = await fs.stat(output); if (!stats.size || stats.size > 200 * 1024 * 1024) throw new Error("Vídeo recuperado inválido ou acima de 200 MB");
+  return { input: output, bytes: await fs.readFile(output), contentType: "video/mp4", filename: `${basename}.mp4` };
+}
 async function cobaltSources(sourceUrl) {
   const endpoint = `${process.env.COBALT_API_URL.replace(/\/+$/, "")}/`;
   const response = await fetch(endpoint, { method: "POST", headers: { accept: "application/json", "content-type": "application/json", ...(process.env.COBALT_API_KEY ? { Authorization: `Api-Key ${process.env.COBALT_API_KEY}` } : {}) }, body: JSON.stringify({ url: sourceUrl, downloadMode: "auto", videoQuality: "1080", filenameStyle: "basic", alwaysProxy: true }), signal: AbortSignal.timeout(45_000) });
@@ -101,6 +107,9 @@ export function createDistributionProcessor({ db, workerId, log }) {
     try {
       metadata = await extractMetadata(preview.source_url); const sources = await cobaltSources(preview.source_url); const files = [];
       for (const [index, source] of sources.entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded }); }
+      if (expectsVideo(preview.source_url) && files.length === 1 && imageMime(files[0].bytes)) {
+        const recovered = await downloadVideoWithYtDlp(preview.source_url, dir, "preview-reel"); files.splice(0, files.length, recovered);
+      }
       let mediaKind = files.length > 1 ? "carousel" : "video";
       for (const [index, file] of files.entries()) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; const output = join(framesDir, `frame-${index}-%02d.jpg`); await execute("ffmpeg", image ? ["-y", "-v", "error", "-i", file.input, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output] : ["-y", "-v", "error", "-i", file.input, "-vf", "fps=1/5,scale=960:-1", "-frames:v", "4", "-q:v", "4", output]); }
       if (expectsVideo(preview.source_url) && mediaKind === "image") throw new Error("A origem retornou apenas a capa do Reel, sem o vídeo");
@@ -152,8 +161,8 @@ export function createDistributionProcessor({ db, workerId, log }) {
         } catch (error) { mediaError = error; }
         const mediaSteps = [];
         if (!mediaError && expectsVideo(news.source_url) && files.length === 1 && imageMime(files[0].bytes)) {
-          mediaError = new Error("A origem retornou apenas a capa do Reel, sem o vídeo");
-          files.length = 0;
+          try { const recovered = await downloadVideoWithYtDlp(news.source_url, dir, "distribution-reel"); files.splice(0, files.length, recovered); }
+          catch (error) { mediaError = error; files.length = 0; }
         }
         if (mediaError) {
           try { const id = await evolution.text(phone, "⚠️ Não foi possível te enviar a mídia, só o link."); mediaSteps.push({ status: "sent", message_id: id, media_unavailable: true }); sent += 1; }
