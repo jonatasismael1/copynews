@@ -130,7 +130,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
 
   async function processJob(job) {
     const dir = join(tmpdir(), `copy-news-distribution-${job.id}`); await fs.mkdir(dir, { recursive: true });
-    const steps = { link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, ...(job.steps || {}) };
+    const steps = { link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, combined_content: { status: "pending" }, ...(job.steps || {}) };
     const evolution = new EvolutionService(log); let sent = 0; let failed = 0;
     const persist = async (extra = {}) => {
       const media = steps.media || [];
@@ -171,19 +171,22 @@ export function createDistributionProcessor({ db, workerId, log }) {
         }
         for (const [index, file] of files.entries()) {
           try {
-            const header = imageMime(file.bytes); let path = file.input; let mime; let filename;
-            if (header) { mime = header.mime; filename = `copynews-noticia-${index + 1}${header.extension}`; }
-            else { const output = join(dir, `copynews-noticia-${index + 1}.mp4`); const validation = await compatibleVideo(file.input, output); path = output; mime = "video/mp4"; filename = `copynews-noticia-${index + 1}.mp4`; log("distribution.media.validated", { jobId: job.id, container: validation.container, videoCodec: validation.videoCodec, audioCodec: validation.audioCodec, converted: validation.converted, bytes: validation.size }); }
+            const header = imageMime(file.bytes); let path = file.input; let mime; let filename; const baseName = files.length === 1 ? "noticia-original-baixada" : `noticia-original-baixada-${index + 1}`;
+            if (header) { mime = header.mime; filename = `${baseName}${header.extension}`; }
+            else { const output = join(dir, `${baseName}.mp4`); const validation = await compatibleVideo(file.input, output); path = output; mime = "video/mp4"; filename = `${baseName}.mp4`; log("distribution.media.validated", { jobId: job.id, container: validation.container, videoCodec: validation.videoCodec, audioCodec: validation.audioCodec, converted: validation.converted, bytes: validation.size }); }
             const id = await evolution.document(phone, path, mime, safeFilename(filename, `copynews-arquivo-${index + 1}`)); mediaSteps.push({ status: "sent", message_id: id, mime_type: mime, filename }); sent += 1;
           } catch (error) { mediaSteps.push({ status: "failed", error: safeError(error) }); failed += 1; }
           steps.media = mediaSteps; await persist(); await sleep(700);
         }
       }
+      const titleText = String(news.original_title || "").trim() || (direct?.title_state === "failed" ? "Não foi possível identificar o título." : "Não há título na imagem.");
+      const captionText = String(news.original_caption || news.clean_original_caption || news.source_caption || "").trim() || (direct?.caption_state === "failed" ? "Não foi possível obter a legenda da publicação." : "Não há legenda.");
       await step("title_label", () => evolution.text(phone, "📰 *Título Original*"));
-      await step("title_content", () => evolution.text(phone, String(news.original_title || "").trim() || (direct?.title_state === "failed" ? "Não foi possível identificar o título." : "Não há título na imagem.")));
+      await step("title_content", () => evolution.text(phone, titleText));
       await step("caption_label", () => evolution.text(phone, "📝 *Legenda Original*"));
-      await step("caption_content", () => evolution.text(phone, String(news.original_caption || news.clean_original_caption || news.source_caption || "").trim() || (direct?.caption_state === "failed" ? "Não foi possível obter a legenda da publicação." : "Não há legenda.")));
-      const all = [steps.link, ...(steps.media || []), steps.title_label, steps.title_content, steps.caption_label, steps.caption_content]; const status = all.every((item) => item?.status === "sent") ? "success" : all.some((item) => item?.status === "sent") ? "partial" : "failed"; const errors = all.filter((item) => item?.status === "failed").map((item) => item.error).filter(Boolean).join("; ").slice(0, 500) || null;
+      await step("caption_content", () => evolution.text(phone, captionText));
+      await step("combined_content", () => evolution.text(phone, `📰 *Título Original*\n${titleText}\n\n📝 *Legenda Original*\n${captionText}`));
+      const all = [steps.link, ...(steps.media || []), steps.title_label, steps.title_content, steps.caption_label, steps.caption_content, steps.combined_content]; const status = all.every((item) => item?.status === "sent") ? "success" : all.some((item) => item?.status === "sent") ? "partial" : "failed"; const errors = all.filter((item) => item?.status === "failed").map((item) => item.error).filter(Boolean).join("; ").slice(0, 500) || null;
       await persist({ status, sent_at: new Date().toISOString(), error_message: errors, lease_owner: null, lease_expires_at: null }); log("distribution.completed", { jobId: job.id, status, sent, failed });
     } catch (error) {
       const retry = job.attempts < 3; await persist({ status: retry ? "queued" : "failed", error_message: safeError(error), lease_owner: null, lease_expires_at: null, ...(retry ? {} : { sent_at: new Date().toISOString() }) }); log("distribution.failed", { jobId: job.id, retry, message: safeError(error) });

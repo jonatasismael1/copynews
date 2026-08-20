@@ -25,7 +25,7 @@ function normalizeUrl(value: unknown) {
   for (const key of [...url.searchParams.keys()]) if (/^(utm_|igsh|fbclid|gclid|ref|share)/i.test(key)) url.searchParams.delete(key);
   return url.toString();
 }
-const pendingSteps = () => ({ link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" } });
+const pendingSteps = () => ({ link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, combined_content: { status: "pending" } });
 
 async function enqueue(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
   if (!["admin", "editor", "writer"].includes(ctx.profile.role)) throw new Error("Forbidden");
