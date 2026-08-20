@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import SessionLocal
+from .historical_report import reconstruct
 from .models import CollectionRun, InstagramPost, PostMetricsHistory, TrackedProfile
 from .notifications import WhatsAppNotificationService, safe_error
 from .post_classification import apply_classification, classify_post_for_profile, empty_profile_summary, normalize_format, validate_profile_summary
@@ -249,10 +250,11 @@ async def _notify_run(run_id: uuid.UUID) -> None:
                     ).order_by(CollectionRun.finished_at.desc()).limit(10)
                 ).all()
                 previous = next((candidate for candidate in candidates if candidate.finished_at.astimezone(ZoneInfo(settings.app_timezone)).date() == local_finished.date() and 13 <= candidate.finished_at.astimezone(ZoneInfo(settings.app_timezone)).hour <= 16), None)
+            report_run = _consolidated_report_run(session, run)
             if run.status == "success":
-                result = await service.send_collection_success(run, previous)
+                result = await service.send_collection_success(report_run, previous)
             elif run.status == "partial":
-                result = await service.send_collection_partial(run, previous)
+                result = await service.send_collection_partial(report_run, previous)
             else:
                 result = await service.send_collection_failure(run)
             run.notification_status = result.status
@@ -279,6 +281,31 @@ def ingest_items(items: list[dict], target_date: date) -> dict:
         stats = _persist(session, profiles, items, now, target_date)
         session.commit()
         return {"status": "success", "provider": "apify", "target_date": target_date.isoformat(), "items_received": len(items), "posts_saved": stats["saved"]}
+
+
+def _consolidated_report_run(session: Session, run: CollectionRun):
+    """Build the 21h report from every publication persisted during the day.
+
+    Actor datasets can occasionally omit an older item from one profile while the
+    same item is already present from the 14h collection or another collab profile.
+    The daily report must therefore use the persisted union, not only the last
+    dataset response.
+    """
+    local_finished = (run.finished_at or run.started_at).astimezone(ZoneInfo(settings.app_timezone))
+    if run.trigger != "scheduled" or local_finished.hour < 20:
+        return run
+    consolidated = reconstruct(session, local_finished.date(), 23)
+    consolidated.status = run.status
+    consolidated.trigger = run.trigger
+    consolidated.profiles = run.profiles
+    consolidated.profiles_succeeded = run.profiles_succeeded
+    consolidated.profiles_failed = run.profiles_failed
+    consolidated.posts_new = run.posts_new
+    consolidated.posts_updated = run.posts_updated
+    consolidated.started_at = run.started_at
+    consolidated.finished_at = run.finished_at
+    consolidated.error = run.error
+    return consolidated
 
 
 async def collect(usernames: list[str] | None = None, trigger: str = "manual") -> dict:
