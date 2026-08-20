@@ -112,7 +112,8 @@ export function createDistributionProcessor({ db, workerId, log }) {
       log("distribution.preview.ready", { previewId: preview.id, mediaKind, mediaCount: files.length, titleState, captionState });
     } catch (error) {
       const caption = String(metadata?.caption || "").trim();
-      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: "unavailable", media_count: 0, original_title: null, original_caption: caption || null, title_state: "failed", caption_state: caption ? "found" : metadata?.provider === "none" ? "failed" : "absent", error_message: safeError(error), lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
+      const { error: updateError } = await db.from("distribution_direct_previews").update({ status: "ready", media_kind: null, media_count: 0, original_title: null, original_caption: caption || null, title_state: "failed", caption_state: caption ? "found" : metadata?.provider === "none" ? "failed" : "absent", error_message: safeError(error), lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
+      if (updateError) throw updateError;
       log("distribution.preview.ready_without_media", { previewId: preview.id, message: safeError(error) });
     }
     finally { await fs.rm(dir, { recursive: true, force: true }); }
