@@ -36,3 +36,12 @@ jobs:
           tags: |
             ghcr.io/jonatasismael1/copynews-worker:latest
             ghcr.io/jonatasismael1/copynews-worker:${{ github.sha }}
+
+      - name: Build and publish Instagram API
+        uses: docker/build-push-action@v6
+        with:
+          context: instagram-api
+          push: true
+          tags: |
+            ghcr.io/jonatasismael1/copynews-instagram-api:latest
+            ghcr.io/jonatasismael1/copynews-instagram-api:${{ github.sha }}
