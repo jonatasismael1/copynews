@@ -32,7 +32,7 @@ async function enqueue(ctx: Awaited<ReturnType<typeof context>>, body: Record<st
   const newsId = String(body.news_id || ""); const recipientId = String(body.recipient_id || "");
   const [{ data: recipient }, { data: news }] = await Promise.all([
     ctx.admin.from("distribution_recipients").select("*").eq("id", recipientId).eq("organization_id", ctx.profile.organization_id).eq("is_active", true).single(),
-    ctx.admin.from("news_items").select("id,source_url,original_title").eq("id", newsId).is("archived_at", null).single(),
+    ctx.client.from("news_items").select("id,source_url,original_title").eq("id", newsId).is("archived_at", null).single(),
   ]);
   if (!recipient || !news) throw new Error("Notícia ou destinatário inválido");
   const phone = normalizePhone(recipient.phone);
@@ -53,7 +53,7 @@ async function enqueue(ctx: Awaited<ReturnType<typeof context>>, body: Record<st
 async function resolveDirect(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
   if (!["admin", "editor", "writer"].includes(ctx.profile.role)) throw new Error("Forbidden");
   const sourceUrl = String(body.source_url || "").trim(); const normalized = normalizeUrl(sourceUrl); const shortcode = normalized.match(/instagram\.com\/(?:p|reel|tv)\/([^/]+)/i)?.[1];
-  let query = ctx.admin.from("news_items").select("id,source_url,original_title").eq("organization_id", ctx.profile.organization_id).is("archived_at", null);
+  let query = ctx.client.from("news_items").select("id,source_url,original_title").is("archived_at", null);
   query = shortcode ? query.ilike("source_url", `%/${shortcode}/%`) : query.eq("source_url", normalized);
   const { data: existing } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (existing) return json({ type: "existing_news", news: existing, normalized_url: normalized });
