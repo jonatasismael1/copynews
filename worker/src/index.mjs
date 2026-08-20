@@ -71,7 +71,7 @@ createServer((req, res) => {
         databaseHost: supabaseHost,
         commit: process.env.APP_COMMIT_SHA || null,
         deploymentId: process.env.DEPLOYMENT_ID || null,
-        capabilities: ["design-video-render-v1", "news-distribution-v2"],
+        capabilities: ["design-video-render-v1", "news-distribution-v3", "direct-url-preview-v1"],
       }),
     );
     return;
@@ -1063,14 +1063,15 @@ async function cleanup() {
 async function loop() {
   if (!busy) {
     try {
-      const distributionJob = await distribution.claim();
-      if (distributionJob) await distribution.process(distributionJob);
+      const preview = await distribution.claimPreview();
+      if (preview) await distribution.processPreview(preview);
       else {
-        const design = await claimDesignRender();
-        if (design) await processDesignRender(design);
+        const distributionJob = await distribution.claim();
+        if (distributionJob) await distribution.process(distributionJob);
         else {
-          const job = await claim();
-          if (job) await processJob(job);
+          const design = await claimDesignRender();
+          if (design) await processDesignRender(design);
+          else { const job = await claim(); if (job) await processJob(job); }
         }
       }
     } catch (error) {

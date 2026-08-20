@@ -2,6 +2,8 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { spawn } from "node:child_process";
+import { extractMetadata } from "./adapters.mjs";
+import { normalizeHeadlineCase, readFrames } from "./openrouter.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeError = (error) => String(error?.message || error || "Falha inesperada").replace(/https?:\/\/\S+/g, "[url]").replace(/[A-Za-z0-9_-]{30,}/g, "[redacted]").slice(0, 400);
@@ -83,6 +85,31 @@ export function createDistributionProcessor({ db, workerId, log }) {
     return claimError || !data ? null : data;
   }
 
+  async function claimPreview() {
+    const expired = new Date().toISOString();
+    const { data: rows, error } = await db.from("distribution_direct_previews").select("*").in("status", ["queued", "processing"]).or(`lease_expires_at.is.null,lease_expires_at.lt.${expired}`).order("created_at").limit(1);
+    if (error) throw error; const preview = rows?.[0]; if (!preview) return null;
+    const { data } = await db.from("distribution_direct_previews").update({ status: "processing", attempts: preview.attempts + 1, lease_owner: workerId, lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), updated_at: new Date().toISOString() }).eq("id", preview.id).eq("status", preview.status).eq("attempts", preview.attempts).select().maybeSingle();
+    return data;
+  }
+
+  async function processPreview(preview) {
+    const dir = join(tmpdir(), `copy-news-preview-${preview.id}`); const framesDir = join(dir, "frames"); await fs.mkdir(framesDir, { recursive: true });
+    try {
+      const metadata = await extractMetadata(preview.source_url); const sources = await cobaltSources(preview.source_url); const files = [];
+      for (const [index, source] of sources.entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded }); }
+      let mediaKind = files.length > 1 ? "carousel" : "video";
+      for (const [index, file] of files.entries()) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; const output = join(framesDir, `frame-${index}-%02d.jpg`); await execute("ffmpeg", image ? ["-y", "-v", "error", "-i", file.input, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output] : ["-y", "-v", "error", "-i", file.input, "-vf", "fps=1/5,scale=960:-1", "-frames:v", "4", "-q:v", "4", output]); }
+      const frames = await Promise.all((await fs.readdir(framesDir)).sort().slice(0, 8).map(async (name) => (await fs.readFile(join(framesDir, name))).toString("base64")));
+      let ocr = null; let titleState = "absent";
+      try { ocr = frames.length ? await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini") : null; titleState = ocr?.title ? "found" : "absent"; } catch { titleState = "failed"; }
+      const caption = String(metadata?.caption || "").trim(); const captionState = caption ? "found" : metadata?.provider === "none" ? "failed" : "absent";
+      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: mediaKind, media_count: files.length, original_title: ocr?.title ? normalizeHeadlineCase(ocr.title, caption) : null, original_caption: caption || null, title_state: titleState, caption_state: captionState, error_message: null, lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
+      log("distribution.preview.ready", { previewId: preview.id, mediaKind, mediaCount: files.length, titleState, captionState });
+    } catch (error) { const retry = preview.attempts < 3; await db.from("distribution_direct_previews").update({ status: retry ? "queued" : "failed", error_message: safeError(error), lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id); log("distribution.preview.failed", { previewId: preview.id, retry, message: safeError(error) }); }
+    finally { await fs.rm(dir, { recursive: true, force: true }); }
+  }
+
   async function processJob(job) {
     const dir = join(tmpdir(), `copy-news-distribution-${job.id}`); await fs.mkdir(dir, { recursive: true });
     const steps = { link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, ...(job.steps || {}) };
@@ -98,7 +125,9 @@ export function createDistributionProcessor({ db, workerId, log }) {
       await persist(); await sleep(700);
     };
     try {
-      const [{ data: news }, { data: recipient }] = await Promise.all([db.from("news_items").select("id,source_url,original_title,original_caption,clean_original_caption,source_caption,temporary_media_path,temporary_media_paths").eq("id", job.news_id).single(), db.from("distribution_recipients").select("*").eq("id", job.recipient_id).single()]);
+      const [{ data: existingNews }, { data: recipient }] = await Promise.all([job.news_id ? db.from("news_items").select("id,source_url,original_title,original_caption,clean_original_caption,source_caption,temporary_media_path,temporary_media_paths").eq("id", job.news_id).single() : Promise.resolve({ data: null }), db.from("distribution_recipients").select("*").eq("id", job.recipient_id).single()]);
+      const direct = job.source_type === "direct_url" ? (job.direct_payload || {}) : null;
+      const news = existingNews || (direct ? { source_url: job.source_url, original_title: direct.original_title, original_caption: direct.original_caption, clean_original_caption: null, source_caption: null, temporary_media_path: null, temporary_media_paths: [] } : null);
       if (!news || !recipient?.is_active) throw new Error("Notícia ou destinatário indisponível");
       const phone = normalizePhone(recipient.phone); const testMode = String(process.env.DISTRIBUTION_TEST_MODE || "true").toLowerCase() !== "false"; const testPhone = normalizePhone(process.env.DISTRIBUTION_TEST_PHONE || "5582998264805"); if (testMode && phone !== testPhone) throw new Error("Durante os testes, somente Ismael pode receber mensagens");
       await step("link", () => evolution.text(phone, `🔗 *Publicação para ser feita:*\n${news.source_url}`));
@@ -121,16 +150,16 @@ export function createDistributionProcessor({ db, workerId, log }) {
         }
       }
       await step("title_label", () => evolution.text(phone, "📰 *Título Original*"));
-      await step("title_content", () => evolution.text(phone, String(news.original_title || "").trim() || "Não há título na imagem."));
+      await step("title_content", () => evolution.text(phone, String(news.original_title || "").trim() || (direct?.title_state === "failed" ? "Não foi possível identificar o título." : "Não há título na imagem.")));
       await step("caption_label", () => evolution.text(phone, "📝 *Legenda Original*"));
-      await step("caption_content", () => evolution.text(phone, String(news.original_caption || news.clean_original_caption || news.source_caption || "").trim() || "Não há legenda."));
+      await step("caption_content", () => evolution.text(phone, String(news.original_caption || news.clean_original_caption || news.source_caption || "").trim() || (direct?.caption_state === "failed" ? "Não foi possível obter a legenda da publicação." : "Não há legenda.")));
       const all = [steps.link, ...(steps.media || []), steps.title_label, steps.title_content, steps.caption_label, steps.caption_content]; const status = all.every((item) => item?.status === "sent") ? "success" : all.some((item) => item?.status === "sent") ? "partial" : "failed"; const errors = all.filter((item) => item?.status === "failed").map((item) => item.error).filter(Boolean).join("; ").slice(0, 500) || null;
       await persist({ status, sent_at: new Date().toISOString(), error_message: errors, lease_owner: null, lease_expires_at: null }); log("distribution.completed", { jobId: job.id, status, sent, failed });
     } catch (error) {
       const retry = job.attempts < 3; await persist({ status: retry ? "queued" : "failed", error_message: safeError(error), lease_owner: null, lease_expires_at: null, ...(retry ? {} : { sent_at: new Date().toISOString() }) }); log("distribution.failed", { jobId: job.id, retry, message: safeError(error) });
     } finally { await fs.rm(dir, { recursive: true, force: true }); }
   }
-  return { configured, claim, process: processJob };
+  return { configured, claim, process: processJob, claimPreview, processPreview };
 }
 
 export { imageMime, isCompatibleVideo, probeVideo };

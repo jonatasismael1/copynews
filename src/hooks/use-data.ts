@@ -12,6 +12,7 @@ import type {
   DesignTemplate,
   DistributionRecipient,
   NewsSendHistory,
+  DistributionDirectPreview,
 } from "@/lib/database.types";
 import type {
   CreateNewsInput,
@@ -88,6 +89,20 @@ export function useSendNews() {
       queryClient.invalidateQueries({ queryKey: ["news", input.newsId] });
     },
   });
+}
+
+export function useResolveDistributionUrl() {
+  return useMutation({ mutationFn: (sourceUrl: string) => distributionAction({ action: "resolve_url", source_url: sourceUrl }) as Promise<{type:"existing_news";news:{id:string}}|{type:"not_found";normalized_url:string}> });
+}
+export function useCreateDistributionPreview() { return useMutation({ mutationFn: (sourceUrl:string) => distributionAction({action:"create_preview",source_url:sourceUrl}) as Promise<DistributionDirectPreview> }); }
+
+export function useDistributionPreview(previewId?: string | null) {
+  return useQuery({ queryKey: ["distribution-preview", previewId], enabled: Boolean(previewId), queryFn: () => distributionAction({ action: "preview", preview_id: previewId }) as Promise<DistributionDirectPreview>, refetchInterval: (query) => ["queued", "processing"].includes(query.state.data?.status || "") ? 1500 : false });
+}
+
+export function useSendDirectUrl() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: ({previewId,recipientId}:{previewId:string;recipientId:string}) => distributionAction({ action: "send_direct", preview_id: previewId, recipient_id: recipientId }), onSuccess: () => queryClient.invalidateQueries({queryKey:["distribution"]}) });
 }
 
 export function useNewsItem(id?: string) {
