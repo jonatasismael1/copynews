@@ -22,6 +22,7 @@ import {
 } from "./openrouter.mjs";
 import { buildSourceContext } from "./source-context.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
+import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
   calculateMediaFrame,
@@ -58,6 +59,7 @@ const log = (event, extra = {}) =>
   console.log(
     JSON.stringify({ event, workerId, ...extra, at: new Date().toISOString() }),
   );
+const distribution = createDistributionProcessor({ db, workerId, log });
 createServer((req, res) => {
   if (req.url === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
@@ -69,7 +71,7 @@ createServer((req, res) => {
         databaseHost: supabaseHost,
         commit: process.env.APP_COMMIT_SHA || null,
         deploymentId: process.env.DEPLOYMENT_ID || null,
-        capabilities: ["design-video-render-v1"],
+        capabilities: ["design-video-render-v1", "news-distribution-v2"],
       }),
     );
     return;
@@ -1061,11 +1063,15 @@ async function cleanup() {
 async function loop() {
   if (!busy) {
     try {
-      const design = await claimDesignRender();
-      if (design) await processDesignRender(design);
+      const distributionJob = await distribution.claim();
+      if (distributionJob) await distribution.process(distributionJob);
       else {
-        const job = await claim();
-        if (job) await processJob(job);
+        const design = await claimDesignRender();
+        if (design) await processDesignRender(design);
+        else {
+          const job = await claim();
+          if (job) await processJob(job);
+        }
       }
     } catch (error) {
       log("loop.error", { message: error.message });

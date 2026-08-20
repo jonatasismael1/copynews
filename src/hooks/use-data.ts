@@ -52,6 +52,7 @@ export function useDistribution() {
       if (error) throw error;
       return data as { recipients: DistributionRecipient[]; history: NewsSendHistory[] };
     },
+    refetchInterval: (query) => query.state.data?.history.some((item) => item.status === "queued" || item.status === "processing") ? 2000 : 15000,
   });
 }
 
