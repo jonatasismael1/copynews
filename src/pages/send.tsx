@@ -1,85 +1,1067 @@
 import { useEffect, useMemo, useState, type FocusEvent } from "react";
-import { CheckCircle2, ClipboardPaste, Clock3, FileText, Link2, LoaderCircle, MoreVertical, Pencil, Plus, Search, Send, Trash2, UserRound, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  ClipboardPaste,
+  Clock3,
+  FileText,
+  Link2,
+  LoaderCircle,
+  MoreVertical,
+  Pencil,
+  Plus,
+  Search,
+  Send,
+  Trash2,
+  UserRound,
+  XCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState, PageHeader } from "@/components/ui/patterns";
-import { useCreateDistributionPreview, useDistribution, useDistributionPreview, useManageDistributionRecipient, useNews, useResolveDistributionUrl, useSendDirectUrl, useSendNews } from "@/hooks/use-data";
-import type { DistributionRecipient, NewsItem, NewsSendHistory } from "@/lib/database.types";
+import {
+  useCreateDistributionPreview,
+  useDistribution,
+  useDistributionPreview,
+  useManageDistributionRecipient,
+  useNews,
+  usePrepareDistributionBatch,
+  useResolveDistributionUrl,
+  useSendDirectUrl,
+  useSendDistributionBatch,
+  useSendNews,
+} from "@/hooks/use-data";
+import type {
+  DistributionDirectPreview,
+  DistributionRecipient,
+  NewsItem,
+  NewsSendHistory,
+} from "@/lib/database.types";
 import { useAuth } from "@/providers/auth-provider";
 
 type Filter = "all" | "active" | "recent";
 const emptyForm = { name: "", vehicle: "", phone: "", is_active: true };
 const statusMeta = {
-  success: { label: "Enviado", icon: CheckCircle2, variant: "success" as const },
+  success: {
+    label: "Enviado",
+    icon: CheckCircle2,
+    variant: "success" as const,
+  },
   partial: { label: "Parcial", icon: Clock3, variant: "warning" as const },
   failed: { label: "Falhou", icon: XCircle, variant: "danger" as const },
   queued: { label: "Na fila", icon: Clock3, variant: "secondary" as const },
-  processing: { label: "Enviando", icon: LoaderCircle, variant: "secondary" as const },
+  processing: {
+    label: "Enviando",
+    icon: LoaderCircle,
+    variant: "secondary" as const,
+  },
 };
 const completed = new Set(["success", "partial"]);
-function maskPhone(phone: string) { return phone.replace(/^(55)(\d{2})(\d{5})(\d{4})$/, "+$1 ($2) $3-$4"); }
-function titleOf(news: NewsItem) { return news.original_title || news.generated_title || "Notícia sem título"; }
-function when(value?: string | null) { if (!value) return "Nunca"; const date = new Date(value); const today = new Date(); const day = date.toLocaleDateString("pt-BR") === today.toLocaleDateString("pt-BR") ? "Hoje" : date.toLocaleDateString("pt-BR"); return `${day} • ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`; }
-function keepFocusedVisible(event: FocusEvent<HTMLElement>) { window.setTimeout(() => event.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" }), 250); }
-function isUrl(value:string){try{const url=new URL(value.trim());return ["http:","https:"].includes(url.protocol)}catch{return false}}
+function maskPhone(phone: string) {
+  return phone.replace(/^(55)(\d{2})(\d{5})(\d{4})$/, "+$1 ($2) $3-$4");
+}
+function titleOf(news: NewsItem) {
+  return news.original_title || news.generated_title || "Notícia sem título";
+}
+function when(value?: string | null) {
+  if (!value) return "Nunca";
+  const date = new Date(value);
+  const today = new Date();
+  const day =
+    date.toLocaleDateString("pt-BR") === today.toLocaleDateString("pt-BR")
+      ? "Hoje"
+      : date.toLocaleDateString("pt-BR");
+  return `${day} • ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+function keepFocusedVisible(event: FocusEvent<HTMLElement>) {
+  window.setTimeout(
+    () =>
+      event.currentTarget.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      }),
+    250,
+  );
+}
+function isUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    return ["http:", "https:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
 
 export function SendPage() {
   const { profile } = useAuth();
   const { data, isLoading } = useDistribution();
   const { data: news = [], isLoading: newsLoading } = useNews();
-  const manage = useManageDistributionRecipient(); const sender = useSendNews();
-  const resolver = useResolveDistributionUrl(); const previewCreator=useCreateDistributionPreview(); const directSender = useSendDirectUrl();
-  const [recipient, setRecipient] = useState<DistributionRecipient | null>(null); const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
-  const [recipientSearch, setRecipientSearch] = useState(""); const [newsSearch, setNewsSearch] = useState(""); const [filter, setFilter] = useState<Filter>("all");
-  const [previewId,setPreviewId]=useState<string|null>(null); const [directCandidate,setDirectCandidate]=useState(false); const {data:directPreview}=useDistributionPreview(previewId);
-  const [manageOpen, setManageOpen] = useState(false); const [editing, setEditing] = useState<DistributionRecipient | null>(null); const [form, setForm] = useState(emptyForm);
-  const [historyItem, setHistoryItem] = useState<NewsSendHistory | null>(null); const [historyOpen, setHistoryOpen] = useState(false); const [recipientDetail, setRecipientDetail] = useState<DistributionRecipient | null>(null);
+  const manage = useManageDistributionRecipient();
+  const sender = useSendNews();
+  const resolver = useResolveDistributionUrl();
+  const previewCreator = useCreateDistributionPreview();
+  const directSender = useSendDirectUrl();
+  const batchPreparer = usePrepareDistributionBatch();
+  const batchSender = useSendDistributionBatch();
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [batchPreviews, setBatchPreviews] = useState<
+    DistributionDirectPreview[]
+  >([]);
+  const [recipient, setRecipient] = useState<DistributionRecipient | null>(
+    null,
+  );
+  const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
+  const [recipientSearch, setRecipientSearch] = useState("");
+  const [newsSearch, setNewsSearch] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [directCandidate, setDirectCandidate] = useState(false);
+  const { data: directPreview } = useDistributionPreview(previewId);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [editing, setEditing] = useState<DistributionRecipient | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [historyItem, setHistoryItem] = useState<NewsSendHistory | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [recipientDetail, setRecipientDetail] =
+    useState<DistributionRecipient | null>(null);
   const histories = data?.history || [];
-  const stats = useMemo(() => new Map((data?.recipients || []).map((item) => { const own = histories.filter((entry) => entry.recipient_id === item.id && completed.has(entry.status)); return [item.id, { total: own.length, last: own[0] || null, recent: own.slice(0, 8) }]; })), [data?.recipients, histories]);
-  const recipients = useMemo(() => (data?.recipients || []).filter((item) => `${item.name} ${item.vehicle} ${item.phone}`.toLowerCase().includes(recipientSearch.toLowerCase())).filter((item) => filter === "active" ? item.is_active : filter === "recent" ? Boolean(stats.get(item.id)?.last) : true).sort((a, b) => filter === "recent" ? (stats.get(b.id)?.last?.created_at || "").localeCompare(stats.get(a.id)?.last?.created_at || "") : Number(b.is_active) - Number(a.is_active) || a.name.localeCompare(b.name)), [data?.recipients, filter, recipientSearch, stats]);
-  const filteredNews = useMemo(() => news.filter((item) => `${titleOf(item)} ${item.source_url}`.toLowerCase().includes(newsSearch.toLowerCase())).slice(0, 50), [news, newsSearch]);
+  const stats = useMemo(
+    () =>
+      new Map(
+        (data?.recipients || []).map((item) => {
+          const own = histories.filter(
+            (entry) =>
+              entry.recipient_id === item.id && completed.has(entry.status),
+          );
+          return [
+            item.id,
+            {
+              total: own.length,
+              last: own[0] || null,
+              recent: own.slice(0, 8),
+            },
+          ];
+        }),
+      ),
+    [data?.recipients, histories],
+  );
+  const recipients = useMemo(
+    () =>
+      (data?.recipients || [])
+        .filter((item) =>
+          `${item.name} ${item.vehicle} ${item.phone}`
+            .toLowerCase()
+            .includes(recipientSearch.toLowerCase()),
+        )
+        .filter((item) =>
+          filter === "active"
+            ? item.is_active
+            : filter === "recent"
+              ? Boolean(stats.get(item.id)?.last)
+              : true,
+        )
+        .sort((a, b) =>
+          filter === "recent"
+            ? (stats.get(b.id)?.last?.created_at || "").localeCompare(
+                stats.get(a.id)?.last?.created_at || "",
+              )
+            : Number(b.is_active) - Number(a.is_active) ||
+              a.name.localeCompare(b.name),
+        ),
+    [data?.recipients, filter, recipientSearch, stats],
+  );
+  const filteredNews = useMemo(
+    () =>
+      news
+        .filter((item) =>
+          `${titleOf(item)} ${item.source_url}`
+            .toLowerCase()
+            .includes(newsSearch.toLowerCase()),
+        )
+        .slice(0, 50),
+    [news, newsSearch],
+  );
 
-  useEffect(()=>{setSelectedNews(null);setPreviewId(null);setDirectCandidate(false)},[recipient]);
-  useEffect(()=>{setDirectCandidate(false)},[newsSearch]);
-  async function resolveUrl(value=newsSearch){if(directCandidate&&value===newsSearch)return startDirectPreview();if(!isUrl(value))return;try{setDirectCandidate(false);const result=await resolver.mutateAsync(value.trim());if(result.type==="existing_news"){const item=news.find((entry)=>entry.id===result.news.id);if(item)setSelectedNews(item);toast.success("Notícia cadastrada encontrada")}else setDirectCandidate(true)}catch{toast.error("Não foi possível analisar este link")}}
-  async function startDirectPreview(){try{const preview=await previewCreator.mutateAsync(newsSearch.trim());setPreviewId(preview.id);setDirectCandidate(false)}catch{toast.error("Não foi possível iniciar a análise")}}
-  async function pasteUrl(){try{const value=(await navigator.clipboard.readText()).trim();if(!value)return toast.error("A área de transferência está vazia");setNewsSearch(value);if(isUrl(value))await resolveUrl(value)}catch{toast.error("Permita o acesso à área de transferência ou cole pelo teclado")}}
-  async function confirmDirect(){if(!recipient||!previewId||directPreview?.status!=="ready")return;try{await directSender.mutateAsync({previewId,recipientId:recipient.id});toast.success("Envio adicionado à fila.");setRecipient(null);setPreviewId(null);setNewsSearch("")}catch{toast.error("Não foi possível adicionar o envio à fila")}}
+  useEffect(() => {
+    setSelectedNews(null);
+    setPreviewId(null);
+    setDirectCandidate(false);
+  }, [recipient]);
+  useEffect(() => {
+    setDirectCandidate(false);
+  }, [newsSearch]);
+  async function resolveUrl(value = newsSearch) {
+    if (directCandidate && value === newsSearch) return startDirectPreview();
+    if (!isUrl(value)) return;
+    try {
+      setDirectCandidate(false);
+      const result = await resolver.mutateAsync(value.trim());
+      if (result.type === "existing_news") {
+        const item = news.find((entry) => entry.id === result.news.id);
+        if (item) setSelectedNews(item);
+        toast.success("Notícia cadastrada encontrada");
+      } else setDirectCandidate(true);
+    } catch {
+      toast.error("Não foi possível analisar este link");
+    }
+  }
+  async function startDirectPreview() {
+    try {
+      const preview = await previewCreator.mutateAsync(newsSearch.trim());
+      setPreviewId(preview.id);
+      setDirectCandidate(false);
+    } catch {
+      toast.error("Não foi possível iniciar a análise");
+    }
+  }
+  async function pasteUrl() {
+    try {
+      const value = (await navigator.clipboard.readText()).trim();
+      if (!value) return toast.error("A área de transferência está vazia");
+      setNewsSearch(value);
+      if (isUrl(value)) await resolveUrl(value);
+    } catch {
+      toast.error(
+        "Permita o acesso à área de transferência ou cole pelo teclado",
+      );
+    }
+  }
+  async function confirmDirect() {
+    if (!recipient || !previewId || directPreview?.status !== "ready") return;
+    try {
+      await directSender.mutateAsync({ previewId, recipientId: recipient.id });
+      toast.success("Envio adicionado à fila.");
+      setRecipient(null);
+      setPreviewId(null);
+      setNewsSearch("");
+    } catch {
+      toast.error("Não foi possível adicionar o envio à fila");
+    }
+  }
+  const batchUrls = useMemo(
+    () =>
+      [
+        ...new Set(
+          batchText
+            .split(/[\n\s]+/)
+            .map((value) => value.trim())
+            .filter(isUrl),
+        ),
+      ].slice(0, 10),
+    [batchText],
+  );
+  async function prepareBatch() {
+    if (batchUrls.length < 2)
+      return toast.error("Cole pelo menos 2 links, um por linha");
+    try {
+      setBatchPreviews([]);
+      const previews = await batchPreparer.mutateAsync(batchUrls);
+      setBatchPreviews(previews);
+      toast.success(`${previews.length} notícias carregadas`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível preparar o lote",
+      );
+    }
+  }
+  async function confirmBatch() {
+    if (!recipient || batchPreviews.length !== batchUrls.length) return;
+    try {
+      await batchSender.mutateAsync({
+        previewIds: batchPreviews.map((item) => item.id),
+        recipientId: recipient.id,
+      });
+      toast.success(
+        "Lote adicionado à fila. A mensagem será enviada após todas as mídias ficarem prontas.",
+      );
+      setRecipient(null);
+      setBatchMode(false);
+      setBatchText("");
+      setBatchPreviews([]);
+    } catch {
+      toast.error("Não foi possível adicionar o lote à fila");
+    }
+  }
 
-  function openForm(item?: DistributionRecipient) { setEditing(item || null); setForm(item ? { name: item.name, vehicle: item.vehicle, phone: item.phone, is_active: item.is_active } : emptyForm); setManageOpen(true); }
-  async function saveRecipient() { if (!form.name.trim() || !form.vehicle.trim() || !/^55\d{10,11}$/.test(form.phone.replace(/\D/g, ""))) return toast.error("Preencha nome, veículo e telefone E.164"); await manage.mutateAsync({ action: editing ? "update" : "create", ...(editing ? { id: editing.id } : {}), ...form, phone: form.phone.replace(/\D/g, "") }); toast.success(editing ? "Destinatário atualizado" : "Destinatário adicionado"); setManageOpen(false); }
-  async function removeRecipient(item: DistributionRecipient) { if (!window.confirm(`Excluir ${item.name}? O histórico será preservado.`)) return; await manage.mutateAsync({ action: "delete", id: item.id }); toast.success("Destinatário excluído"); setRecipientDetail(null); }
+  function openForm(item?: DistributionRecipient) {
+    setEditing(item || null);
+    setForm(
+      item
+        ? {
+            name: item.name,
+            vehicle: item.vehicle,
+            phone: item.phone,
+            is_active: item.is_active,
+          }
+        : emptyForm,
+    );
+    setManageOpen(true);
+  }
+  async function saveRecipient() {
+    if (
+      !form.name.trim() ||
+      !form.vehicle.trim() ||
+      !/^55\d{10,11}$/.test(form.phone.replace(/\D/g, ""))
+    )
+      return toast.error("Preencha nome, veículo e telefone E.164");
+    await manage.mutateAsync({
+      action: editing ? "update" : "create",
+      ...(editing ? { id: editing.id } : {}),
+      ...form,
+      phone: form.phone.replace(/\D/g, ""),
+    });
+    toast.success(
+      editing ? "Destinatário atualizado" : "Destinatário adicionado",
+    );
+    setManageOpen(false);
+  }
+  async function removeRecipient(item: DistributionRecipient) {
+    if (!window.confirm(`Excluir ${item.name}? O histórico será preservado.`))
+      return;
+    await manage.mutateAsync({ action: "delete", id: item.id });
+    toast.success("Destinatário excluído");
+    setRecipientDetail(null);
+  }
   async function confirmSend(forceResend = false) {
     if (!recipient || !selectedNews) return;
-    const previous = histories.find((item) => item.recipient_id === recipient.id && item.news_id === selectedNews.id && ["success", "partial", "queued", "processing"].includes(item.status));
-    if (previous && !forceResend) { if (["queued", "processing"].includes(previous.status)) return toast.warning("Este envio já está na fila ou em processamento."); const ok = window.confirm(`Esta notícia já foi enviada para ${recipient.name} às ${new Date(previous.sent_at || previous.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Deseja enviar novamente?`); if (!ok) return; return confirmSend(true); }
-    try { await sender.mutateAsync({ newsId: selectedNews.id, recipientId: recipient.id, forceResend }); toast.success("Envio adicionado à fila."); setRecipient(null); setSelectedNews(null); setNewsSearch(""); }
-    catch { toast.error("Não foi possível adicionar o envio à fila."); }
+    const previous = histories.find(
+      (item) =>
+        item.recipient_id === recipient.id &&
+        item.news_id === selectedNews.id &&
+        ["success", "partial", "queued", "processing"].includes(item.status),
+    );
+    if (previous && !forceResend) {
+      if (["queued", "processing"].includes(previous.status))
+        return toast.warning("Este envio já está na fila ou em processamento.");
+      const ok = window.confirm(
+        `Esta notícia já foi enviada para ${recipient.name} às ${new Date(previous.sent_at || previous.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Deseja enviar novamente?`,
+      );
+      if (!ok) return;
+      return confirmSend(true);
+    }
+    try {
+      await sender.mutateAsync({
+        newsId: selectedNews.id,
+        recipientId: recipient.id,
+        forceResend,
+      });
+      toast.success("Envio adicionado à fila.");
+      setRecipient(null);
+      setSelectedNews(null);
+      setNewsSearch("");
+    } catch {
+      toast.error("Não foi possível adicionar o envio à fila.");
+    }
   }
-  const selectedHasMedia = Boolean(selectedNews?.temporary_media_paths?.length || selectedNews?.temporary_media_path);
+  const selectedHasMedia = Boolean(
+    selectedNews?.temporary_media_paths?.length ||
+    selectedNews?.temporary_media_path,
+  );
 
-  return <div className="page-container space-y-5 pb-24 lg:pb-8">
-    <PageHeader eyebrow="Distribuição" title="Enviar" description="Conteúdo original para sua equipe, com histórico e processamento em segundo plano." />
-    <section className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="relative max-w-md flex-1"><Search className="absolute left-3 top-3.5 text-muted-foreground" size={17}/><Input className="pl-10" placeholder="Buscar destinatário" value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} onFocus={keepFocusedVisible}/></div><div className="flex gap-1 rounded-xl bg-muted p-1">{([{value:"all",label:"Todos"},{value:"active",label:"Ativos"},{value:"recent",label:"Recentes"}] as const).map((item)=><button key={item.value} type="button" onClick={()=>setFilter(item.value)} className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition ${filter===item.value?"bg-card text-foreground shadow-sm":"text-muted-foreground"}`}>{item.label}</button>)}</div></div>
-      {isLoading ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{[1,2,3].map((i)=><div key={i} className="h-28 animate-pulse rounded-2xl bg-muted"/>)}</div> : recipients.length===0 ? <Card><EmptyState icon={UserRound} title="Nenhum destinatário encontrado" description="Ajuste a busca ou cadastre uma nova pessoa."/></Card> : <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{recipients.map((item)=>{const metric=stats.get(item.id);return <Card key={item.id} className={`transition-colors hover:border-primary/30 ${!item.is_active?"opacity-65":""}`}><CardContent className="flex items-center gap-3 p-3"><button type="button" onClick={()=>setRecipientDetail(item)} className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 font-display font-bold text-primary">{item.name.charAt(0)}</button><button type="button" onClick={()=>setRecipientDetail(item)} className="min-w-0 flex-1 text-left"><div className="flex items-center gap-2"><h3 className="truncate font-display text-sm font-semibold">{item.name}</h3><span className={`size-2 rounded-full ${item.is_active?"bg-emerald-500":"bg-slate-300"}`} title={item.is_active?"Ativo":"Inativo"}/></div><p className="truncate text-xs text-muted-foreground">{item.vehicle}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{maskPhone(item.phone)} • {metric?.total||0} envios</p></button><Button size="sm" disabled={!item.is_active} onClick={()=>{setRecipient(item);setSelectedNews(null)}}><Send size={15}/>Enviar</Button>{profile?.role==="admin"&&<details className="relative"><summary className="grid size-9 cursor-pointer list-none place-items-center rounded-lg text-muted-foreground hover:bg-muted [&::-webkit-details-marker]:hidden"><MoreVertical size={17}/></summary><div className="absolute right-0 top-10 z-20 w-36 rounded-xl border bg-card p-1 shadow-xl"><button className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-xs hover:bg-muted" onClick={()=>openForm(item)}><Pencil size={14}/>Editar</button><button className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-xs text-destructive hover:bg-muted" onClick={()=>removeRecipient(item)}><Trash2 size={14}/>Excluir</button></div></details>}</CardContent></Card>})}</div>}
-    </section>
-    <section><div className="mb-2 flex items-center justify-between"><h2 className="font-display text-lg font-semibold">Envios recentes</h2><button type="button" className="text-xs font-semibold text-primary" onClick={()=>setHistoryOpen(true)}>Ver todos</button></div><HistoryList items={histories.slice(0,6)} onOpen={setHistoryItem}/></section>
-    {profile?.role==="admin"&&<Button className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-20 rounded-full px-4 shadow-xl lg:bottom-6 lg:right-6" onClick={()=>openForm()}><Plus/>Novo destinatário</Button>}
+  return (
+    <div className="page-container space-y-5 pb-24 lg:pb-8">
+      <PageHeader
+        eyebrow="Distribuição"
+        title="Enviar"
+        description="Conteúdo original para sua equipe, com histórico e processamento em segundo plano."
+      />
+      <section className="space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative max-w-md flex-1">
+            <Search
+              className="absolute left-3 top-3.5 text-muted-foreground"
+              size={17}
+            />
+            <Input
+              className="pl-10"
+              placeholder="Buscar destinatário"
+              value={recipientSearch}
+              onChange={(event) => setRecipientSearch(event.target.value)}
+              onFocus={keepFocusedVisible}
+            />
+          </div>
+          <div className="flex gap-1 rounded-xl bg-muted p-1">
+            {(
+              [
+                { value: "all", label: "Todos" },
+                { value: "active", label: "Ativos" },
+                { value: "recent", label: "Recentes" },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setFilter(item.value)}
+                className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition ${filter === item.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {isLoading ? (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-28 animate-pulse rounded-2xl bg-muted"
+              />
+            ))}
+          </div>
+        ) : recipients.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={UserRound}
+              title="Nenhum destinatário encontrado"
+              description="Ajuste a busca ou cadastre uma nova pessoa."
+            />
+          </Card>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {recipients.map((item) => {
+              const metric = stats.get(item.id);
+              return (
+                <Card
+                  key={item.id}
+                  className={`transition-colors hover:border-primary/30 ${!item.is_active ? "opacity-65" : ""}`}
+                >
+                  <CardContent className="flex items-center gap-3 p-3">
+                    <button
+                      type="button"
+                      onClick={() => setRecipientDetail(item)}
+                      className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 font-display font-bold text-primary"
+                    >
+                      {item.name.charAt(0)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecipientDetail(item)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <h3 className="truncate font-display text-sm font-semibold">
+                          {item.name}
+                        </h3>
+                        <span
+                          className={`size-2 rounded-full ${item.is_active ? "bg-emerald-500" : "bg-slate-300"}`}
+                          title={item.is_active ? "Ativo" : "Inativo"}
+                        />
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {item.vehicle}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {maskPhone(item.phone)} • {metric?.total || 0} envios
+                      </p>
+                    </button>
+                    <Button
+                      size="sm"
+                      disabled={!item.is_active}
+                      onClick={() => {
+                        setRecipient(item);
+                        setSelectedNews(null);
+                      }}
+                    >
+                      <Send size={15} />
+                      Enviar
+                    </Button>
+                    {profile?.role === "admin" && (
+                      <details className="relative">
+                        <summary className="grid size-9 cursor-pointer list-none place-items-center rounded-lg text-muted-foreground hover:bg-muted [&::-webkit-details-marker]:hidden">
+                          <MoreVertical size={17} />
+                        </summary>
+                        <div className="absolute right-0 top-10 z-20 w-36 rounded-xl border bg-card p-1 shadow-xl">
+                          <button
+                            className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-xs hover:bg-muted"
+                            onClick={() => openForm(item)}
+                          >
+                            <Pencil size={14} />
+                            Editar
+                          </button>
+                          <button
+                            className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-xs text-destructive hover:bg-muted"
+                            onClick={() => removeRecipient(item)}
+                          >
+                            <Trash2 size={14} />
+                            Excluir
+                          </button>
+                        </div>
+                      </details>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="font-display text-lg font-semibold">
+            Envios recentes
+          </h2>
+          <button
+            type="button"
+            className="text-xs font-semibold text-primary"
+            onClick={() => setHistoryOpen(true)}
+          >
+            Ver todos
+          </button>
+        </div>
+        <HistoryList items={histories.slice(0, 6)} onOpen={setHistoryItem} />
+      </section>
+      {profile?.role === "admin" && (
+        <Button
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-20 rounded-full px-4 shadow-xl lg:bottom-6 lg:right-6"
+          onClick={() => openForm()}
+        >
+          <Plus />
+          Novo destinatário
+        </Button>
+      )}
 
-    <Dialog open={Boolean(recipient)} onOpenChange={(open)=>{if(!open){setRecipient(null);setSelectedNews(null);setPreviewId(null);setNewsSearch("")}}}><DialogContent className="flex h-[min(100dvh,760px)] max-h-[100dvh] flex-col overflow-hidden p-0 sm:max-w-2xl"><div className="shrink-0 p-5 pb-2 sm:p-6 sm:pb-2"><DialogTitle>Enviar para {recipient?.name}</DialogTitle><DialogDescription>{recipient?.vehicle}</DialogDescription></div><div className="shrink-0 px-5 pb-3 sm:px-6"><div className="relative"><Search className="absolute left-3 top-3.5 text-muted-foreground" size={17}/><Input className="pl-10 pr-12" placeholder="Buscar por título ou URL..." value={newsSearch} onChange={(e)=>{setNewsSearch(e.target.value);setSelectedNews(null);setPreviewId(null)}} onKeyDown={(e)=>{if(e.key==="Enter"&&isUrl(newsSearch))void resolveUrl()}} onFocus={keepFocusedVisible}/><button type="button" aria-label="Colar link da área de transferência" title="Colar link" onClick={()=>void pasteUrl()} className="absolute right-1 top-1 grid size-9 place-items-center rounded-lg text-primary hover:bg-primary/10"><ClipboardPaste size={18}/></button></div></div><div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6"><div className="space-y-2 pb-3">{newsLoading?<LoaderCircle className="mx-auto my-10 animate-spin text-primary"/>:newsSearch.trim()===""?<div className="py-8 text-center text-sm text-muted-foreground">Busque pelo título ou cole a URL da publicação.</div>:filteredNews.length?filteredNews.map((item)=><button key={item.id} type="button" onClick={()=>{setSelectedNews(item);setPreviewId(null)}} className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${selectedNews?.id===item.id?"border-primary bg-primary/5":"hover:bg-muted"}`}><div className="grid size-11 shrink-0 place-items-center rounded-lg bg-muted"><FileText size={18}/></div><div className="min-w-0"><p className="line-clamp-2 text-sm font-semibold">{titleOf(item)}</p><p className="mt-1 truncate text-[11px] text-muted-foreground">{item.source_platform||"Origem"} • {new Date(item.created_at).toLocaleDateString("pt-BR")}</p></div></button>):isUrl(newsSearch)&&!previewId?<div className="rounded-xl border border-dashed p-5 text-center"><Link2 className="mx-auto mb-2 text-primary"/><p className="font-semibold">Publicação não cadastrada</p><p className="mt-1 text-xs text-muted-foreground">Nenhuma notícia cadastrada com este link.</p><Button className="mt-4" disabled={resolver.isPending} onClick={()=>void resolveUrl()}>{resolver.isPending?<LoaderCircle className="animate-spin"/>:<Link2/>}Enviar diretamente pelo link</Button></div>:!isUrl(newsSearch)?<div className="py-8 text-center text-sm text-muted-foreground">Nenhuma notícia encontrada.</div>:null}</div>{previewId&&directPreview?.status!=="ready"&&<div className="rounded-xl bg-muted p-5 text-center text-sm"><LoaderCircle className="mx-auto mb-2 animate-spin text-primary"/>Analisando mídia, título e legenda...</div>}{directPreview?.status==="failed"&&<div className="rounded-xl bg-destructive/10 p-4 text-sm text-destructive">{directPreview.error_message||"Não foi possível analisar a publicação."}</div>}{directPreview?.status==="ready"&&<div className="mb-3 rounded-xl bg-primary/5 p-4 text-sm"><p className="font-display font-bold">Publicação encontrada</p><div className="mt-3 space-y-1 text-xs"><p>Mídia: <b className="capitalize">{directPreview.media_kind}</b>{directPreview.media_count>1?` (${directPreview.media_count} arquivos)`:""}</p><p>Título original: <b>{directPreview.title_state==="found"?"Encontrado":"Não encontrado"}</b></p><p>Legenda original: <b>{directPreview.caption_state==="found"?"Encontrada":"Não encontrada"}</b></p></div></div>}{selectedNews&&<div className="mb-3 rounded-xl bg-muted p-3 text-xs"><p><b>Destinatário:</b> {recipient?.name}</p><p className="mt-1 line-clamp-2"><b>Notícia:</b> {titleOf(selectedNews)}</p><div className="mt-2 grid grid-cols-2 gap-1 text-muted-foreground"><span>Mídia: <b className="text-foreground">{selectedHasMedia?"Encontrada":"Será obtida"}</b></span><span>Título: <b className="text-foreground">{selectedNews.original_title?"Disponível":"Ausente"}</b></span><span>Legenda: <b className="text-foreground">{selectedNews.original_caption||selectedNews.source_caption?"Disponível":"Ausente"}</b></span></div></div>}</div><div className="shrink-0 border-t bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6"><div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>setRecipient(null)}>Cancelar</Button><Button disabled={(!selectedNews&&directPreview?.status!=="ready")||sender.isPending||directSender.isPending} onClick={()=>selectedNews?void confirmSend():void confirmDirect()}>{sender.isPending||directSender.isPending?<><LoaderCircle className="animate-spin"/>Adicionando...</>:<><Send/>Enviar</>}</Button></div></div></DialogContent></Dialog>
-    <RecipientForm open={manageOpen} setOpen={setManageOpen} editing={editing} form={form} setForm={setForm} saving={manage.isPending} save={saveRecipient}/>
-    <RecipientDetail recipient={recipientDetail} setRecipient={setRecipientDetail} stats={recipientDetail?stats.get(recipientDetail.id):undefined} canManage={profile?.role==="admin"} edit={()=>recipientDetail&&openForm(recipientDetail)} remove={()=>recipientDetail&&removeRecipient(recipientDetail)} onHistory={setHistoryItem}/>
-    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent className="flex max-h-[100dvh] flex-col overflow-hidden sm:max-w-2xl"><div className="shrink-0 p-5 pb-3 sm:p-6"><DialogTitle>Histórico de envios</DialogTitle><DialogDescription>{histories.length} registros</DialogDescription></div><div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6"><HistoryList items={histories} onOpen={setHistoryItem}/></div></DialogContent></Dialog>
-    <HistoryDetail item={historyItem} setItem={setHistoryItem}/>
-  </div>;
+      <Dialog
+        open={Boolean(recipient)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRecipient(null);
+            setSelectedNews(null);
+            setPreviewId(null);
+            setNewsSearch("");
+          }
+        }}
+      >
+        <DialogContent className="flex h-[min(100dvh,760px)] max-h-[100dvh] flex-col overflow-hidden p-0 sm:max-w-2xl">
+          <div className="shrink-0 p-5 pb-2 sm:p-6 sm:pb-2">
+            <DialogTitle>Enviar para {recipient?.name}</DialogTitle>
+            <DialogDescription>{recipient?.vehicle}</DialogDescription>
+            <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 rounded-xl bg-muted px-3 text-sm font-semibold">
+              <input type="checkbox" checked={batchMode} onChange={(event)=>{setBatchMode(event.target.checked);setSelectedNews(null);setPreviewId(null);setNewsSearch("");setBatchPreviews([])}} />
+              Enviar várias notícias de uma vez
+            </label>
+          </div>
+          {batchMode ? <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 sm:px-6">
+            <textarea className="min-h-40 w-full rounded-xl border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-primary" placeholder="Cole de 2 a 10 links, um por linha" value={batchText} onChange={(event)=>{setBatchText(event.target.value);setBatchPreviews([])}} />
+            <p className="mt-2 text-xs text-muted-foreground">{batchUrls.length} link(s) válido(s). O carregamento respeita a ordem da lista.</p>
+            {batchPreparer.isPending && <div className="mt-4 rounded-xl bg-muted p-4 text-sm"><LoaderCircle className="mr-2 inline animate-spin text-primary"/>Carregando uma notícia por vez...</div>}
+            {batchPreviews.length > 0 && <div className="mt-4 space-y-2">{batchPreviews.map((item,index)=><div key={item.id} className="rounded-xl border p-3"><p className="font-semibold">Notícia {index+1}</p><p className="line-clamp-2 text-xs text-muted-foreground">{item.original_title||item.source_url}</p><Badge className="mt-2" variant={item.media_count>0?"success":"warning"}>{item.media_count>0?"Pronta":"Pronta sem mídia"}</Badge></div>)}</div>}
+          </div> : <><div className="shrink-0 px-5 pb-3 sm:px-6">
+            <div className="relative">
+              <Search
+                className="absolute left-3 top-3.5 text-muted-foreground"
+                size={17}
+              />
+              <Input
+                className="pl-10 pr-12"
+                placeholder="Buscar por título ou URL..."
+                value={newsSearch}
+                onChange={(e) => {
+                  setNewsSearch(e.target.value);
+                  setSelectedNews(null);
+                  setPreviewId(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && isUrl(newsSearch)) void resolveUrl();
+                }}
+                onFocus={keepFocusedVisible}
+              />
+              <button
+                type="button"
+                aria-label="Colar link da área de transferência"
+                title="Colar link"
+                onClick={() => void pasteUrl()}
+                className="absolute right-1 top-1 grid size-9 place-items-center rounded-lg text-primary hover:bg-primary/10"
+              >
+                <ClipboardPaste size={18} />
+              </button>
+            </div>
+          </div></>}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6">
+            <div className="space-y-2 pb-3">
+              {newsLoading ? (
+                <LoaderCircle className="mx-auto my-10 animate-spin text-primary" />
+              ) : newsSearch.trim() === "" ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Busque pelo título ou cole a URL da publicação.
+                </div>
+              ) : filteredNews.length ? (
+                filteredNews.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedNews(item);
+                      setPreviewId(null);
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${selectedNews?.id === item.id ? "border-primary bg-primary/5" : "hover:bg-muted"}`}
+                  >
+                    <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-muted">
+                      <FileText size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-sm font-semibold">
+                        {titleOf(item)}
+                      </p>
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                        {item.source_platform || "Origem"} •{" "}
+                        {new Date(item.created_at).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              ) : isUrl(newsSearch) && !previewId ? (
+                <div className="rounded-xl border border-dashed p-5 text-center">
+                  <Link2 className="mx-auto mb-2 text-primary" />
+                  <p className="font-semibold">Publicação não cadastrada</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Nenhuma notícia cadastrada com este link.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    disabled={resolver.isPending}
+                    onClick={() => void resolveUrl()}
+                  >
+                    {resolver.isPending ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <Link2 />
+                    )}
+                    Enviar diretamente pelo link
+                  </Button>
+                </div>
+              ) : !isUrl(newsSearch) ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Nenhuma notícia encontrada.
+                </div>
+              ) : null}
+            </div>
+            {previewId && directPreview?.status !== "ready" && (
+              <div className="rounded-xl bg-muted p-5 text-center text-sm">
+                <LoaderCircle className="mx-auto mb-2 animate-spin text-primary" />
+                Analisando mídia, título e legenda...
+              </div>
+            )}
+            {directPreview?.status === "failed" && (
+              <div className="rounded-xl bg-destructive/10 p-4 text-sm text-destructive">
+                {directPreview.error_message ||
+                  "Não foi possível analisar a publicação."}
+              </div>
+            )}
+            {directPreview?.status === "ready" && (
+              <div className="mb-3 rounded-xl bg-primary/5 p-4 text-sm">
+                <p className="font-display font-bold">Publicação encontrada</p>
+                <div className="mt-3 space-y-1 text-xs">
+                  <p>
+                    Mídia:{" "}
+                    <b className="capitalize">{directPreview.media_kind}</b>
+                    {directPreview.media_count > 1
+                      ? ` (${directPreview.media_count} arquivos)`
+                      : ""}
+                  </p>
+                  <p>
+                    Título original:{" "}
+                    <b>
+                      {directPreview.title_state === "found"
+                        ? "Encontrado"
+                        : "Não encontrado"}
+                    </b>
+                  </p>
+                  <p>
+                    Legenda original:{" "}
+                    <b>
+                      {directPreview.caption_state === "found"
+                        ? "Encontrada"
+                        : "Não encontrada"}
+                    </b>
+                  </p>
+                </div>
+              </div>
+            )}
+            {selectedNews && (
+              <div className="mb-3 rounded-xl bg-muted p-3 text-xs">
+                <p>
+                  <b>Destinatário:</b> {recipient?.name}
+                </p>
+                <p className="mt-1 line-clamp-2">
+                  <b>Notícia:</b> {titleOf(selectedNews)}
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-1 text-muted-foreground">
+                  <span>
+                    Mídia:{" "}
+                    <b className="text-foreground">
+                      {selectedHasMedia ? "Encontrada" : "Será obtida"}
+                    </b>
+                  </span>
+                  <span>
+                    Título:{" "}
+                    <b className="text-foreground">
+                      {selectedNews.original_title ? "Disponível" : "Ausente"}
+                    </b>
+                  </span>
+                  <span>
+                    Legenda:{" "}
+                    <b className="text-foreground">
+                      {selectedNews.original_caption ||
+                      selectedNews.source_caption
+                        ? "Disponível"
+                        : "Ausente"}
+                    </b>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 border-t bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRecipient(null)}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={
+                  (batchMode ? batchUrls.length < 2 || batchPreparer.isPending || (batchPreviews.length > 0 && batchPreviews.length !== batchUrls.length) : (!selectedNews && directPreview?.status !== "ready")) ||
+                  sender.isPending ||
+                  directSender.isPending || batchSender.isPending
+                }
+                onClick={() => batchMode ? (batchPreviews.length===batchUrls.length ? void confirmBatch() : void prepareBatch()) : selectedNews ? void confirmSend() : void confirmDirect()}
+              >
+                {sender.isPending || directSender.isPending || batchSender.isPending || batchPreparer.isPending ? (
+                  <>
+                    <LoaderCircle className="animate-spin" />
+                    Adicionando...
+                  </>
+                ) : (
+                  <>
+                    <Send />
+                    {batchMode && batchPreviews.length!==batchUrls.length ? "Carregar notícias" : "Enviar"}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <RecipientForm
+        open={manageOpen}
+        setOpen={setManageOpen}
+        editing={editing}
+        form={form}
+        setForm={setForm}
+        saving={manage.isPending}
+        save={saveRecipient}
+      />
+      <RecipientDetail
+        recipient={recipientDetail}
+        setRecipient={setRecipientDetail}
+        stats={recipientDetail ? stats.get(recipientDetail.id) : undefined}
+        canManage={profile?.role === "admin"}
+        edit={() => recipientDetail && openForm(recipientDetail)}
+        remove={() => recipientDetail && removeRecipient(recipientDetail)}
+        onHistory={setHistoryItem}
+      />
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="flex max-h-[100dvh] flex-col overflow-hidden sm:max-w-2xl">
+          <div className="shrink-0 p-5 pb-3 sm:p-6">
+            <DialogTitle>Histórico de envios</DialogTitle>
+            <DialogDescription>{histories.length} registros</DialogDescription>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
+            <HistoryList items={histories} onOpen={setHistoryItem} />
+          </div>
+        </DialogContent>
+      </Dialog>
+      <HistoryDetail item={historyItem} setItem={setHistoryItem} />
+    </div>
+  );
 }
 
-function HistoryList({items,onOpen}:{items:NewsSendHistory[];onOpen:(item:NewsSendHistory)=>void}) { return <Card>{!items.length?<EmptyState icon={Send} title="Nenhum envio realizado" description="Os envios aparecerão aqui sem guardar cópias da mídia."/>:<div className="divide-y">{items.map((item)=>{const meta=statusMeta[item.status];const Icon=meta.icon;return <button key={item.id} type="button" onClick={()=>onOpen(item)} className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/60"><Icon size={18} className={`${item.status==="success"?"text-emerald-600":item.status==="failed"?"text-destructive":item.status==="processing"?"animate-spin text-primary":"text-amber-600"}`}/><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{item.recipient_name}</p><p className="truncate text-xs text-muted-foreground">{item.recipient_vehicle} • {item.news_title||"Notícia sem título"}</p></div><div className="shrink-0 text-right"><Badge variant={meta.variant}>{meta.label}</Badge><p className="mt-1 text-[10px] text-muted-foreground">{when(item.sent_at||item.created_at)}</p></div></button>})}</div>}</Card>; }
-function RecipientForm({open,setOpen,editing,form,setForm,saving,save}:{open:boolean;setOpen:(v:boolean)=>void;editing:DistributionRecipient|null;form:typeof emptyForm;setForm:(v:typeof emptyForm)=>void;saving:boolean;save:()=>void}) { return <Dialog open={open} onOpenChange={setOpen}><DialogContent className="flex max-h-[100dvh] flex-col overflow-hidden"><div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6"><DialogTitle>{editing?"Editar destinatário":"Novo destinatário"}</DialogTitle><DialogDescription>Use telefone completo com DDI e DDD.</DialogDescription><div className="mt-5 space-y-3"><label className="block text-sm font-medium">Nome<Input className="mt-1" value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} onFocus={keepFocusedVisible}/></label><label className="block text-sm font-medium">Veículo<Input className="mt-1" value={form.vehicle} onChange={(e)=>setForm({...form,vehicle:e.target.value})} onFocus={keepFocusedVisible}/></label><label className="block text-sm font-medium">Telefone<Input className="mt-1" inputMode="numeric" placeholder="5582999999999" value={form.phone} onChange={(e)=>setForm({...form,phone:e.target.value})} onFocus={keepFocusedVisible}/></label><label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={(e)=>setForm({...form,is_active:e.target.checked})}/>Destinatário ativo</label></div></div><div className="shrink-0 border-t bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6"><div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>setOpen(false)}>Cancelar</Button><Button disabled={saving} onClick={save}>{saving?"Salvando...":"Salvar"}</Button></div></div></DialogContent></Dialog>; }
-function RecipientDetail({recipient,setRecipient,stats,canManage,edit,remove,onHistory}:{recipient:DistributionRecipient|null;setRecipient:(v:DistributionRecipient|null)=>void;stats?:{total:number;last:NewsSendHistory|null;recent:NewsSendHistory[]};canManage:boolean;edit:()=>void;remove:()=>void;onHistory:(item:NewsSendHistory)=>void}) { return <Dialog open={Boolean(recipient)} onOpenChange={(open)=>!open&&setRecipient(null)}><DialogContent><div className="p-5 sm:p-6"><DialogTitle>{recipient?.name}</DialogTitle><DialogDescription>{recipient?.vehicle}</DialogDescription>{recipient&&<div className="mt-5 space-y-4"><div className="grid grid-cols-2 gap-2"><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Total enviado</p><p className="mt-1 font-display text-2xl font-bold">{stats?.total||0}</p></div><div className="rounded-xl bg-muted p-3"><p className="text-xs text-muted-foreground">Último envio</p><p className="mt-2 text-xs font-semibold">{when(stats?.last?.sent_at||stats?.last?.created_at)}</p></div></div><p className="text-sm">{maskPhone(recipient.phone)} • {recipient.is_active?"Ativo":"Inativo"}</p><div><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Últimas notícias</p><div className="space-y-1">{stats?.recent.length?stats.recent.map((item)=><button key={item.id} onClick={()=>onHistory(item)} className="block w-full truncate rounded-lg p-2 text-left text-xs hover:bg-muted">{item.news_title||"Notícia sem título"} • {when(item.sent_at)}</button>):<p className="text-xs text-muted-foreground">Nenhum envio concluído.</p>}</div></div>{canManage&&<div className="flex gap-2 border-t pt-3"><Button variant="outline" onClick={edit}><Pencil/>Editar</Button><Button variant="ghost" className="text-destructive" onClick={remove}><Trash2/>Excluir</Button></div>}</div>}</div></DialogContent></Dialog>; }
-function HistoryDetail({item,setItem}:{item:NewsSendHistory|null;setItem:(v:NewsSendHistory|null)=>void}) { return <Dialog open={Boolean(item)} onOpenChange={(open)=>!open&&setItem(null)}><DialogContent><div className="p-5 sm:p-6"><DialogTitle>Detalhes do envio</DialogTitle>{item&&<div className="mt-5 space-y-3 text-sm"><p><b>{item.recipient_name}</b> • {item.recipient_vehicle}</p><p>{item.news_title||"Notícia sem título"}</p><a href={item.source_url} target="_blank" rel="noreferrer" className="block break-all text-primary underline">{item.source_url}</a><div className="flex items-center justify-between"><Badge variant={statusMeta[item.status].variant}>{statusMeta[item.status].label}</Badge><span className="text-xs text-muted-foreground">{when(item.sent_at||item.created_at)}</span></div>{item.error_message&&<p className="rounded-lg bg-destructive/10 p-3 text-xs text-destructive">{item.error_message}</p>}</div>}</div></DialogContent></Dialog>; }
+function HistoryList({
+  items,
+  onOpen,
+}: {
+  items: NewsSendHistory[];
+  onOpen: (item: NewsSendHistory) => void;
+}) {
+  return (
+    <Card>
+      {!items.length ? (
+        <EmptyState
+          icon={Send}
+          title="Nenhum envio realizado"
+          description="Os envios aparecerão aqui sem guardar cópias da mídia."
+        />
+      ) : (
+        <div className="divide-y">
+          {items.map((item) => {
+            const meta = statusMeta[item.status];
+            const Icon = meta.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOpen(item)}
+                className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/60"
+              >
+                <Icon
+                  size={18}
+                  className={`${item.status === "success" ? "text-emerald-600" : item.status === "failed" ? "text-destructive" : item.status === "processing" ? "animate-spin text-primary" : "text-amber-600"}`}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{item.recipient_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {item.recipient_vehicle} •{" "}
+                    {item.news_title || "Notícia sem título"}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <Badge variant={meta.variant}>{meta.label}</Badge>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {when(item.sent_at || item.created_at)}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+function RecipientForm({
+  open,
+  setOpen,
+  editing,
+  form,
+  setForm,
+  saving,
+  save,
+}: {
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  editing: DistributionRecipient | null;
+  form: typeof emptyForm;
+  setForm: (v: typeof emptyForm) => void;
+  saving: boolean;
+  save: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="flex max-h-[100dvh] flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6">
+          <DialogTitle>
+            {editing ? "Editar destinatário" : "Novo destinatário"}
+          </DialogTitle>
+          <DialogDescription>
+            Use telefone completo com DDI e DDD.
+          </DialogDescription>
+          <div className="mt-5 space-y-3">
+            <label className="block text-sm font-medium">
+              Nome
+              <Input
+                className="mt-1"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onFocus={keepFocusedVisible}
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Veículo
+              <Input
+                className="mt-1"
+                value={form.vehicle}
+                onChange={(e) => setForm({ ...form, vehicle: e.target.value })}
+                onFocus={keepFocusedVisible}
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Telefone
+              <Input
+                className="mt-1"
+                inputMode="numeric"
+                placeholder="5582999999999"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                onFocus={keepFocusedVisible}
+              />
+            </label>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.is_active}
+                onChange={(e) =>
+                  setForm({ ...form, is_active: e.target.checked })
+                }
+              />
+              Destinatário ativo
+            </label>
+          </div>
+        </div>
+        <div className="shrink-0 border-t bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button disabled={saving} onClick={save}>
+              {saving ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function RecipientDetail({
+  recipient,
+  setRecipient,
+  stats,
+  canManage,
+  edit,
+  remove,
+  onHistory,
+}: {
+  recipient: DistributionRecipient | null;
+  setRecipient: (v: DistributionRecipient | null) => void;
+  stats?: {
+    total: number;
+    last: NewsSendHistory | null;
+    recent: NewsSendHistory[];
+  };
+  canManage: boolean;
+  edit: () => void;
+  remove: () => void;
+  onHistory: (item: NewsSendHistory) => void;
+}) {
+  return (
+    <Dialog
+      open={Boolean(recipient)}
+      onOpenChange={(open) => !open && setRecipient(null)}
+    >
+      <DialogContent>
+        <div className="p-5 sm:p-6">
+          <DialogTitle>{recipient?.name}</DialogTitle>
+          <DialogDescription>{recipient?.vehicle}</DialogDescription>
+          {recipient && (
+            <div className="mt-5 space-y-4">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-muted p-3">
+                  <p className="text-xs text-muted-foreground">Total enviado</p>
+                  <p className="mt-1 font-display text-2xl font-bold">
+                    {stats?.total || 0}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-muted p-3">
+                  <p className="text-xs text-muted-foreground">Último envio</p>
+                  <p className="mt-2 text-xs font-semibold">
+                    {when(stats?.last?.sent_at || stats?.last?.created_at)}
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm">
+                {maskPhone(recipient.phone)} •{" "}
+                {recipient.is_active ? "Ativo" : "Inativo"}
+              </p>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Últimas notícias
+                </p>
+                <div className="space-y-1">
+                  {stats?.recent.length ? (
+                    stats.recent.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => onHistory(item)}
+                        className="block w-full truncate rounded-lg p-2 text-left text-xs hover:bg-muted"
+                      >
+                        {item.news_title || "Notícia sem título"} •{" "}
+                        {when(item.sent_at)}
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Nenhum envio concluído.
+                    </p>
+                  )}
+                </div>
+              </div>
+              {canManage && (
+                <div className="flex gap-2 border-t pt-3">
+                  <Button variant="outline" onClick={edit}>
+                    <Pencil />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={remove}
+                  >
+                    <Trash2 />
+                    Excluir
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+function HistoryDetail({
+  item,
+  setItem,
+}: {
+  item: NewsSendHistory | null;
+  setItem: (v: NewsSendHistory | null) => void;
+}) {
+  return (
+    <Dialog
+      open={Boolean(item)}
+      onOpenChange={(open) => !open && setItem(null)}
+    >
+      <DialogContent>
+        <div className="p-5 sm:p-6">
+          <DialogTitle>Detalhes do envio</DialogTitle>
+          {item && (
+            <div className="mt-5 space-y-3 text-sm">
+              <p>
+                <b>{item.recipient_name}</b> • {item.recipient_vehicle}
+              </p>
+              <p>{item.news_title || "Notícia sem título"}</p>
+              <a
+                href={item.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="block break-all text-primary underline"
+              >
+                {item.source_url}
+              </a>
+              <div className="flex items-center justify-between">
+                <Badge variant={statusMeta[item.status].variant}>
+                  {statusMeta[item.status].label}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {when(item.sent_at || item.created_at)}
+                </span>
+              </div>
+              {item.error_message && (
+                <p className="rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
+                  {item.error_message}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

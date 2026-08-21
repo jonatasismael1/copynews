@@ -137,6 +137,35 @@ export function createDistributionProcessor({ db, workerId, log }) {
     finally { await fs.rm(dir, { recursive: true, force: true }); }
   }
 
+  async function processBatchDeliveryJob(job, recipient, direct, evolution, persist, steps, dir) {
+    const items = Array.isArray(direct?.items) ? direct.items : [];
+    if (items.length < 2 || !recipient?.is_active || !job.share_slug) throw new Error("Lote ou destinatário indisponível");
+    const phone = normalizePhone(recipient.phone); const testMode = String(process.env.DISTRIBUTION_TEST_MODE || "true").toLowerCase() !== "false"; const testPhone = normalizePhone(process.env.DISTRIBUTION_TEST_PHONE || "5582998264805"); if (testMode && phone !== testPhone) throw new Error("Durante os testes, somente Ismael pode receber mensagens");
+    const deliveryPaths = []; const processedItems = []; const warnings = [];
+    for (const [itemIndex, item] of items.entries()) {
+      const itemDir = join(dir, `item-${itemIndex + 1}`); await fs.mkdir(itemDir, { recursive: true }); const files = []; let mediaWarning = null;
+      try {
+        for (const [index, source] of (await cobaltSources(item.source_url)).entries()) { const input = join(itemDir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded, filename: source.filename }); }
+        if (expectsVideo(item.source_url) && files.length === 1 && imageMime(files[0].bytes)) { const recovered = await downloadVideoWithYtDlp(item.source_url, itemDir, `delivery-reel-${itemIndex + 1}`); files.splice(0, files.length, recovered); }
+      } catch (error) { mediaWarning = safeError(error); warnings.push(`Notícia ${itemIndex + 1}: ${mediaWarning}`); files.length = 0; }
+      const itemPaths = [];
+      for (const [index, file] of files.entries()) {
+        const header = imageMime(file.bytes); const suffix = files.length === 1 ? "" : `-${index + 1}`; const baseName = `noticia-${itemIndex + 1}-original-baixada${suffix}`; let path = file.input; let mime; let filename;
+        if (header) { mime = header.mime; filename = `${baseName}${header.extension}`; }
+        else { const output = join(itemDir, `${baseName}.mp4`); await compatibleVideo(file.input, output); path = output; mime = "video/mp4"; filename = `${baseName}.mp4`; }
+        const storagePath = `distribution/${job.id}/item-${itemIndex + 1}/${filename}`; const bytes = await fs.readFile(path); const { error } = await db.storage.from("temporary-media").upload(storagePath, bytes, { contentType: mime, upsert: true }); if (error) throw error; itemPaths.push(storagePath); deliveryPaths.push(storagePath);
+      }
+      processedItems.push({ ...item, position: itemIndex + 1, delivery_media_paths: itemPaths, media_error: mediaWarning });
+      await persist({ direct_payload: { ...direct, items: processedItems.concat(items.slice(itemIndex + 1)) }, delivery_media_paths: deliveryPaths, delivery_media_expires_at: new Date(Date.now() + 7 * 86400000).toISOString() });
+    }
+    await persist({ direct_payload: { ...direct, items: processedItems }, delivery_media_paths: deliveryPaths, delivery_media_expires_at: new Date(Date.now() + 7 * 86400000).toISOString(), error_message: warnings.length ? warnings.join(" | ") : null });
+    const publicBase = String(process.env.PUBLIC_APP_URL || "https://copynews.netlify.app").replace(/\/$/, "");
+    const messageIdValue = await evolution.text(phone, `📰 *${items.length} conteúdos para serem publicados*\n\n${publicBase}/envio/${job.share_slug}`);
+    steps.delivery_link = { status: "sent", ...(messageIdValue ? { message_id: messageIdValue } : {}) };
+    await persist({ status: warnings.length ? "partial" : "success", link_message_id: messageIdValue, sent_at: new Date().toISOString(), lease_owner: null, lease_expires_at: null });
+    log("distribution.batch.completed", { jobId: job.id, itemCount: items.length, mediaCount: deliveryPaths.length, warningCount: warnings.length });
+  }
+
   async function processDeliveryJob(job) {
     const dir = join(tmpdir(), `copy-news-delivery-${job.id}`); await fs.mkdir(dir, { recursive: true });
     const steps = { delivery_link: { status: "pending" }, ...(job.steps || {}) }; const evolution = new EvolutionService(log);
@@ -146,8 +175,9 @@ export function createDistributionProcessor({ db, workerId, log }) {
         job.news_id ? db.from("news_items").select("id,source_url,original_title,original_caption,clean_original_caption,source_caption,temporary_media_path,temporary_media_paths").eq("id", job.news_id).single() : Promise.resolve({ data: null }),
         db.from("distribution_recipients").select("*").eq("id", job.recipient_id).single(),
       ]);
-      const direct = job.source_type === "direct_url" ? (job.direct_payload || {}) : null;
-      const news = existingNews || (direct ? { source_url: job.source_url, original_title: direct.original_title, original_caption: direct.original_caption, clean_original_caption: null, source_caption: null, temporary_media_path: null, temporary_media_paths: [] } : null);
+      const direct = ["direct_url", "direct_batch"].includes(job.source_type) ? (job.direct_payload || {}) : null;
+      const news = existingNews || (job.source_type === "direct_url" ? { source_url: job.source_url, original_title: direct.original_title, original_caption: direct.original_caption, clean_original_caption: null, source_caption: null, temporary_media_path: null, temporary_media_paths: [] } : null);
+      if (job.source_type === "direct_batch") return processBatchDeliveryJob(job, recipient, direct, evolution, persist, steps, dir);
       if (!news || !recipient?.is_active || !job.share_slug) throw new Error("Entrega ou destinatário indisponível");
       const phone = normalizePhone(recipient.phone); const testMode = String(process.env.DISTRIBUTION_TEST_MODE || "true").toLowerCase() !== "false"; const testPhone = normalizePhone(process.env.DISTRIBUTION_TEST_PHONE || "5582998264805"); if (testMode && phone !== testPhone) throw new Error("Durante os testes, somente Ismael pode receber mensagens");
       const paths = news.temporary_media_paths?.length ? news.temporary_media_paths : [news.temporary_media_path].filter(Boolean); const files = []; let mediaWarning = null;

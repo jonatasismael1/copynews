@@ -78,6 +78,33 @@ async function enqueueDirect(ctx: Awaited<ReturnType<typeof context>>, body: Rec
   if (error) throw new Error(error.code === "23505" ? "Este envio já está na fila" : error.message); return json(data, 202);
 }
 
+async function enqueueBatch(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
+  if (!["admin", "editor", "writer"].includes(ctx.profile.role)) throw new Error("Forbidden");
+  const previewIds = Array.isArray(body.preview_ids) ? [...new Set(body.preview_ids.map(String))] : [];
+  const recipientId = String(body.recipient_id || "");
+  if (previewIds.length < 2 || previewIds.length > 10) throw new Error("Informe de 2 a 10 publicações");
+  const [{ data: previews }, { data: recipient }, { data: sender }] = await Promise.all([
+    ctx.admin.from("distribution_direct_previews").select("*").in("id", previewIds).eq("organization_id", ctx.profile.organization_id).eq("status", "ready"),
+    ctx.admin.from("distribution_recipients").select("*").eq("id", recipientId).eq("organization_id", ctx.profile.organization_id).eq("is_active", true).single(),
+    ctx.admin.from("profiles").select("name").eq("id", ctx.user.id).single(),
+  ]);
+  if (!recipient || !previews || previews.length !== previewIds.length) throw new Error("As publicações ainda não terminaram de carregar");
+  const byId = new Map(previews.map((item) => [item.id, item]));
+  const items = previewIds.map((id, index) => {
+    const preview = byId.get(id)!;
+    return { position: index + 1, source_url: preview.source_url, original_title: preview.original_title, original_caption: preview.original_caption, title_state: preview.title_state, caption_state: preview.caption_state, media_kind: preview.media_kind, media_count: preview.media_count, preview_error: preview.error_message || null };
+  });
+  const phone = normalizePhone(recipient.phone);
+  const testMode = (Deno.env.get("DISTRIBUTION_TEST_MODE") || "true").toLowerCase() !== "false";
+  const testPhone = normalizePhone(Deno.env.get("DISTRIBUTION_TEST_PHONE") || "5582998264805");
+  if (testMode && phone !== testPhone) throw new Error("Durante os testes, somente Ismael pode receber mensagens");
+  const senderName = sender?.name || "Equipe Copy News";
+  const shareSlug = deliverySlug(`${items.length}-noticias`, senderName, recipient.name);
+  const { data, error } = await ctx.admin.from("news_send_history").insert({ organization_id: ctx.profile.organization_id, news_id: null, source_type: "direct_batch", direct_payload: { items }, recipient_id: recipientId, source_url: items[0].source_url, news_title: `${items.length} notícias`, recipient_name: recipient.name, recipient_vehicle: recipient.vehicle, recipient_phone: phone, sender_name: senderName, share_slug: shareSlug, status: "queued", steps: pendingSteps(), queued_at: new Date().toISOString(), created_by: ctx.user.id }).select("id,status,queued_at,share_slug").single();
+  if (error) throw new Error(error.message);
+  return json(data, 202);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -87,6 +114,7 @@ Deno.serve(async (req) => {
     if (action === "create_preview") return createPreview(ctx, body);
     if (action === "preview") { const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").eq("id", String(body.preview_id || "")).single(); if (error) throw error; return json(data); }
     if (action === "send_direct") return enqueueDirect(ctx, body);
+    if (action === "send_batch") return enqueueBatch(ctx, body);
     if (action === "list") {
       const [recipients, history] = await Promise.all([ctx.client.from("distribution_recipients").select("*").order("is_active", { ascending: false }).order("name"), ctx.client.from("news_send_history").select("*").order("created_at", { ascending: false }).limit(200)]);
       if (recipients.error || history.error) throw recipients.error || history.error;

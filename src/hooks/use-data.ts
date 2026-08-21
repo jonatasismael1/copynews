@@ -105,6 +105,25 @@ export function useSendDirectUrl() {
   return useMutation({ mutationFn: ({previewId,recipientId}:{previewId:string;recipientId:string}) => distributionAction({ action: "send_direct", preview_id: previewId, recipient_id: recipientId }), onSuccess: () => queryClient.invalidateQueries({queryKey:["distribution"]}) });
 }
 
+export function usePrepareDistributionBatch() {
+  return useMutation({ mutationFn: async (sourceUrls:string[]) => {
+    const previews:DistributionDirectPreview[]=[];
+    for(const sourceUrl of sourceUrls){
+      const created=await distributionAction({action:"create_preview",source_url:sourceUrl}) as DistributionDirectPreview;
+      let current=created;
+      for(let attempt=0;attempt<120&&["queued","processing"].includes(current.status);attempt+=1){await new Promise(resolve=>setTimeout(resolve,1500));current=await distributionAction({action:"preview",preview_id:created.id}) as DistributionDirectPreview;}
+      if(current.status!=="ready")throw new Error(`Não foi possível preparar o link ${previews.length+1}`);
+      previews.push(current);
+    }
+    return previews;
+  }});
+}
+
+export function useSendDistributionBatch(){
+  const queryClient=useQueryClient();
+  return useMutation({mutationFn:({previewIds,recipientId}:{previewIds:string[];recipientId:string})=>distributionAction({action:"send_batch",preview_ids:previewIds,recipient_id:recipientId}),onSuccess:()=>queryClient.invalidateQueries({queryKey:["distribution"]})});
+}
+
 export function useNewsItem(id?: string) {
   return useQuery({
     queryKey: ["news", id],
