@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 
-function capture(path) {
+function captureMode(path, psm) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       "tesseract",
-      [path, "stdout", "-l", "por+eng", "--psm", "11", "tsv"],
+      [path, "stdout", "-l", "por+eng", "--psm", String(psm), "tsv"],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     let output = "";
@@ -19,6 +19,8 @@ function capture(path) {
     );
   });
 }
+const capture = (path) =>
+  Promise.all([captureMode(path, 6), captureMode(path, 11)]);
 
 const normalized = (value) =>
   String(value || "")
@@ -150,7 +152,7 @@ export async function readFramesLocally(
   const frames = [];
   for (const path of paths) {
     try {
-      frames.push(linesFromTsv(await capture(path)));
+      frames.push((await capture(path)).flatMap(linesFromTsv));
     } catch {
       frames.push([]);
     }
