@@ -20,6 +20,7 @@ import {
   transcribeAudio,
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
+import { readFramesLocally } from "./local-ocr.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
@@ -706,7 +707,6 @@ async function processJob(job) {
       if (!mediaFiles.length) {
         results.ocr = { text: "", confidence: null };
       } else {
-        if (!process.env.OPENROUTER_API_KEY) throw new Error("O OCR visual não foi configurado");
         await fs.mkdir(framesDir, { recursive: true });
         const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
         for (const [index, item] of mediaFiles.entries()) {
@@ -715,8 +715,13 @@ async function processJob(job) {
             ? ["-y", "-i", item.path, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output]
             : ["-y", "-i", item.path, "-vf", "fps=1/3,scale=960:-1", "-frames:v", String(framesPerMedia), "-q:v", "4", output]);
         }
-        const frames = await Promise.all((await fs.readdir(framesDir)).sort().slice(0, 8).map(async (name) => (await fs.readFile(join(framesDir, name))).toString("base64")));
-        results.ocr = frames.length ? await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini") : { text: "", confidence: 0 };
+        const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
+        results.ocr = await readFramesLocally(framePaths);
+        if (!results.ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
+          const frames = await Promise.all(framePaths.map(async (path) => (await fs.readFile(path)).toString("base64")));
+          results.ocr = await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini");
+        }
+        results.ocr ||= { text: "", confidence: 0, provider: "none" };
       }
       if (!results.original_title && results.ocr.title) results.original_title = normalizeHeadlineCase(results.ocr.title, results.clean_original_caption || "");
       await updateNews(job.news_items.id, {
