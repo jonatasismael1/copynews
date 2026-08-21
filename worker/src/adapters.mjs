@@ -287,8 +287,9 @@ async function instagramMetadata(sourceUrl) {
     },
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) return { caption: null, author: null, provider: "none" };
-  const metadata = parseInstagramMetadata(await response.text());
+  const metadata = response.ok
+    ? parseInstagramMetadata(await response.text())
+    : { caption: null, author: null, provider: "none" };
   try {
     const embedUrl = new URL(url);
     embedUrl.search = "";

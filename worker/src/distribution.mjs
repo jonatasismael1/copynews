@@ -378,7 +378,19 @@ export function createDistributionProcessor({ db, workerId, log }) {
     let metadata = null;
     try {
       metadata = await extractMetadata(preview.source_url);
-      const sources = await cobaltSources(preview.source_url);
+      let sources;
+      try {
+        sources = await cobaltSources(preview.source_url);
+      } catch (error) {
+        sources = (metadata?.mediaItems || []).filter(
+          (item) => item.url && item.auditOnly !== true,
+        );
+        if (!sources.length) throw error;
+        log("distribution.preview.metadata_media_fallback", {
+          previewId: preview.id,
+          mediaCount: sources.length,
+        });
+      }
       const files = [];
       for (const [index, source] of sources.entries()) {
         const input = join(
