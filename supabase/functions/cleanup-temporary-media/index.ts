@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const mediaCutoff = new Date(now - 48 * 60 * 60 * 1000);
     const dataCutoff = new Date(now);
-    dataCutoff.setUTCMonth(dataCutoff.getUTCMonth() - 6);
+    dataCutoff.setUTCMonth(dataCutoff.getUTCMonth() - 3);
     const admin = adminClient();
 
     const candidates: Record<string, string[]> = {};
@@ -177,6 +177,8 @@ Deno.serve(async (req) => {
     await clearMediaReferences(admin, removed);
 
     const deleted = {
+      news_send_history: await deleteOlderThan(admin, "news_send_history", "created_at", dataCutoff.toISOString()),
+      distribution_direct_previews: await deleteOlderThan(admin, "distribution_direct_previews", "created_at", dataCutoff.toISOString()),
       news_items: await deleteOlderThan(admin, "news_items", "created_at", dataCutoff.toISOString()),
       publications: await deleteOlderThan(admin, "publications", "published_at", dataCutoff.toISOString()),
       metric_snapshots: await deleteOlderThan(admin, "metric_snapshots", "captured_at", dataCutoff.toISOString()),
@@ -187,6 +189,8 @@ Deno.serve(async (req) => {
         dataCutoff.toISOString().slice(0, 10),
       ),
       audit_logs: await deleteOlderThan(admin, "audit_logs", "created_at", dataCutoff.toISOString()),
+      instagram_collection_runs: await deleteOlderThan(admin, "instagram_collection_runs", "started_at", dataCutoff.toISOString()),
+      instagram_posts: await deleteOlderThan(admin, "instagram_posts", "published_at", dataCutoff.toISOString()),
       oauth_states: await deleteOlderThan(admin, "oauth_states", "expires_at", new Date().toISOString()),
     };
 

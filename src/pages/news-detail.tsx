@@ -312,6 +312,19 @@ export function NewsDetailPage() {
     if (showToast) toast.success("Alterações salvas");
   }
 
+  async function markPublished() {
+    if (!data || saving || status === "published") return;
+    setSaving(true);
+    const { error } = await supabase.functions.invoke("mark-news-published", {
+      body: { news_id: data.id },
+    });
+    setSaving(false);
+    if (error) return toast.error("Não foi possível registrar a publicação");
+    setStatus("published");
+    await refetch();
+    toast.success("Publicação contabilizada para hoje");
+  }
+
   async function copy(text: string) {
     await navigator.clipboard.writeText(text);
     toast.success("Copiado para a área de transferência");
@@ -507,16 +520,7 @@ export function NewsDetailPage() {
   ]
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 10);
-  const nextPrimaryStatus: NewsStatus =
-    status === "approved" && hasPublication ? "published" : "approved";
-  const primaryStatusLabel =
-    status === "published"
-      ? "Publicado"
-      : status === "approved"
-        ? hasPublication
-          ? "Publicar"
-          : "Aprovada"
-        : "Aprovar";
+  const primaryStatusLabel = "Publicado";
   const mediaPaths = data.temporary_media_paths?.length
     ? data.temporary_media_paths
     : data.temporary_media_path
@@ -1315,12 +1319,11 @@ export function NewsDetailPage() {
         )}
         <Button
           className="min-w-0 px-2"
-          onClick={() => persist(true, nextPrimaryStatus)}
+          onClick={() => void markPublished()}
           disabled={
             saving ||
             !canManageRecord ||
-            status === "published" ||
-            (status === "approved" && !hasPublication)
+            status === "published"
           }
         >
           <Check size={18} />
