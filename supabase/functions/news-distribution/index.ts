@@ -3,6 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const env = (name: string) => { const value = Deno.env.get(name)?.trim(); if (!value) throw new Error(`Missing environment variable: ${name}`); return value.replace(/^['"]|['"]$/g, ""); };
+function slugPart(value: unknown) { return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 42) || "noticia"; }
+function deliverySlug(title: unknown, sender: unknown, recipient: unknown) { return `${slugPart(title)}-${slugPart(sender)}-${slugPart(recipient)}-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`.slice(0, 150); }
 
 async function context(req: Request) {
   const authorization = req.headers.get("Authorization");
@@ -25,14 +27,15 @@ function normalizeUrl(value: unknown) {
   for (const key of [...url.searchParams.keys()]) if (/^(utm_|igsh|fbclid|gclid|ref|share)/i.test(key)) url.searchParams.delete(key);
   return url.toString();
 }
-const pendingSteps = () => ({ link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, combined_content: { status: "pending" } });
+const pendingSteps = () => ({ delivery_link: { status: "pending" } });
 
 async function enqueue(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
   if (!["admin", "editor", "writer"].includes(ctx.profile.role)) throw new Error("Forbidden");
   const newsId = String(body.news_id || ""); const recipientId = String(body.recipient_id || "");
-  const [{ data: recipient }, { data: news }] = await Promise.all([
+  const [{ data: recipient }, { data: news }, { data: sender }] = await Promise.all([
     ctx.admin.from("distribution_recipients").select("*").eq("id", recipientId).eq("organization_id", ctx.profile.organization_id).eq("is_active", true).single(),
     ctx.client.from("news_items").select("id,source_url,original_title").eq("id", newsId).is("archived_at", null).single(),
+    ctx.admin.from("profiles").select("name").eq("id", ctx.user.id).single(),
   ]);
   if (!recipient || !news) throw new Error("Notícia ou destinatário inválido");
   const phone = normalizePhone(recipient.phone);
@@ -45,7 +48,8 @@ async function enqueue(ctx: Awaited<ReturnType<typeof context>>, body: Record<st
     const { data: duplicate } = await ctx.admin.from("news_send_history").select("id,status,sent_at,created_at").eq("organization_id", ctx.profile.organization_id).eq("news_id", newsId).eq("recipient_id", recipientId).in("status", ["success", "partial"]).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (duplicate) return json({ duplicate: true, previous: duplicate }, 409);
   }
-  const { data, error } = await ctx.admin.from("news_send_history").insert({ organization_id: ctx.profile.organization_id, news_id: newsId, source_type: "existing_news", recipient_id: recipientId, source_url: news.source_url, news_title: news.original_title, recipient_name: recipient.name, recipient_vehicle: recipient.vehicle, recipient_phone: phone, status: "queued", steps: pendingSteps(), queued_at: new Date().toISOString(), created_by: ctx.user.id }).select("id,status,queued_at").single();
+  const senderName = sender?.name || "Equipe Copy News"; const shareSlug = deliverySlug(news.original_title, senderName, recipient.name);
+  const { data, error } = await ctx.admin.from("news_send_history").insert({ organization_id: ctx.profile.organization_id, news_id: newsId, source_type: "existing_news", recipient_id: recipientId, source_url: news.source_url, news_title: news.original_title, recipient_name: recipient.name, recipient_vehicle: recipient.vehicle, recipient_phone: phone, sender_name: senderName, share_slug: shareSlug, status: "queued", steps: pendingSteps(), queued_at: new Date().toISOString(), created_by: ctx.user.id }).select("id,status,queued_at,share_slug").single();
   if (error) throw new Error(error.code === "23505" ? "Este envio já está na fila" : error.message);
   return json(data, 202);
 }
@@ -65,11 +69,12 @@ async function createPreview(ctx: Awaited<ReturnType<typeof context>>, body: Rec
 async function enqueueDirect(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
   if (!["admin", "editor", "writer"].includes(ctx.profile.role)) throw new Error("Forbidden");
   const previewId = String(body.preview_id || ""); const recipientId = String(body.recipient_id || "");
-  const [{ data: preview }, { data: recipient }] = await Promise.all([ctx.admin.from("distribution_direct_previews").select("*").eq("id", previewId).eq("organization_id", ctx.profile.organization_id).eq("status", "ready").single(), ctx.admin.from("distribution_recipients").select("*").eq("id", recipientId).eq("organization_id", ctx.profile.organization_id).eq("is_active", true).single()]);
+  const [{ data: preview }, { data: recipient }, { data: sender }] = await Promise.all([ctx.admin.from("distribution_direct_previews").select("*").eq("id", previewId).eq("organization_id", ctx.profile.organization_id).eq("status", "ready").single(), ctx.admin.from("distribution_recipients").select("*").eq("id", recipientId).eq("organization_id", ctx.profile.organization_id).eq("is_active", true).single(), ctx.admin.from("profiles").select("name").eq("id", ctx.user.id).single()]);
   if (!preview || !recipient) throw new Error("Prévia ou destinatário inválido");
   const phone = normalizePhone(recipient.phone); const testMode = (Deno.env.get("DISTRIBUTION_TEST_MODE") || "true").toLowerCase() !== "false"; const testPhone = normalizePhone(Deno.env.get("DISTRIBUTION_TEST_PHONE") || "5582998264805"); if (testMode && phone !== testPhone) throw new Error("Durante os testes, somente Ismael pode receber mensagens");
   const payload = { original_title: preview.original_title, original_caption: preview.original_caption, title_state: preview.title_state, caption_state: preview.caption_state, media_kind: preview.media_kind, media_count: preview.media_count };
-  const { data, error } = await ctx.admin.from("news_send_history").insert({ organization_id: ctx.profile.organization_id, news_id: null, source_type: "direct_url", direct_payload: payload, recipient_id: recipientId, source_url: preview.source_url, news_title: preview.original_title, recipient_name: recipient.name, recipient_vehicle: recipient.vehicle, recipient_phone: phone, status: "queued", steps: pendingSteps(), queued_at: new Date().toISOString(), created_by: ctx.user.id }).select("id,status,queued_at").single();
+  const senderName = sender?.name || "Equipe Copy News"; const shareSlug = deliverySlug(preview.original_title, senderName, recipient.name);
+  const { data, error } = await ctx.admin.from("news_send_history").insert({ organization_id: ctx.profile.organization_id, news_id: null, source_type: "direct_url", direct_payload: payload, recipient_id: recipientId, source_url: preview.source_url, news_title: preview.original_title, recipient_name: recipient.name, recipient_vehicle: recipient.vehicle, recipient_phone: phone, sender_name: senderName, share_slug: shareSlug, status: "queued", steps: pendingSteps(), queued_at: new Date().toISOString(), created_by: ctx.user.id }).select("id,status,queued_at,share_slug").single();
   if (error) throw new Error(error.code === "23505" ? "Este envio já está na fila" : error.message); return json(data, 202);
 }
 

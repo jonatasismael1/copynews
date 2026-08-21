@@ -108,9 +108,8 @@ Deno.serve(
       throw new Error("Informe um link ou uma mídia");
     const url = hasMedia ? null : new URL(String(body.source_url));
     const sourcePlatform = hasMedia ? "upload" : platform(url!.hostname);
-    const transcribeAudio = hasMedia
-      ? Boolean(media?.mime_type?.startsWith("video/"))
-      : body.transcribe_audio === true;
+    const transcribeAudio = body.transcribe_audio === true &&
+      (!hasMedia || Boolean(media?.mime_type?.startsWith("video/")));
     if (
       url && (!supported.has(url.protocol) ||
       ["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||

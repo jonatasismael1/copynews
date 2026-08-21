@@ -130,10 +130,10 @@ export function NewsDetailPage() {
 
   useEffect(() => {
     if (!data) return;
-    const nextTitle = data.generated_title ?? "";
-    const nextOriginalTitle = data.original_title ?? "";
-    const nextCaption = data.generated_caption ?? "";
-    const nextHighlight = data.highlight ?? "";
+    const nextTitle = data.original_title ?? data.generated_title ?? "";
+    const nextOriginalTitle = nextTitle;
+    const nextCaption = data.clean_original_caption ?? data.original_caption ?? data.source_caption ?? data.generated_caption ?? "";
+    const nextHighlight = "";
     const nextStatus = data.status as NewsStatus;
     const nextAssigned = data.assigned_to ?? "";
     const nextCategory = data.category_id ?? "";
@@ -280,9 +280,11 @@ export function NewsDetailPage() {
     const savedSignature = signature(nextStatus);
     const values = {
       original_title: originalTitle || null,
+      original_caption: caption || null,
+      clean_original_caption: caption || null,
       generated_title: title,
       generated_caption: caption,
-      highlight: highlight.trim().length >= 2 ? highlight.trim() : null,
+      highlight: null,
       status: nextStatus,
       ...(profile?.role === "admin"
         ? { assigned_to: assignedTo || null }
@@ -637,15 +639,6 @@ export function NewsDetailPage() {
               {data.categories.name}
             </Badge>
           )}
-          <Button
-            variant="outline"
-            className="min-h-11 shrink-0 border-primary/30 bg-primary/5 px-3 text-primary"
-            onClick={() => setRevision({ field: "caption", instruction: "" })}
-            disabled={!editorReady || saving || revisionLoading}
-          >
-            <Sparkles size={17} />
-            Reescrever
-          </Button>
           {editorReady && canManageRecord && (
             <Button
               variant="outline"
@@ -928,7 +921,7 @@ export function NewsDetailPage() {
         </Card>
       )}
 
-      <ResponsiveSection
+      <div className="hidden" aria-hidden="true"><ResponsiveSection
         title="Destaque"
         summary={`${Math.max(highlightOptions.length, 1)} ${highlightOptions.length === 1 ? "opção" : "opções"} · ${highlight.length} caracteres`}
         defaultOpen
@@ -998,13 +991,13 @@ export function NewsDetailPage() {
             {highlight.length}/50 caracteres
           </p>
         </div>
-      </ResponsiveSection>
+      </ResponsiveSection></div>
 
       <div className="grid gap-3 md:gap-6 lg:grid-cols-2">
         {(
           [
-            ["title", "Título", title, setTitle],
-            ["caption", "Legenda", caption, setCaption],
+            ["title", "Título original", title, setTitle],
+            ["caption", "Legenda original", caption, setCaption],
           ] as const
         ).map(([field, label, value, setter]) => (
           <ResponsiveSection
@@ -1019,15 +1012,6 @@ export function NewsDetailPage() {
                   value={value}
                   onCopy={copy}
                 />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-11"
-                  onClick={() => setRevision({ field, instruction: "" })}
-                  aria-label={`Alterar ${label} com IA`}
-                >
-                  <Sparkles size={18} />
-                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1060,6 +1044,17 @@ export function NewsDetailPage() {
               </p>
           </ResponsiveSection>
         ))}
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          onClick={() => copy(`${title}\n\n${caption}`.trim())}
+          disabled={!title && !caption}
+        >
+          <Clipboard />
+          Copiar título e legenda
+        </Button>
       </div>
 
       <ResponsiveSection

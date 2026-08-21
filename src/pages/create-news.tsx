@@ -7,7 +7,6 @@ import {
   ImagePlus,
   LoaderCircle,
   Plus,
-  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -112,14 +111,14 @@ export function CreateNewsPage() {
           </p>
           <h1 className="font-display text-2xl font-bold md:mt-1 md:text-3xl">
             <span className="md:hidden">Nova notícia</span>
-            <span className="hidden md:inline">Processar notícia</span>
+            <span className="hidden md:inline">Importar conteúdo original</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground md:mt-2">
             <span className="md:hidden">
               Use um link ou uma mídia como fonte.
             </span>
             <span className="hidden md:inline">
-              Use um link, uma imagem ou um vídeo como fonte.
+              Importe o título e a legenda originais para revisar e editar manualmente.
             </span>
           </p>
         </div>
@@ -207,7 +206,6 @@ export function CreateNewsPage() {
                   role="switch"
                   className="peer sr-only"
                   {...register("transcribe_audio")}
-                  disabled={Boolean(mediaFile)}
                 />
                 <span
                   aria-hidden="true"
@@ -285,13 +283,13 @@ export function CreateNewsPage() {
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" />
               ) : (
-                <Sparkles />
+                <Plus />
               )}
               {mutation.uploadProgress != null
                 ? `Enviando mídia ${mutation.uploadProgress}%`
                 : mutation.isPending
                   ? "Processando..."
-                  : "Processar notícia"}
+                  : "Importar conteúdo"}
             </Button>
           </form>
         </CardContent>

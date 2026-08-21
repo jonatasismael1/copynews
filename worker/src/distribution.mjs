@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { spawn } from "node:child_process";
 import { extractMetadata } from "./adapters.mjs";
-import { normalizeHeadlineCase, readFrames } from "./openrouter.mjs";
+import { normalizeHeadlineCase } from "./openrouter.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeError = (error) => String(error?.message || error || "Falha inesperada").replace(/https?:\/\/\S+/g, "[url]").replace(/[A-Za-z0-9_-]{30,}/g, "[redacted]").slice(0, 400);
@@ -102,7 +102,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
   }
 
   async function processPreview(preview) {
-    const dir = join(tmpdir(), `copy-news-preview-${preview.id}`); const framesDir = join(dir, "frames"); await fs.mkdir(framesDir, { recursive: true });
+    const dir = join(tmpdir(), `copy-news-preview-${preview.id}`); await fs.mkdir(dir, { recursive: true });
     let metadata = null;
     try {
       metadata = await extractMetadata(preview.source_url); const sources = await cobaltSources(preview.source_url); const files = [];
@@ -111,13 +111,11 @@ export function createDistributionProcessor({ db, workerId, log }) {
         const recovered = await downloadVideoWithYtDlp(preview.source_url, dir, "preview-reel"); files.splice(0, files.length, recovered);
       }
       let mediaKind = files.length > 1 ? "carousel" : "video";
-      for (const [index, file] of files.entries()) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; const output = join(framesDir, `frame-${index}-%02d.jpg`); await execute("ffmpeg", image ? ["-y", "-v", "error", "-i", file.input, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output] : ["-y", "-v", "error", "-i", file.input, "-vf", "fps=1/5,scale=960:-1", "-frames:v", "4", "-q:v", "4", output]); }
+      for (const file of files) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; }
       if (expectsVideo(preview.source_url) && mediaKind === "image") throw new Error("A origem retornou apenas a capa do Reel, sem o vídeo");
-      const frames = await Promise.all((await fs.readdir(framesDir)).sort().slice(0, 8).map(async (name) => (await fs.readFile(join(framesDir, name))).toString("base64")));
-      let ocr = null; let titleState = "absent";
-      try { ocr = frames.length ? await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini") : null; titleState = ocr?.title ? "found" : "absent"; } catch { titleState = "failed"; }
+      const metadataTitle = String(metadata?.title || "").trim(); const titleState = metadataTitle ? "found" : "absent";
       const caption = String(metadata?.caption || "").trim(); const captionState = caption ? "found" : metadata?.provider === "none" ? "failed" : "absent";
-      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: mediaKind, media_count: files.length, original_title: ocr?.title ? normalizeHeadlineCase(ocr.title, caption) : null, original_caption: caption || null, title_state: titleState, caption_state: captionState, error_message: null, lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
+      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: mediaKind, media_count: files.length, original_title: metadataTitle ? normalizeHeadlineCase(metadataTitle, caption) : null, original_caption: caption || null, title_state: titleState, caption_state: captionState, error_message: null, lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
       log("distribution.preview.ready", { previewId: preview.id, mediaKind, mediaCount: files.length, titleState, captionState });
     } catch (error) {
       const caption = String(metadata?.caption || "").trim();
@@ -128,7 +126,48 @@ export function createDistributionProcessor({ db, workerId, log }) {
     finally { await fs.rm(dir, { recursive: true, force: true }); }
   }
 
+  async function processDeliveryJob(job) {
+    const dir = join(tmpdir(), `copy-news-delivery-${job.id}`); await fs.mkdir(dir, { recursive: true });
+    const steps = { delivery_link: { status: "pending" }, ...(job.steps || {}) }; const evolution = new EvolutionService(log);
+    const persist = async (extra = {}) => db.from("news_send_history").update({ steps, lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), updated_at: new Date().toISOString(), ...extra }).eq("id", job.id);
+    try {
+      const [{ data: existingNews }, { data: recipient }] = await Promise.all([
+        job.news_id ? db.from("news_items").select("id,source_url,original_title,original_caption,clean_original_caption,source_caption,temporary_media_path,temporary_media_paths").eq("id", job.news_id).single() : Promise.resolve({ data: null }),
+        db.from("distribution_recipients").select("*").eq("id", job.recipient_id).single(),
+      ]);
+      const direct = job.source_type === "direct_url" ? (job.direct_payload || {}) : null;
+      const news = existingNews || (direct ? { source_url: job.source_url, original_title: direct.original_title, original_caption: direct.original_caption, clean_original_caption: null, source_caption: null, temporary_media_path: null, temporary_media_paths: [] } : null);
+      if (!news || !recipient?.is_active || !job.share_slug) throw new Error("Entrega ou destinatário indisponível");
+      const phone = normalizePhone(recipient.phone); const testMode = String(process.env.DISTRIBUTION_TEST_MODE || "true").toLowerCase() !== "false"; const testPhone = normalizePhone(process.env.DISTRIBUTION_TEST_PHONE || "5582998264805"); if (testMode && phone !== testPhone) throw new Error("Durante os testes, somente Ismael pode receber mensagens");
+      const paths = news.temporary_media_paths?.length ? news.temporary_media_paths : [news.temporary_media_path].filter(Boolean); const files = []; let mediaWarning = null;
+      try {
+        if (paths.length) {
+          for (const [index, storagePath] of paths.entries()) { const { data, error } = await db.storage.from("temporary-media").download(storagePath); if (error || !data) throw new Error("Mídia temporária indisponível"); const input = join(dir, `source-${index}${extname(storagePath) || ".bin"}`); const bytes = Buffer.from(await data.arrayBuffer()); await fs.writeFile(input, bytes); files.push({ input, bytes, filename: storagePath.split("/").pop() || `arquivo-${index + 1}` }); }
+        } else {
+          for (const [index, source] of (await cobaltSources(news.source_url)).entries()) { const input = join(dir, `source-${index}${extname(source.filename) || ".bin"}`); const downloaded = await fetchToFile(source.url, input); files.push({ input, ...downloaded, filename: source.filename }); }
+        }
+        if (expectsVideo(news.source_url) && files.length === 1 && imageMime(files[0].bytes)) { const recovered = await downloadVideoWithYtDlp(news.source_url, dir, "delivery-reel"); files.splice(0, files.length, recovered); }
+      } catch (error) { mediaWarning = safeError(error); files.length = 0; }
+      const deliveryPaths = [];
+      for (const [index, file] of files.entries()) {
+        const header = imageMime(file.bytes); const baseName = files.length === 1 ? "noticia-original-baixada" : `noticia-original-baixada-${index + 1}`; let path = file.input; let mime; let filename;
+        if (header) { mime = header.mime; filename = `${baseName}${header.extension}`; }
+        else { const output = join(dir, `${baseName}.mp4`); await compatibleVideo(file.input, output); path = output; mime = "video/mp4"; filename = `${baseName}.mp4`; }
+        const storagePath = `distribution/${job.id}/${filename}`; const bytes = await fs.readFile(path); const { error } = await db.storage.from("temporary-media").upload(storagePath, bytes, { contentType: mime, upsert: true }); if (error) throw error; deliveryPaths.push(storagePath);
+      }
+      await persist({ delivery_media_paths: deliveryPaths, delivery_media_expires_at: new Date(Date.now() + 7 * 86400000).toISOString(), error_message: mediaWarning });
+      const publicBase = String(process.env.PUBLIC_APP_URL || "https://copynews.netlify.app").replace(/\/$/, "");
+      const messageIdValue = await evolution.text(phone, `📰 *Conteúdo enviado pelo Copy News*\n\n${publicBase}/envio/${job.share_slug}`);
+      steps.delivery_link = { status: "sent", ...(messageIdValue ? { message_id: messageIdValue } : {}) };
+      await persist({ status: "success", link_message_id: messageIdValue, sent_at: new Date().toISOString(), lease_owner: null, lease_expires_at: null }); log("distribution.delivery.completed", { jobId: job.id, mediaCount: deliveryPaths.length });
+    } catch (error) {
+      steps.delivery_link = { status: "failed", error: safeError(error) }; const retry = job.attempts < 3;
+      await persist({ status: retry ? "queued" : "failed", error_message: safeError(error), lease_owner: null, lease_expires_at: null, ...(retry ? {} : { sent_at: new Date().toISOString() }) }); log("distribution.delivery.failed", { jobId: job.id, retry, message: safeError(error) });
+    } finally { await fs.rm(dir, { recursive: true, force: true }); }
+  }
+
   async function processJob(job) {
+    if (job.share_slug) return processDeliveryJob(job);
     const dir = join(tmpdir(), `copy-news-distribution-${job.id}`); await fs.mkdir(dir, { recursive: true });
     const steps = { link: { status: "pending" }, media: [], title_label: { status: "pending" }, title_content: { status: "pending" }, caption_label: { status: "pending" }, caption_content: { status: "pending" }, combined_content: { status: "pending" }, ...(job.steps || {}) };
     const evolution = new EvolutionService(log); let sent = 0; let failed = 0;

@@ -15,12 +15,8 @@ import {
 } from "./adapters.mjs";
 import {
   cleanSourceCaption,
-  generateCopy,
-  normalizeHeadlineCase,
-  readFrames,
   transcribeAudio,
 } from "./openrouter.mjs";
-import { buildSourceContext } from "./source-context.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
@@ -30,7 +26,6 @@ import {
 } from "./design-render.mjs";
 const required = [
   "SUPABASE_URL",
-  "OPENROUTER_API_KEY",
   "COBALT_API_URL",
 ];
 for (const key of required)
@@ -630,6 +625,9 @@ async function processJob(job) {
       }
     }
     if (!results.transcription_completed && shouldTranscribe(job.news_items)) {
+      if (!process.env.OPENROUTER_API_KEY) {
+        throw new Error("A transcrição está ativada, mas o OpenRouter não foi configurado");
+      }
       const videoFiles = mediaFiles.filter((item) => item.kind === "video");
       for (const [index, item] of videoFiles.entries()) {
         await run("ffmpeg", [
@@ -703,66 +701,11 @@ async function processJob(job) {
       });
     }
     if (!results.ocr) {
-      if (!mediaFiles.length) {
-        results.ocr = { text: "", confidence: null };
-      } else {
-        await fs.mkdir(framesDir, { recursive: true });
-        const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
-        for (const [index, item] of mediaFiles.entries()) {
-        const output = join(framesDir, `frame-${index}-%02d.jpg`);
-        const args =
-          item.kind === "image"
-            ? [
-                "-y",
-                "-i",
-                item.path,
-                "-vf",
-                "scale=960:-1",
-                "-frames:v",
-                "1",
-                "-q:v",
-                "4",
-                output,
-              ]
-            : [
-                "-y",
-                "-i",
-                item.path,
-                "-vf",
-                "fps=1/5,scale=960:-1",
-                "-frames:v",
-                String(framesPerMedia),
-                "-q:v",
-                "4",
-                output,
-              ];
-          await run("ffmpeg", args);
-        }
-        const names = await fs.readdir(framesDir);
-        const frames = await Promise.all(
-          names
-            .slice(0, 8)
-            .map(async (n) =>
-              (await fs.readFile(join(framesDir, n))).toString("base64"),
-            ),
-        );
-        results.ocr = frames.length
-          ? await readFrames(
-              frames,
-              process.env.OPENROUTER_API_KEY,
-              process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini",
-            )
-          : { text: "", confidence: 0 };
-      }
-      if (!results.original_title && results.ocr.title)
-        results.original_title = normalizeHeadlineCase(
-          results.ocr.title,
-          results.clean_original_caption || "",
-        );
+      results.ocr = { text: "", confidence: null, skipped: true };
       await updateNews(job.news_items.id, {
-        raw_ocr_text: results.ocr.text || "",
-        ocr_text: results.ocr.text || "",
-        ocr_confidence: results.ocr.confidence,
+        raw_ocr_text: null,
+        ocr_text: null,
+        ocr_confidence: null,
         original_title: results.original_title || null,
       });
       await update(job.id, {
@@ -772,51 +715,22 @@ async function processJob(job) {
       });
     }
     if (!results.copy) {
-      const persistedEditorialSources = await editorialSources(
-        job.news_items.id,
-      );
-      const categories = await activeCategories();
-      results.copy = await generateCopy(
-        buildSourceContext({
-          ...results,
-          ...persistedEditorialSources,
-          available_categories: categories.map((category) => category.name),
-          editorial_sources_loaded: true,
-        }),
-        process.env.OPENROUTER_API_KEY,
-        process.env.OPENROUTER_REWRITE_MODEL ||
-          process.env.OPENROUTER_MODEL ||
-          "openai/gpt-4.1",
-      );
-      if (results.transcription_empty) {
-        const sourceKind = results.media_kind || "video";
-        results.copy.warnings = [
-          sourceKind === "text"
-            ? "A mídia não estava disponível; o texto foi produzido a partir do conteúdo original recuperado da página."
-          : results.transcription_skipped
-            ? "A transcrição foi desativada; o texto foi produzido a partir da legenda original e do conteúdo visual."
-            : sourceKind === "image"
-            ? "A origem é uma imagem estática; o texto foi produzido a partir da legenda e do conteúdo visual."
-            : sourceKind === "carousel"
-              ? "Não foi identificada fala utilizável no carrossel; o texto foi produzido a partir da legenda e dos itens visuais."
-            : "Não foi identificada fala no vídeo; o texto foi produzido a partir das fontes editoriais disponíveis.",
-          ...results.copy.warnings,
-        ];
-      }
+      const originalTitle = String(results.original_title || job.news_items.original_title || "").trim();
+      const originalCaption = String(results.clean_original_caption || results.original_caption || job.news_items.original_caption || job.news_items.source_caption || "").trim();
+      results.copy = { title: originalTitle, caption: originalCaption, source: "original", highlights: [], warnings: [] };
       await updateNews(job.news_items.id, {
-        generated_title: results.copy.title,
-        generated_caption: results.copy.caption,
-        highlight: results.copy.highlight,
-        highlight_options: results.copy.highlights,
-        editorial_tone: results.copy.editorial_tone,
-        summary: results.copy.summary,
-        category_id: categoryIdForSuggestion(
-          categories,
-          results.copy.category_suggestion,
-        ),
-        ai_confidence: results.copy.confidence,
-        ai_warnings: results.copy.warnings,
-        detected_facts: results.copy.detected_facts,
+        original_title: originalTitle || null,
+        original_caption: originalCaption || null,
+        clean_original_caption: originalCaption || null,
+        generated_title: originalTitle || null,
+        generated_caption: originalCaption || null,
+        highlight: null,
+        highlight_options: [],
+        editorial_tone: null,
+        summary: null,
+        ai_confidence: null,
+        ai_warnings: [],
+        detected_facts: [],
         status: "draft",
       });
     }

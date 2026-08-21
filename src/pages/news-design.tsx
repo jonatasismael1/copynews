@@ -758,10 +758,9 @@ export function NewsDesignPage() {
   useEffect(() => {
     if (!news || !template || designLoading || initialized) return;
     const nextTitle =
-      savedDesign?.title_text || news.generated_title || news.original_title || "";
+      savedDesign?.title_text || news.original_title || news.generated_title || "";
     const nextCategory =
       savedDesign?.category_text ||
-      news.highlight ||
       news.categories?.name ||
       "";
     // Hydration from the saved design/news is the initial editor state.
@@ -1094,8 +1093,8 @@ export function NewsDesignPage() {
   function resetTemplate() {
     const restored = applyDesignFormat(structuredClone(DEFAULT_DESIGN_CONFIG), config.format);
     setConfig({ ...restored, slides: config.slides, activeSlideId: activeSlide?.id || null });
-    setTitle(news?.generated_title || news?.original_title || "");
-    setCategory(news?.highlight || news?.categories?.name || "");
+    setTitle(news?.original_title || news?.generated_title || "");
+    setCategory(news?.categories?.name || "");
     toast.success("Modelo restaurado");
   }
 
@@ -2675,23 +2674,9 @@ export function NewsDesignPage() {
             {tab === "titulo" && (
               <ControlSection
                 title="Título da notícia"
-                description="Escolha uma versão ou ajuste o texto diretamente."
+                description="Use o título original ou ajuste o texto diretamente."
               >
-                <div className="grid grid-cols-2 gap-2" aria-label="Versão do título">
-                  <button
-                    type="button"
-                    className={cn(
-                      "min-h-11 rounded-xl border px-3 text-xs font-bold",
-                      title === (news.generated_title || "")
-                        ? "border-white bg-white text-black"
-                        : "border-white/15 text-white/75",
-                    )}
-                    onClick={() => setTitle(news.generated_title || news.original_title || "")}
-                    disabled={!canEdit || !news.generated_title}
-                    aria-pressed={title === (news.generated_title || "")}
-                  >
-                    Título novo
-                  </button>
+                <div className="grid gap-2" aria-label="Versão do título">
                   <button
                     type="button"
                     className={cn(
@@ -2700,7 +2685,7 @@ export function NewsDesignPage() {
                         ? "border-white bg-white text-black"
                         : "border-white/15 text-white/75",
                     )}
-                    onClick={() => setTitle(news.original_title || news.generated_title || "")}
+                    onClick={() => setTitle(news.original_title || "")}
                     disabled={!canEdit || !news.original_title}
                     aria-pressed={title === (news.original_title || "")}
                   >
@@ -2947,21 +2932,6 @@ export function NewsDesignPage() {
                 <p className="text-right text-xs text-white/50">
                   {category.length}/32 caracteres
                 </p>
-                {!!news.highlight_options?.length && (
-                  <div className="flex flex-wrap gap-2">
-                    {news.highlight_options.map((option: string) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className="min-h-11 rounded-full border border-white/15 px-3 text-xs font-bold hover:bg-white/10"
-                        onClick={() => setCategory(option)}
-                        disabled={!canEdit}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <ToggleControl
                   label="Mostrar tarja"
                   checked={config.showCategory}

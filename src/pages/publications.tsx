@@ -623,7 +623,7 @@ function PublicationModal({ close }: { close: () => void }) {
                 <option value="">Publicação externa</option>
                 {news.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.generated_title || item.source_url}
+                    {item.original_title || item.generated_title || item.source_url}
                   </option>
                 ))}
               </select>

@@ -50,6 +50,11 @@ const SharedNewsPage = lazy(() =>
     default: module.SharedNewsPage,
   })),
 );
+const DistributionDeliveryPage = lazy(() =>
+  import("@/pages/distribution-delivery").then((module) => ({
+    default: module.DistributionDeliveryPage,
+  })),
+);
 
 function Loading() {
   return (
@@ -103,6 +108,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/envio/:deliverySlug" element={page(<DistributionDeliveryPage />)} />
       <Route path="/:shareSlug" element={page(<SharedNewsPage />)} />
       <Route element={<Guard />}>
         <Route index element={page(<DashboardPage />)} />
