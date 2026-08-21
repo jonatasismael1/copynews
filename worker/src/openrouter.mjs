@@ -20,19 +20,21 @@ const ocrResultSchema = z.object({
   title: z.string().nullable(),
   confidence: z.number().min(0).max(1).nullable(),
 });
-const copyResultSchema = z.object({
-  title: z.string().min(3),
-  caption: z.string().min(3),
-  highlights: z
-    .array(z.string().min(2).max(50))
-    .length(3)
-    .default(["Notícia", "Informação", "Revisão"]),
-  category_suggestion: z.string().nullable().optional(),
-  editorial_tone: z.string().min(2).max(100).optional(),
-  sourceMode: z.enum(sourceModes),
-  usedSources: z.array(z.enum(sourceNames)),
-  warnings: z.array(z.string()),
-}).strict();
+const copyResultSchema = z
+  .object({
+    title: z.string().min(3),
+    caption: z.string().min(3),
+    highlights: z
+      .array(z.string().min(2).max(50))
+      .length(3)
+      .default(["Notícia", "Informação", "Revisão"]),
+    category_suggestion: z.string().nullable().optional(),
+    editorial_tone: z.string().min(2).max(100).optional(),
+    sourceMode: z.enum(sourceModes),
+    usedSources: z.array(z.enum(sourceNames)),
+    warnings: z.array(z.string()),
+  })
+  .strict();
 
 const editorialTones = [
   "Informativo",
@@ -67,7 +69,8 @@ const genericHighlights = new Set([
   "tragedia",
 ]);
 
-const genericTitle = /^(veja|confira|aten[cç][aã]o|urgente|saiba mais)(\b|[!:.])/i;
+const genericTitle =
+  /^(veja|confira|aten[cç][aã]o|urgente|saiba mais)(\b|[!:.])/i;
 const incompleteTitle = /\b(ap[oó]s|contra|com|de|em|e|por|para)\s*$/i;
 const occurrenceGroups = [
   ["colisao", "atropelamento"],
@@ -146,8 +149,7 @@ const certaintyPreserved = (value, marker) => {
 };
 const containsOccurrence = (haystack, term) =>
   occurrencePatterns[term]?.test(haystack) ?? contains(haystack, term);
-const tokens = (value) =>
-  normalize(value).match(/[a-z0-9]+/g) || [];
+const tokens = (value) => normalize(value).match(/[a-z0-9]+/g) || [];
 
 function sourceHandles(value) {
   return [...new Set(value.match(/@[a-z0-9._]+/gi) || [])];
@@ -176,8 +178,12 @@ function normalizeHighlights(values = []) {
 }
 
 function fallbackHighlights(primary = "") {
-  return normalizeHighlights([primary, "Notícia", "Informação", "Revisão"])
-    .slice(0, 3);
+  return normalizeHighlights([
+    primary,
+    "Notícia",
+    "Informação",
+    "Revisão",
+  ]).slice(0, 3);
 }
 
 function modelGenerationParameters(model) {
@@ -188,7 +194,9 @@ function modelGenerationParameters(model) {
 
 function sequenceBigrams(value) {
   const words = tokens(value);
-  return new Set(words.slice(0, -1).map((word, index) => `${word} ${words[index + 1]}`));
+  return new Set(
+    words.slice(0, -1).map((word, index) => `${word} ${words[index + 1]}`),
+  );
 }
 
 export function rewriteSimilarity(left, right) {
@@ -267,9 +275,12 @@ function parseStructured(schema, raw) {
   try {
     return schema.parse(JSON.parse(raw));
   } catch (error) {
-    throw Object.assign(new Error(`Resposta inválida da IA: ${error.message}`), {
-      code: "INVALID_AI_RESPONSE",
-    });
+    throw Object.assign(
+      new Error(`Resposta inválida da IA: ${error.message}`),
+      {
+        code: "INVALID_AI_RESPONSE",
+      },
+    );
   }
 }
 
@@ -287,31 +298,38 @@ async function request(body, apiKey) {
   });
   if (!response.ok)
     throw Object.assign(
-      new Error(`OpenRouter HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`),
+      new Error(
+        `OpenRouter HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`,
+      ),
       { code: "OPENROUTER_ERROR" },
     );
   return response.json();
 }
 
 export async function transcribeAudio(base64, apiKey, model) {
-  const response = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": process.env.APP_URL || "https://copynews.netlify.app",
-      "X-Title": "Copy News Worker",
+  const response = await fetch(
+    "https://openrouter.ai/api/v1/audio/transcriptions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.APP_URL || "https://copynews.netlify.app",
+        "X-Title": "Copy News Worker",
+      },
+      body: JSON.stringify({
+        model,
+        input_audio: { data: base64, format: "mp3" },
+        language: "pt",
+      }),
+      signal: AbortSignal.timeout(120_000),
     },
-    body: JSON.stringify({
-      model,
-      input_audio: { data: base64, format: "mp3" },
-      language: "pt",
-    }),
-    signal: AbortSignal.timeout(120_000),
-  });
+  );
   if (!response.ok)
     throw Object.assign(
-      new Error(`OpenRouter STT HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`),
+      new Error(
+        `OpenRouter STT HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`,
+      ),
       { code: "OPENROUTER_ERROR" },
     );
   const data = await response.json();
@@ -323,7 +341,7 @@ export async function readFrames(frames, apiKey, model) {
   const content = [
     {
       type: "text",
-      text: 'Faça OCR fiel dos textos jornalísticos visíveis. Em "text", preserve todo o texto legível sem duplicatas. Em "title", retorne somente a manchete principal exatamente como aparece na arte, priorizando o texto jornalístico em maior destaque; ignore logotipos, marcas d’água e editorias. Se não houver manchete clara, use null. Não complete texto ilegível. Retorne JSON {"text":"...","title":"... ou null","confidence":0.0}.',
+      text: 'Faça OCR fiel dos textos jornalísticos visíveis. Os quadros estão em ordem temporal. Em vídeo, só considere manchete fixa/repetida em pelo menos dois quadros; ignore totalmente legendas automáticas, palavras faladas que mudam entre quadros, botões, logotipos, marcas d’água e editorias. Em imagem, preserve a ordem visual de cima para baixo e da esquerda para a direita. Em "title", retorne somente a manchete principal exatamente como aparece. Se não existir manchete fixa clara ou a ordem estiver ambígua, use null. Nunca transforme a legenda da publicação em título e nunca complete texto ilegível. Retorne JSON {"text":"...","title":"... ou null","confidence":0.0}.',
     },
     ...frames.map((data) => ({
       type: "image_url",
@@ -346,9 +364,17 @@ export async function readFrames(frames, apiKey, model) {
 }
 
 export function formatSocialParagraphs(value) {
-  const lines = value.trim().split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const lines = value
+    .trim()
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   if (lines.length > 1) return lines.join("\n\n");
-  const sentences = value.trim().match(/[^.!?]+(?:[.!?]+|$)/g)?.map((item) => item.trim()) ?? [];
+  const sentences =
+    value
+      .trim()
+      .match(/[^.!?]+(?:[.!?]+|$)/g)
+      ?.map((item) => item.trim()) ?? [];
   if (sentences.length < 2) return value.trim();
   const paragraphs = [];
   for (let index = 0; index < sentences.length; index += 2)
@@ -358,30 +384,35 @@ export function formatSocialParagraphs(value) {
 
 export function isUsableTitle(value, { ocrConfidence = null } = {}) {
   const candidate = text(value);
-  if (!candidate || genericTitle.test(candidate) || candidate.length < 12) return false;
+  if (!candidate || genericTitle.test(candidate) || candidate.length < 12)
+    return false;
   if (ocrConfidence !== null && ocrConfidence < 0.55) return false;
   const words = candidate.split(/\s+/);
-  const broken = words.filter((word) => /[^\p{L}\p{N}'’.,:;!?-]/u.test(word)).length;
+  const broken = words.filter((word) =>
+    /[^\p{L}\p{N}'’.,:;!?-]/u.test(word),
+  ).length;
   return broken / words.length < 0.25;
 }
 
 export function isUsableCaption(value) {
   const candidate = text(value);
-  return Boolean(candidate && candidate.length >= 20 && !genericTitle.test(candidate));
+  return Boolean(
+    candidate && candidate.length >= 20 && !genericTitle.test(candidate),
+  );
 }
 
 export function cleanSourceCaption(value) {
   const candidate = text(value);
   if (!candidate) return "";
-  const boilerplate = /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|envie sugest[oõ]es|a sua participa[cç][aã]o|inova[cç][aã]o em jornalismo|\d+\s+segundos\s*$|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|(?:a|o)\s+(?:r[aá]dio|portal|emissora|equipe).*\b(?:cobertura|rep[oó]rter(?:es)?)\b|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
-  const contactOnly = /^(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-.\s]?\d{4}$/;
+  const boilerplate =
+    /^(acesse (a )?mat[eé]ria|saiba mais|leia mais|siga (o|a|nossa)|envie sugest[oõ]es|a sua participa[cç][aã]o|inova[cç][aã]o em jornalismo|\d+\s+segundos\s*$|reda[cç][aã]o\b|anuncie\b|oferecimento\b|patroc[ií]nio\b|apoio\b|(?:a|o)\s+(?:r[aá]dio|portal|emissora|equipe).*\b(?:cobertura|rep[oó]rter(?:es)?)\b|whatsapp\b|telefone\b|fone\b|contato\b|https?:\/\/|www\.|@\w+\s*$|#\w)/i;
+  const contactOnly =
+    /^(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9\s*)?\d{4}[-.\s]?\d{4}$/;
   const lines = candidate.split(/\n+/).map((line) => line.trim());
-  const cutoff = lines.findIndex(
-    (line) => {
-      const searchable = line.replace(/^[^\p{L}\p{N}@#]+/u, "").trim();
-      return boilerplate.test(searchable) || contactOnly.test(line);
-    },
-  );
+  const cutoff = lines.findIndex((line) => {
+    const searchable = line.replace(/^[^\p{L}\p{N}@#]+/u, "").trim();
+    return boilerplate.test(searchable) || contactOnly.test(line);
+  });
   return lines
     .slice(0, cutoff >= 0 ? cutoff : lines.length)
     .filter(Boolean)
@@ -395,7 +426,9 @@ function sourceContradictions(title, caption) {
     const titleTerm = group.find((term) => containsOccurrence(title, term));
     const captionTerm = group.find((term) => containsOccurrence(caption, term));
     if (titleTerm && captionTerm && titleTerm !== captionTerm)
-      contradictions.push(`Contradição entre título (${titleTerm}) e legenda (${captionTerm})`);
+      contradictions.push(
+        `Contradição entre título (${titleTerm}) e legenda (${captionTerm})`,
+      );
   }
   return contradictions;
 }
@@ -403,7 +436,18 @@ function sourceContradictions(title, caption) {
 function captionDefinesAcronym(caption, acronym) {
   if (caption.includes(acronym)) return true;
   const words = caption.match(/\p{L}+/gu) || [];
-  const ignored = new Set(["a", "as", "da", "das", "de", "do", "dos", "e", "o", "os"]);
+  const ignored = new Set([
+    "a",
+    "as",
+    "da",
+    "das",
+    "de",
+    "do",
+    "dos",
+    "e",
+    "o",
+    "os",
+  ]);
   for (let start = 0; start < words.length; start += 1) {
     for (let size = 2; size <= 6 && start + size <= words.length; size += 1) {
       const initials = words
@@ -422,7 +466,9 @@ export function classifySources(input) {
   const metadataTitle = text(input.originalTitle);
   const rawTitle = isUsableTitle(metadataTitle) ? metadataTitle : "";
   const suppliedCaption = cleanSourceCaption(input.originalCaption);
-  const originalCaption = isUsableCaption(suppliedCaption) ? suppliedCaption : "";
+  const originalCaption = isUsableCaption(suppliedCaption)
+    ? suppliedCaption
+    : "";
   const originalTitle = normalizeHeadlineCase(rawTitle, originalCaption);
   const articleBody = text(input.articleBody);
   const transcript = text(input.transcript);
@@ -437,26 +483,33 @@ export function classifySources(input) {
       : ocrText
         ? "ocrText"
         : null;
-  const contradictions = originalTitle && originalCaption
-    ? sourceContradictions(originalTitle, originalCaption)
-    : [];
+  const contradictions =
+    originalTitle && originalCaption
+      ? sourceContradictions(originalTitle, originalCaption)
+      : [];
   let sourceMode;
   if (contradictions.length) sourceMode = "manual_review";
   else if (originalTitle) {
-    const captionExplainsAcronym = (rawTitle.match(/\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,10}\b/g) || [])
-      .some((term) => captionDefinesAcronym(originalCaption, term));
+    const captionExplainsAcronym = (
+      rawTitle.match(/\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,10}\b/g) || []
+    ).some((term) => captionDefinesAcronym(originalCaption, term));
     const needsSupport =
       originalTitle.length < 45 ||
       incompleteTitle.test(originalTitle) ||
       captionExplainsAcronym;
     if (needsSupport && originalCaption) sourceMode = "title_plus_caption";
-    else if (needsSupport && supplementalContent) sourceMode = "article_fallback";
+    else if (needsSupport && supplementalContent)
+      sourceMode = "article_fallback";
     else sourceMode = "title_only";
   } else if (originalCaption) sourceMode = "caption_only";
   else if (supplementalContent) sourceMode = "article_fallback";
-  else throw Object.assign(new Error("Não foi encontrado conteúdo factual utilizável"), {
-    code: "INSUFFICIENT_SOURCE",
-  });
+  else
+    throw Object.assign(
+      new Error("Não foi encontrado conteúdo factual utilizável"),
+      {
+        code: "INSUFFICIENT_SOURCE",
+      },
+    );
   return {
     originalTitle,
     originalCaption,
@@ -465,8 +518,7 @@ export function classifySources(input) {
     ocrText,
     supplementalContent,
     supplementalKind,
-    captionSource:
-      originalCaption || supplementalContent || originalTitle,
+    captionSource: originalCaption || supplementalContent || originalTitle,
     captionSourceMode: originalCaption
       ? "originalCaption"
       : supplementalContent
@@ -485,11 +537,17 @@ function allowedTitleText(sources) {
     sources.transcript,
     sources.articleBody,
     sources.ocrText,
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function properNames(value) {
-  return [...value.matchAll(/(?:^|[.!?]\s+)(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+(?:d[aeo]s?|e|[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)){0,4})/gu)]
+  return [
+    ...value.matchAll(
+      /(?:^|[.!?]\s+)(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+(?:d[aeo]s?|e|[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)){0,4})/gu,
+    ),
+  ]
     .map((match) =>
       match[0]
         .replace(/^[.!?]\s+/, "")
@@ -500,8 +558,11 @@ function properNames(value) {
 }
 
 function namedRoles(value) {
-  return [...value.matchAll(/\b(?:[Dd]elegad[oa]|[Pp]refeit[oa]|[Vv]ereador(?:a)?|[Ss]ecretári[oa]|[Gg]overnador(?:a)?|[Mm]édic[oa])\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)*/gu)]
-    .map((match) => match[0].trim());
+  return [
+    ...value.matchAll(
+      /\b(?:[Dd]elegad[oa]|[Pp]refeit[oa]|[Vv]ereador(?:a)?|[Ss]ecretári[oa]|[Gg]overnador(?:a)?|[Mm]édic[oa])\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)*/gu,
+    ),
+  ].map((match) => match[0].trim());
 }
 
 const months = [
@@ -550,8 +611,13 @@ export function validateCopy(result, sources) {
     sources.originalCaption,
     sources.transcript,
     sources.articleBody,
-  ].filter(Boolean).join(" ");
-  if (Object.hasOwn(result, "highlights") || Object.hasOwn(result, "highlight")) {
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (
+    Object.hasOwn(result, "highlights") ||
+    Object.hasOwn(result, "highlight")
+  ) {
     if (highlights.length !== 3)
       violations.push("Forneça exatamente 3 opções de destaque diferentes");
     for (const highlight of highlights) {
@@ -568,12 +634,16 @@ export function validateCopy(result, sources) {
   }
   if (title.length > 150) violations.push("Título ultrapassa 150 caracteres");
   if (isMostlyUppercase(title))
-    violations.push("Título deve usar capitalização normal, não caixa alta integral");
+    violations.push(
+      "Título deve usar capitalização normal, não caixa alta integral",
+    );
   if (
     sources.originalTitle &&
     isInsufficientRewrite(title, sources.originalTitle, 4, 0.8)
   )
-    violations.push("Título foi copiado literalmente ou está parecido demais com o original; reestruture a frase e troque a redação sem alterar os fatos");
+    violations.push(
+      "Título foi copiado literalmente ou está parecido demais com o original; reestruture a frase e troque a redação sem alterar os fatos",
+    );
   if (result.sourceMode !== sources.sourceMode)
     violations.push(`Modo de fonte deve ser ${sources.sourceMode}`);
   const permittedSources = {
@@ -592,24 +662,32 @@ export function validateCopy(result, sources) {
       violations.push(`Fonte não autorizada: ${source}`);
   const requiredNames = properNames(sources.originalTitle);
   for (const name of requiredNames)
-    if (!contains(title, name)) violations.push(`Nome próprio removido do título: ${name}`);
+    if (!contains(title, name))
+      violations.push(`Nome próprio removido do título: ${name}`);
   for (const name of [...properNames(title), ...namedRoles(title)])
     if (!contains(allowed, name))
       violations.push(`Entidade nova no título: ${name}`);
-  const sourceNumbers = sources.originalTitle.match(/\b\d[\d.,:%ºª-]*\b/g) || [];
+  const sourceNumbers =
+    sources.originalTitle.match(/\b\d[\d.,:%ºª-]*\b/g) || [];
   for (const number of sourceNumbers)
-    if (!title.includes(number)) violations.push(`Número removido do título: ${number}`);
+    if (!title.includes(number))
+      violations.push(`Número removido do título: ${number}`);
   const newNumbers = title.match(/\b\d[\d.,:%ºª-]*\b/g) || [];
   for (const number of newNumbers)
-    if (!allowed.includes(number)) violations.push(`Número novo no título: ${number}`);
+    if (!allowed.includes(number))
+      violations.push(`Número novo no título: ${number}`);
   for (const group of occurrenceGroups) {
-    const sourceTerm = group.find((term) => containsOccurrence(sources.originalTitle, term));
+    const sourceTerm = group.find((term) =>
+      containsOccurrence(sources.originalTitle, term),
+    );
     const conflictingTerms = group.filter(
       (term) => term !== sourceTerm && containsOccurrence(title, term),
     );
     for (const generatedTerm of conflictingTerms)
       if (sourceTerm)
-        violations.push(`Tipo de ocorrência alterado: ${sourceTerm} virou ${generatedTerm}`);
+        violations.push(
+          `Tipo de ocorrência alterado: ${sourceTerm} virou ${generatedTerm}`,
+        );
   }
   for (const marker of certaintyTerms)
     if (
@@ -619,16 +697,31 @@ export function validateCopy(result, sources) {
       violations.push(`Nível de certeza removido: ${marker}`);
   if (hasAttribution(sources.originalTitle) && !hasAttribution(title))
     violations.push("Atribuição removida do título");
-  for (const prohibited of ["escândalo", "revolta", "chocante", "absurdo", "polêmica", "humilhação", "caos", "desmascarado"])
+  for (const prohibited of [
+    "escândalo",
+    "revolta",
+    "chocante",
+    "absurdo",
+    "polêmica",
+    "humilhação",
+    "caos",
+    "desmascarado",
+  ])
     if (contains(title, prohibited) && !contains(allowed, prohibited))
       violations.push(`Sensacionalismo não presente na fonte: ${prohibited}`);
-  const meaningfulSourceTokens = new Set(tokens(allowed).filter((token) => token.length >= 5));
+  const meaningfulSourceTokens = new Set(
+    tokens(allowed).filter((token) => token.length >= 5),
+  );
   const unsupportedRiskWords = tokens(title).filter(
-    (token) => ["fuga", "morte", "morreu", "hospitalizacao", "hospitalizado"].includes(token) &&
-      !meaningfulSourceTokens.has(token),
+    (token) =>
+      ["fuga", "morte", "morreu", "hospitalizacao", "hospitalizado"].includes(
+        token,
+      ) && !meaningfulSourceTokens.has(token),
   );
   if (unsupportedRiskWords.length)
-    violations.push(`Título contém consequência sem apoio na fonte: ${unsupportedRiskWords.join(", ")}`);
+    violations.push(
+      `Título contém consequência sem apoio na fonte: ${unsupportedRiskWords.join(", ")}`,
+    );
   if (!caption) violations.push("Legenda vazia");
   const captionSource = sources.captionSource;
   const allowedCaptionText = allowedTitleText(sources);
@@ -659,18 +752,24 @@ export function validateCopy(result, sources) {
       violations.push(`Entidade nova na legenda: ${name}`);
   const captionNumbers = captionSource.match(/\b\d[\d.,:%ºª-]*\b/g) || [];
   for (const number of captionNumbers)
-    if (!caption.includes(number)) violations.push(`Número removido da legenda: ${number}`);
+    if (!caption.includes(number))
+      violations.push(`Número removido da legenda: ${number}`);
   for (const number of caption.match(/\b\d[\d.,:%ºª-]*\b/g) || [])
-    if (!allowedCaptionText.includes(number)) violations.push(`Número novo na legenda: ${number}`);
+    if (!allowedCaptionText.includes(number))
+      violations.push(`Número novo na legenda: ${number}`);
   for (const month of months)
     if (contains(caption, month) && !contains(allowedCaptionText, month))
       violations.push(`Referência temporal nova na legenda: ${month}`);
   for (const group of occurrenceGroups) {
-    const sourceTerm = group.find((term) => containsOccurrence(captionSource, term));
+    const sourceTerm = group.find((term) =>
+      containsOccurrence(captionSource, term),
+    );
     if (!sourceTerm) continue;
     for (const generatedTerm of group.filter((term) => term !== sourceTerm))
       if (containsOccurrence(caption, generatedTerm))
-        violations.push(`Tipo de ocorrência alterado na legenda: ${sourceTerm} virou ${generatedTerm}`);
+        violations.push(
+          `Tipo de ocorrência alterado na legenda: ${sourceTerm} virou ${generatedTerm}`,
+        );
   }
   for (const marker of certaintyTerms)
     if (contains(captionSource, marker) && !certaintyPreserved(caption, marker))
@@ -727,13 +826,19 @@ fornecidas.
 Responda apenas no formato JSON definido — sem texto fora do JSON.`;
 
 function userPrompt(sources, categories, violations = [], previous = null) {
-  const highlightViolations = violations.filter((violation) => /destaque/i.test(violation));
+  const highlightViolations = violations.filter((violation) =>
+    /destaque/i.test(violation),
+  );
   const titleViolations = violations.filter(
     (violation) => !/legenda|destaque/i.test(violation),
   );
-  const captionViolations = violations.filter((violation) => /legenda/i.test(violation));
+  const captionViolations = violations.filter((violation) =>
+    /legenda/i.test(violation),
+  );
   const missingCaptionNumbers = captionViolations
-    .map((violation) => violation.match(/^Número removido da legenda: (.+)$/)?.[1])
+    .map(
+      (violation) => violation.match(/^Número removido da legenda: (.+)$/)?.[1],
+    )
     .filter(Boolean);
   const correctionContract = previous
     ? `\n\nVERSÃO ANTERIOR:\nTÍTULO: ${previous.title}\nLEGENDA: ${previous.caption}\nDESTAQUES: ${(previous.highlights || []).join(" | ")}\n\nCONTRATO DA ÚNICA CORREÇÃO:\n${titleViolations.length ? `Corrija no título:\n- ${titleViolations.join("\n- ")}` : `TÍTULO APROVADO E BLOQUEADO: devolva exatamente \"${previous.title}\".`}\n${captionViolations.length ? `Corrija na legenda:\n- ${captionViolations.join("\n- ")}` : "LEGENDA APROVADA E BLOQUEADA: devolva exatamente a legenda anterior."}\n${highlightViolations.length ? `Corrija nas três opções de destaque:\n- ${highlightViolations.join("\n- ")}` : `DESTAQUES APROVADOS E BLOQUEADOS: devolva exatamente ${JSON.stringify(previous.highlights)}.`}${missingCaptionNumbers.length ? `\nA legenda corrigida deve conter literalmente estes números/datas: ${missingCaptionNumbers.join(", ")}.` : ""}\nNão altere o campo que está aprovado.`
@@ -768,12 +873,18 @@ function fallbackCopy(
 ) {
   const caption = sources.captionSource;
   return {
-    title: fitTitle(approvedTitle || sources.originalTitle || caption.split(/\n|[.!?]\s/)[0]),
+    title: fitTitle(
+      approvedTitle || sources.originalTitle || caption.split(/\n|[.!?]\s/)[0],
+    ),
     caption: formatSocialParagraphs(approvedCaption || caption),
     highlights: fallbackHighlights(),
     sourceMode: "manual_review",
     usedSources: approvedSources || authorizedSources(sources),
-    warnings: [...sources.contradictions, ...violations, "Parte reprovada pela validação; a respectiva fonte original foi mantida para revisão manual."],
+    warnings: [
+      ...sources.contradictions,
+      ...violations,
+      "Parte reprovada pela validação; a respectiva fonte original foi mantida para revisão manual.",
+    ],
   };
 }
 
@@ -815,7 +926,10 @@ export async function generateCopy(context, apiKey, model) {
           : { type: "null" },
         editorial_tone: { type: "string", enum: editorialTones },
         sourceMode: { type: "string", enum: sourceModes },
-        usedSources: { type: "array", items: { type: "string", enum: sourceNames } },
+        usedSources: {
+          type: "array",
+          items: { type: "string", enum: sourceNames },
+        },
         warnings: { type: "array", items: { type: "string" } },
       },
       required: [
@@ -839,7 +953,10 @@ export async function generateCopy(context, apiKey, model) {
         model,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt(sources, categories, violations, previous) },
+          {
+            role: "user",
+            content: userPrompt(sources, categories, violations, previous),
+          },
         ],
         response_format: { type: "json_schema", json_schema: schema },
         ...modelGenerationParameters(model),
@@ -889,7 +1006,10 @@ export async function generateCopy(context, apiKey, model) {
       ],
     });
   }
-  return toLegacyResult({ ...result, caption: formatSocialParagraphs(result.caption) });
+  return toLegacyResult({
+    ...result,
+    caption: formatSocialParagraphs(result.caption),
+  });
 }
 
 function toLegacyResult(result) {
@@ -898,14 +1018,18 @@ function toLegacyResult(result) {
   );
   return {
     ...result,
-    highlights: result.highlights?.length === 3
-      ? result.highlights
-      : highlights,
+    highlights:
+      result.highlights?.length === 3 ? result.highlights : highlights,
     summary: result.caption.split(/\n\n|(?<=[.!?])\s+/)[0].slice(0, 500),
     highlight: result.highlight || result.highlights?.[0] || highlights[0],
     editorial_tone: result.editorial_tone || "Informativo",
     category_suggestion: result.category_suggestion ?? null,
     detected_facts: [],
-    confidence: result.sourceMode === "manual_review" ? "low" : result.warnings.length ? "medium" : "high",
+    confidence:
+      result.sourceMode === "manual_review"
+        ? "low"
+        : result.warnings.length
+          ? "medium"
+          : "high",
   };
 }

@@ -18,6 +18,11 @@ const env = (name: string) => {
 const safe = (error: unknown) =>
   error instanceof Error ? error.message.slice(0, 300) : "Erro inesperado";
 const phone = (value: string) => value.replace(/\D/g, "");
+const markdownName = (value: unknown) =>
+  String(value || "Usuário")
+    .replace(/[\r\n*_~`]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 async function authorize(req: Request, admin: ReturnType<typeof createClient>) {
   const cron = req.headers.get("x-cron-secret");
   const expected =
@@ -177,7 +182,7 @@ Deno.serve(async (req) => {
         const counts = new Map(
           (profiles || []).map((item) => [
             item.id,
-            { name: item.name, copyNews: 0, external: 0 },
+            { name: markdownName(item.name), copyNews: 0, external: 0 },
           ]),
         );
         for (const publication of publications || []) {
