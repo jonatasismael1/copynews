@@ -153,9 +153,15 @@ function imageMime(bytes) {
     return { mime: "image/webp", extension: ".webp" };
   return null;
 }
-async function fetchToFile(url, path) {
+async function fetchToFile(url, path, extraHeaders = {}) {
   const response = await fetch(url, {
     redirect: "follow",
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/127 Safari/537.36",
+      "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7",
+      ...extraHeaders,
+    },
     signal: AbortSignal.timeout(120_000),
   });
   if (!response.ok) throw new Error(`Download HTTP ${response.status}`);
@@ -397,7 +403,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
           dir,
           `source-${index}${extname(source.filename) || ".bin"}`,
         );
-        const downloaded = await fetchToFile(source.url, input);
+        const downloaded = await fetchToFile(source.url, input, source.headers);
         files.push({ input, ...downloaded });
       }
       if (

@@ -331,14 +331,19 @@ async function instagramMetadata(sourceUrl) {
     );
   }
   if (!metadata.mediaItems?.length && /^\/p\//i.test(url.pathname)) {
-    const mediaUrl = new URL(url);
-    mediaUrl.pathname = `${mediaUrl.pathname.replace(/\/?$/, "/")}media/`;
-    mediaUrl.search = "?size=l";
+    const shortcode = url.pathname.split("/").filter(Boolean)[1];
+    const proxyBase = process.env.INSTAGRAM_MEDIA_PROXY_URL?.replace(/\/+$/, "");
+    const mediaUrl = proxyBase
+      ? `${proxyBase}?shortcode=${encodeURIComponent(shortcode)}`
+      : `https://www.instagram.com/p/${shortcode}/media/?size=l`;
     metadata.mediaItems = [
       {
-        url: mediaUrl.toString(),
+        url: mediaUrl,
         type: "image",
         filename: "instagram-original.jpg",
+        ...(proxyBase && process.env.INSTAGRAM_MEDIA_PROXY_KEY
+          ? { headers: { "x-copynews-key": process.env.INSTAGRAM_MEDIA_PROXY_KEY } }
+          : {}),
       },
     ];
   }
