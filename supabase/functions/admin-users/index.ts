@@ -26,6 +26,12 @@ function validRole(value: unknown): value is (typeof roles)[number] {
 function validGoal(value: unknown) {
   return Number.isInteger(value) && Number(value) >= 0;
 }
+function phone(value: unknown) {
+  const normalized = String(value || "").replace(/\D/g, "");
+  if (!/^55[1-9][0-9]{9,10}$/.test(normalized))
+    throw new Error("Telefone inválido. Use DDI 55 e DDD");
+  return normalized;
+}
 
 async function context(req: Request) {
   const authorization = req.headers.get("Authorization");
@@ -61,8 +67,10 @@ function handler(fn: (req: Request) => Promise<Response>) {
     try {
       return await fn(req);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected error";
-      const status = message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 400;
+      const message =
+        error instanceof Error ? error.message : "Unexpected error";
+      const status =
+        message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 400;
       console.error(JSON.stringify({ message, status }));
       return json({ error: message }, status);
     }
@@ -101,6 +109,7 @@ Deno.serve(
           role,
           organization_id: profile.organization_id,
           daily_goal: body.daily_goal ?? null,
+          phone: body.phone ? phone(body.phone) : null,
         })
         .eq("id", data.user.id);
       if (profileError) {
@@ -112,7 +121,11 @@ Deno.serve(
         action: "user.created",
         entity_type: "profile",
         entity_id: data.user.id,
-        after_data: { email: body.email, role, daily_goal: body.daily_goal ?? null },
+        after_data: {
+          email: body.email,
+          role,
+          daily_goal: body.daily_goal ?? null,
+        },
       });
       return json({ id: data.user.id }, 201);
     }
@@ -126,8 +139,14 @@ Deno.serve(
       const allowed: Record<string, unknown> = {};
       for (const key of ["name", "role", "is_active", "daily_goal"])
         if (body[key] !== undefined) allowed[key] = body[key];
-      if (!Object.keys(allowed).length) throw new Error("Nenhuma alteração informada");
-      const { error } = await admin.from("profiles").update(allowed).eq("id", body.id);
+      if (body.phone !== undefined)
+        allowed.phone = body.phone ? phone(body.phone) : null;
+      if (!Object.keys(allowed).length)
+        throw new Error("Nenhuma alteração informada");
+      const { error } = await admin
+        .from("profiles")
+        .update(allowed)
+        .eq("id", body.id);
       if (error) throw error;
       if (body.role)
         await admin.auth.admin.updateUserById(body.id, {

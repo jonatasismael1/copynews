@@ -2,7 +2,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (body: unknown, status = 200) =>
@@ -26,6 +27,13 @@ function canvaUrl(value: unknown) {
     throw new Error("Use um link HTTPS do Canva ou canva.link");
   return url.toString();
 }
+function phone(value: unknown) {
+  const normalized = String(value || "").replace(/\D/g, "");
+  if (!normalized) return null;
+  if (!/^55[1-9][0-9]{9,10}$/.test(normalized))
+    throw new Error("Telefone inválido. Use DDI 55 e DDD");
+  return normalized;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -35,7 +43,10 @@ Deno.serve(async (req) => {
     const auth = createClient(env("SUPABASE_URL"), env("SUPABASE_ANON_KEY"), {
       global: { headers: { Authorization: authorization } },
     });
-    const { data: { user }, error } = await auth.auth.getUser();
+    const {
+      data: { user },
+      error,
+    } = await auth.auth.getUser();
     if (error || !user) throw new Error("Unauthorized");
     const admin = createClient(
       env("SUPABASE_URL"),
@@ -49,15 +60,19 @@ Deno.serve(async (req) => {
       .single();
     if (!profile?.is_active) throw new Error("Forbidden");
     const body = await req.json();
-    const values = {
-      canva_video_url: canvaUrl(body.canva_video_url),
-      canva_image_url: canvaUrl(body.canva_image_url),
-    };
+    const values: Record<string, unknown> = {};
+    if ("canva_video_url" in body)
+      values.canva_video_url = canvaUrl(body.canva_video_url);
+    if ("canva_image_url" in body)
+      values.canva_image_url = canvaUrl(body.canva_image_url);
+    if ("phone" in body) values.phone = phone(body.phone);
+    if (!Object.keys(values).length)
+      throw new Error("Nenhuma alteração informada");
     const { data, error: updateError } = await admin
       .from("profiles")
       .update(values)
       .eq("id", user.id)
-      .select("canva_video_url,canva_image_url")
+      .select("canva_video_url,canva_image_url,phone")
       .single();
     if (updateError) throw updateError;
     await admin.from("audit_logs").insert({

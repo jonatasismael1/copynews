@@ -36,7 +36,9 @@ export function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [settingsTab, setSettingsTab] = useState<"general" | "backend">("general");
+  const [settingsTab, setSettingsTab] = useState<"general" | "backend">(
+    "general",
+  );
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [saving, setSaving] = useState(false);
@@ -48,6 +50,8 @@ export function SettingsPage() {
     image: profile?.canva_image_url || "",
   });
   const [savingEditorLinks, setSavingEditorLinks] = useState(false);
+  const [profilePhone, setProfilePhone] = useState(profile?.phone || "");
+  const [savingPhone, setSavingPhone] = useState(false);
   const [instagramPageId, setInstagramPageId] = useState("");
   const [connectingInstagram, setConnectingInstagram] = useState(false);
   const [syncingInstagram, setSyncingInstagram] = useState<string | null>(null);
@@ -56,7 +60,8 @@ export function SettingsPage() {
   const { data: connectedAccounts = [], refetch: refetchAccounts } =
     useConnectedAccounts(true);
   const ownConnectedAccount = connectedAccounts.find(
-    (account) => account.user_id === profile?.id && account.status === "connected",
+    (account) =>
+      account.user_id === profile?.id && account.status === "connected",
   );
 
   const { data: lookups } = useQuery({
@@ -92,8 +97,8 @@ export function SettingsPage() {
         reason === "missing_code"
           ? "O Instagram não retornou o código de autorização. Tente novamente."
           : reason === "instagram_role_required"
-          ? "Esta conta ainda não tem acesso ao app. Adicione-a como Instagram Tester no painel da Meta, aceite o convite nessa conta e tente novamente."
-          : "Não foi possível conectar o Instagram. Tente novamente.",
+            ? "Esta conta ainda não tem acesso ao app. Adicione-a como Instagram Tester no painel da Meta, aceite o convite nessa conta e tente novamente."
+            : "Não foi possível conectar o Instagram. Tente novamente.",
       );
       return;
     }
@@ -103,7 +108,14 @@ export function SettingsPage() {
         const refreshed = await refetchAccounts();
         const { error } = await supabase.functions.invoke(
           "sync-instagram-publications",
-          { body: connectedAccountId ? { account_id: connectedAccountId, sync_all: profile?.role === "admin" } : { sync_all: profile?.role === "admin" } },
+          {
+            body: connectedAccountId
+              ? {
+                  account_id: connectedAccountId,
+                  sync_all: profile?.role === "admin",
+                }
+              : { sync_all: profile?.role === "admin" },
+          },
         );
         if (error) throw error;
         queryClient.invalidateQueries({ queryKey: ["publications"] });
@@ -117,7 +129,13 @@ export function SettingsPage() {
         setConnectingInstagram(false);
       }
     })();
-  }, [profile?.id, queryClient, refetchAccounts, searchParams, setSearchParams]);
+  }, [
+    profile?.id,
+    queryClient,
+    refetchAccounts,
+    searchParams,
+    setSearchParams,
+  ]);
 
   async function updatePassword(event: FormEvent) {
     event.preventDefault();
@@ -147,7 +165,9 @@ export function SettingsPage() {
       toast.success("Foto de perfil atualizada");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Não foi possível trocar a foto",
+        error instanceof Error
+          ? error.message
+          : "Não foi possível trocar a foto",
       );
     } finally {
       setUploadingAvatar(false);
@@ -173,6 +193,20 @@ export function SettingsPage() {
     await refreshProfile();
     toast.success("Links do Canva atualizados");
   }
+  async function saveProfilePhone(event: FormEvent) {
+    event.preventDefault();
+    const phone = profilePhone.replace(/\D/g, "");
+    if (!/^55\d{10,11}$/.test(phone))
+      return toast.error("Informe telefone com DDI 55 e DDD");
+    setSavingPhone(true);
+    const { error } = await supabase.functions.invoke("profile-settings", {
+      body: { phone },
+    });
+    setSavingPhone(false);
+    if (error) return toast.error(error.message);
+    await refreshProfile();
+    toast.success("Telefone salvo e sincronizado com o módulo Enviar");
+  }
 
   async function connectInstagram(event: FormEvent) {
     event.preventDefault();
@@ -180,7 +214,9 @@ export function SettingsPage() {
     const pageId = instagramPageId || (pages.length === 1 ? pages[0].id : "");
     if (!pageId) return toast.error("Selecione a página do Copy News");
     setConnectingInstagram(true);
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (!session) {
       setConnectingInstagram(false);
       return toast.error("Sua sessão expirou. Entre novamente.");
@@ -195,7 +231,8 @@ export function SettingsPage() {
         body: JSON.stringify({ page_id: pageId }),
       });
       const result = await response.json();
-      if (!response.ok || !result.authorization_url) throw new Error(result.error);
+      if (!response.ok || !result.authorization_url)
+        throw new Error(result.error);
       window.location.assign(result.authorization_url);
     } catch {
       setConnectingInstagram(false);
@@ -217,7 +254,12 @@ export function SettingsPage() {
     setSyncingInstagram(accountId);
     const { data, error } = await supabase.functions.invoke(
       "sync-instagram-publications",
-      { body: profile?.role === "admin" ? { account_id: accountId, sync_all: true } : { account_id: accountId } },
+      {
+        body:
+          profile?.role === "admin"
+            ? { account_id: accountId, sync_all: true }
+            : { account_id: accountId },
+      },
     );
     setSyncingInstagram(null);
     if (error) return toast.error("Não foi possível sincronizar o Instagram");
@@ -313,326 +355,427 @@ export function SettingsPage() {
 
       {settingsTab === "general" && (
         <>
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Foto de perfil</CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-4">
-            <ProfileAvatar
-              src={profile?.avatar_url}
-              name={profile?.name}
-              className="size-20 ring-4 ring-secondary"
-            />
-            <div>
-              <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
-                <Camera size={17} />
-                {uploadingAvatar ? "Enviando..." : "Escolher na galeria"}
-                <input
-                  className="sr-only"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={uploadingAvatar}
-                  onChange={(event) => updateAvatar(event.target.files?.[0])}
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Foto de perfil</CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center gap-4">
+                <ProfileAvatar
+                  src={profile?.avatar_url}
+                  name={profile?.name}
+                  className="size-20 ring-4 ring-secondary"
                 />
-              </label>
+                <div>
+                  <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+                    <Camera size={17} />
+                    {uploadingAvatar ? "Enviando..." : "Escolher na galeria"}
+                    <input
+                      className="sr-only"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={uploadingAvatar}
+                      onChange={(event) =>
+                        updateAvatar(event.target.files?.[0])
+                      }
+                    />
+                  </label>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    A imagem será centralizada e recortada em formato quadrado.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Smartphone size={19} />
+                  Aplicativo no celular
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PwaInstallButton />
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Smartphone size={19} />
+                Meu telefone
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="flex flex-col gap-3 sm:flex-row"
+                onSubmit={saveProfilePhone}
+              >
+                <Input
+                  inputMode="numeric"
+                  placeholder="5582999999999"
+                  value={profilePhone}
+                  onChange={(event) => setProfilePhone(event.target.value)}
+                />
+                <Button disabled={savingPhone}>
+                  <Save />
+                  {savingPhone ? "Salvando..." : "Salvar e sincronizar"}
+                </Button>
+              </form>
               <p className="mt-2 text-xs text-muted-foreground">
-                A imagem será centralizada e recortada em formato quadrado.
+                Use o mesmo número cadastrado como destinatário no módulo
+                Enviar. O vínculo é automático.
               </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Smartphone size={19} />
-              Aplicativo no celular
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PwaInstallButton />
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Link2 size={19} />
-            Editores do Canva
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={saveEditorLinks}>
-            <p className="text-sm text-muted-foreground">Defina os modelos usados em cada formato.</p>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Modelo para vídeo">
-                <div className="relative">
-                  <Video className="absolute left-3 top-3 text-muted-foreground" size={17} />
-                  <Input
-                    className="pl-10"
-                    type="url"
-                    inputMode="url"
-                    placeholder="https://www.canva.com/design/..."
-                    value={editorLinks.video}
-                    onChange={(event) =>
-                      setEditorLinks({ ...editorLinks, video: event.target.value })
-                    }
-                  />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Link2 size={19} />
+                Editores do Canva
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={saveEditorLinks}>
+                <p className="text-sm text-muted-foreground">
+                  Defina os modelos usados em cada formato.
+                </p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Field label="Modelo para vídeo">
+                    <div className="relative">
+                      <Video
+                        className="absolute left-3 top-3 text-muted-foreground"
+                        size={17}
+                      />
+                      <Input
+                        className="pl-10"
+                        type="url"
+                        inputMode="url"
+                        placeholder="https://www.canva.com/design/..."
+                        value={editorLinks.video}
+                        onChange={(event) =>
+                          setEditorLinks({
+                            ...editorLinks,
+                            video: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </Field>
+                  <Field label="Modelo para imagem ou carrossel">
+                    <div className="relative">
+                      <Images
+                        className="absolute left-3 top-3 text-muted-foreground"
+                        size={17}
+                      />
+                      <Input
+                        className="pl-10"
+                        type="url"
+                        inputMode="url"
+                        placeholder="https://www.canva.com/design/..."
+                        value={editorLinks.image}
+                        onChange={(event) =>
+                          setEditorLinks({
+                            ...editorLinks,
+                            image: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </Field>
                 </div>
-              </Field>
-              <Field label="Modelo para imagem ou carrossel">
-                <div className="relative">
-                  <Images className="absolute left-3 top-3 text-muted-foreground" size={17} />
-                  <Input
-                    className="pl-10"
-                    type="url"
-                    inputMode="url"
-                    placeholder="https://www.canva.com/design/..."
-                    value={editorLinks.image}
-                    onChange={(event) =>
-                      setEditorLinks({ ...editorLinks, image: event.target.value })
-                    }
-                  />
-                </div>
-              </Field>
-            </div>
-            <Button disabled={savingEditorLinks}>
-              <Save />
-              {savingEditorLinks ? "Salvando..." : "Salvar links"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
+                <Button disabled={savingEditorLinks}>
+                  <Save />
+                  {savingEditorLinks ? "Salvando..." : "Salvar links"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
         </>
       )}
 
       {settingsTab === "backend" && (
-      <>
-      <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ChartNoAxesCombined size={19} />
-              Instagram profissional e métricas
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-4 text-sm text-muted-foreground">Conecte uma conta Business ou Creator.</p>
-            <form className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end" onSubmit={connectInstagram}>
-              <Field label="Página do Copy News">
-                <select
-                  required
-                  className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                  value={instagramPageId || ((lookups?.pages ?? []).length === 1 ? (lookups?.pages ?? [])[0].id : "")}
-                  onChange={(event) => setInstagramPageId(event.target.value)}
-                >
-                  <option value="">Selecione</option>
-                  {(lookups?.pages ?? []).map((page) => (
-                    <option key={page.id} value={page.id}>{page.name}</option>
-                  ))}
-                </select>
-              </Field>
-              <Button disabled={connectingInstagram}>
-                <ChartNoAxesCombined />
-                {connectingInstagram
-                  ? "Conectando..."
-                  : ownConnectedAccount
-                    ? "Conectar outra conta"
-                    : "Entrar com Instagram"}
-              </Button>
-            </form>
-            <div className="mt-5 divide-y border-t">
-              {connectedAccounts.length ? connectedAccounts.map((account) => (
-                <div key={account.id} className="flex flex-wrap items-center gap-3 py-3">
-                  <ProfileAvatar src={account.profile_picture_url} name={account.username || account.account_name} className="size-11" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">
-                      Instagram • {account.account_name || account.provider_account_id}
-                    </p>
-                    {profile?.role === "admin" && (
-                      <p className="text-xs text-muted-foreground">
-                        Usuário: {(account.profiles as { name?: string } | null)?.name || "Não identificado"}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      {account.last_sync_at
-                        ? `Última atualização: ${new Date(account.last_sync_at).toLocaleString("pt-BR")}`
-                        : "Ainda sem atualização de métricas"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {account.token_expires_at
-                        ? `Conexão válida até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`
-                        : "Validade não informada pela Meta"}
-                      {account.data_source ? ` • Fonte: ${account.data_source}` : ""}
-                    </p>
-                    {account.needs_attention && (
-                      <p className="text-xs font-medium text-destructive">A conexão precisa ser renovada.</p>
-                    )}
-                  </div>
-                  <Badge variant={account.status === "connected" ? "success" : "danger"}>
-                    {account.status === "connected" ? "Conectada" : "Desconectada"}
-                  </Badge>
-                  {account.status === "connected" && (
-                    <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={syncingInstagram === account.id}
-                        onClick={() => syncInstagram(account.id)}
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ChartNoAxesCombined size={19} />
+                Instagram profissional e métricas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Conecte uma conta Business ou Creator.
+              </p>
+              <form
+                className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end"
+                onSubmit={connectInstagram}
+              >
+                <Field label="Página do Copy News">
+                  <select
+                    required
+                    className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
+                    value={
+                      instagramPageId ||
+                      ((lookups?.pages ?? []).length === 1
+                        ? (lookups?.pages ?? [])[0].id
+                        : "")
+                    }
+                    onChange={(event) => setInstagramPageId(event.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    {(lookups?.pages ?? []).map((page) => (
+                      <option key={page.id} value={page.id}>
+                        {page.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Button disabled={connectingInstagram}>
+                  <ChartNoAxesCombined />
+                  {connectingInstagram
+                    ? "Conectando..."
+                    : ownConnectedAccount
+                      ? "Conectar outra conta"
+                      : "Entrar com Instagram"}
+                </Button>
+              </form>
+              <div className="mt-5 divide-y border-t">
+                {connectedAccounts.length ? (
+                  connectedAccounts.map((account) => (
+                    <div
+                      key={account.id}
+                      className="flex flex-wrap items-center gap-3 py-3"
+                    >
+                      <ProfileAvatar
+                        src={account.profile_picture_url}
+                        name={account.username || account.account_name}
+                        className="size-11"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">
+                          Instagram •{" "}
+                          {account.account_name || account.provider_account_id}
+                        </p>
+                        {profile?.role === "admin" && (
+                          <p className="text-xs text-muted-foreground">
+                            Usuário:{" "}
+                            {(account.profiles as { name?: string } | null)
+                              ?.name || "Não identificado"}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {account.last_sync_at
+                            ? `Última atualização: ${new Date(account.last_sync_at).toLocaleString("pt-BR")}`
+                            : "Ainda sem atualização de métricas"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {account.token_expires_at
+                            ? `Conexão válida até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`
+                            : "Validade não informada pela Meta"}
+                          {account.data_source
+                            ? ` • Fonte: ${account.data_source}`
+                            : ""}
+                        </p>
+                        {account.needs_attention && (
+                          <p className="text-xs font-medium text-destructive">
+                            A conexão precisa ser renovada.
+                          </p>
+                        )}
+                      </div>
+                      <Badge
+                        variant={
+                          account.status === "connected" ? "success" : "danger"
+                        }
                       >
-                        <RefreshCw className={syncingInstagram === account.id ? "animate-spin" : ""} />
-                        Atualizar agora
-                      </Button>
-                      {account.user_id === profile?.id && (
-                        <Button type="button" size="sm" variant="ghost" onClick={() => disconnectInstagram(account.id)}>
-                          <Unplug /> Desconectar
-                        </Button>
+                        {account.status === "connected"
+                          ? "Conectada"
+                          : "Desconectada"}
+                      </Badge>
+                      {account.status === "connected" && (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={syncingInstagram === account.id}
+                            onClick={() => syncInstagram(account.id)}
+                          >
+                            <RefreshCw
+                              className={
+                                syncingInstagram === account.id
+                                  ? "animate-spin"
+                                  : ""
+                              }
+                            />
+                            Atualizar agora
+                          </Button>
+                          {account.user_id === profile?.id && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => disconnectInstagram(account.id)}
+                            >
+                              <Unplug /> Desconectar
+                            </Button>
+                          )}
+                        </>
                       )}
-                    </>
-                  )}
+                    </div>
+                  ))
+                ) : (
+                  <p className="py-5 text-sm text-muted-foreground">
+                    Nenhuma conta profissional conectada.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Estado dos serviços</CardTitle>
+            </CardHeader>
+            <CardContent className="divide-y">
+              {rows.map(([Icon, name, description]) => (
+                <div key={name} className="flex items-center gap-4 py-4">
+                  <div className="grid size-10 place-items-center rounded-xl bg-secondary">
+                    <Icon size={18} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold">{name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {description}
+                    </p>
+                  </div>
+                  <Badge variant="success">Configurado</Badge>
                 </div>
-              )) : (
-                <p className="py-5 text-sm text-muted-foreground">Nenhuma conta profissional conectada.</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Estado dos serviços</CardTitle>
-        </CardHeader>
-        <CardContent className="divide-y">
-          {rows.map(([Icon, name, description]) => (
-            <div key={name} className="flex items-center gap-4 py-4">
-              <div className="grid size-10 place-items-center rounded-xl bg-secondary">
-                <Icon size={18} />
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold">{name}</p>
-                <p className="text-xs text-muted-foreground">{description}</p>
-              </div>
-              <Badge variant="success">Configurado</Badge>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      </>
+              ))}
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {settingsTab === "general" && (
-      <>
-      {canManageLookups && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <LookupCard
-            title="Páginas de publicação"
-            onSubmit={createPage}
-            submitLabel="Adicionar página"
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Nome">
-                <Input
-                  required
-                  minLength={2}
-                  value={pageForm.name}
-                  onChange={(event) =>
-                    setPageForm({ ...pageForm, name: event.target.value })
-                  }
-                  placeholder="Portal principal"
+        <>
+          {canManageLookups && (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <LookupCard
+                title="Páginas de publicação"
+                onSubmit={createPage}
+                submitLabel="Adicionar página"
+              >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Nome">
+                    <Input
+                      required
+                      minLength={2}
+                      value={pageForm.name}
+                      onChange={(event) =>
+                        setPageForm({ ...pageForm, name: event.target.value })
+                      }
+                      placeholder="Portal principal"
+                    />
+                  </Field>
+                  <Field label="Plataforma">
+                    <Input
+                      required
+                      minLength={2}
+                      value={pageForm.platform}
+                      onChange={(event) =>
+                        setPageForm({
+                          ...pageForm,
+                          platform: event.target.value,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+                <LookupList
+                  items={lookups?.pages ?? []}
+                  secondaryKey="platform"
+                  onToggle={(id, active) => toggleLookup("pages", id, active)}
                 />
-              </Field>
-              <Field label="Plataforma">
-                <Input
-                  required
-                  minLength={2}
-                  value={pageForm.platform}
-                  onChange={(event) =>
-                    setPageForm({ ...pageForm, platform: event.target.value })
+              </LookupCard>
+              <LookupCard
+                title="Categorias editoriais"
+                onSubmit={createCategory}
+                submitLabel="Adicionar categoria"
+              >
+                <Field label="Nome">
+                  <Input
+                    required
+                    minLength={2}
+                    value={categoryName}
+                    onChange={(event) => setCategoryName(event.target.value)}
+                    placeholder="Tecnologia"
+                  />
+                </Field>
+                <LookupList
+                  items={lookups?.categories ?? []}
+                  secondaryKey="slug"
+                  onToggle={(id, active) =>
+                    toggleLookup("categories", id, active)
                   }
                 />
-              </Field>
+              </LookupCard>
             </div>
-            <LookupList
-              items={lookups?.pages ?? []}
-              secondaryKey="platform"
-              onToggle={(id, active) => toggleLookup("pages", id, active)}
-            />
-          </LookupCard>
-          <LookupCard
-            title="Categorias editoriais"
-            onSubmit={createCategory}
-            submitLabel="Adicionar categoria"
-          >
-            <Field label="Nome">
-              <Input
-                required
-                minLength={2}
-                value={categoryName}
-                onChange={(event) => setCategoryName(event.target.value)}
-                placeholder="Tecnologia"
-              />
-            </Field>
-            <LookupList
-              items={lookups?.categories ?? []}
-              secondaryKey="slug"
-              onToggle={(id, active) => toggleLookup("categories", id, active)}
-            />
-          </LookupCard>
-        </div>
-      )}
+          )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Alterar minha senha</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={updatePassword}>
-            <Field label="Nova senha">
-              <Input
-                type="password"
-                minLength={8}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="new-password"
-                required
-              />
-            </Field>
-            <Field label="Confirmar nova senha">
-              <Input
-                type="password"
-                minLength={8}
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                autoComplete="new-password"
-                required
-              />
-            </Field>
-            <div className="sm:col-span-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? "Salvando…" : "Atualizar senha"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Alterar minha senha</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="grid gap-4 sm:grid-cols-2"
+                onSubmit={updatePassword}
+              >
+                <Field label="Nova senha">
+                  <Input
+                    type="password"
+                    minLength={8}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="new-password"
+                    required
+                  />
+                </Field>
+                <Field label="Confirmar nova senha">
+                  <Input
+                    type="password"
+                    minLength={8}
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    autoComplete="new-password"
+                    required
+                  />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Salvando…" : "Atualizar senha"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Política editorial padrão</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Gerar texto jornalístico, claro e direto. Preservar os fatos,
-            sinalizar divergências entre fontes, nunca inventar nomes, números,
-            locais, datas ou citações. Toda alteração por IA exige prévia e
-            confirmação humana.
-          </p>
-        </CardContent>
-      </Card>
-      </>
+          <Card>
+            <CardHeader>
+              <CardTitle>Política editorial padrão</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Gerar texto jornalístico, claro e direto. Preservar os fatos,
+                sinalizar divergências entre fontes, nunca inventar nomes,
+                números, locais, datas ou citações. Toda alteração por IA exige
+                prévia e confirmação humana.
+              </p>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

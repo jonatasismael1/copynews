@@ -16,11 +16,13 @@ export function UsersPage() {
   const [open, setOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>({});
+  const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
   const [savingGoal, setSavingGoal] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     email: "",
     password: "",
+    phone: "",
     role: "writer",
     daily_goal: 10,
   });
@@ -82,6 +84,22 @@ export function UsersPage() {
       });
       refetch();
     }
+  }
+  async function savePhone(id: string) {
+    const phone = (phoneDrafts[id] || "").replace(/\D/g, "");
+    if (!/^55\d{10,11}$/.test(phone))
+      return toast.error("Informe telefone com DDI 55 e DDD");
+    const { error } = await supabase.functions.invoke("admin-users", {
+      body: { action: "update", id, phone },
+    });
+    if (error) return toast.error(error.message);
+    toast.success("Telefone salvo e sincronizado com destinatários");
+    setPhoneDrafts((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    refetch();
   }
   return (
     <div className="page-container space-y-5 sm:space-y-6">
@@ -160,6 +178,15 @@ export function UsersPage() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
               </Field>
+              <Field label="Telefone com DDI e DDD">
+                <Input
+                  required
+                  inputMode="numeric"
+                  placeholder="5582999999999"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
+              </Field>
               <Field label="Senha temporária">
                 <Input
                   required
@@ -213,28 +240,108 @@ export function UsersPage() {
           className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center"
           onClick={() => setSelectedUserId(null)}
         >
-          <Card className="w-full max-w-md rounded-b-none p-5 sm:rounded-2xl" onClick={(event) => event.stopPropagation()}>
+          <Card
+            className="w-full max-w-md rounded-b-none p-5 sm:rounded-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-center gap-3 border-b pb-4">
-              <ProfileAvatar src={selectedUser.avatar_url} name={selectedUser.name} className="size-11" />
+              <ProfileAvatar
+                src={selectedUser.avatar_url}
+                name={selectedUser.name}
+                className="size-11"
+              />
               <div className="min-w-0">
-                <h2 className="truncate font-display text-lg font-semibold">{selectedUser.name}</h2>
-                <p className="truncate text-xs text-muted-foreground">{selectedUser.email}</p>
+                <h2 className="truncate font-display text-lg font-semibold">
+                  {selectedUser.name}
+                </h2>
+                <p className="truncate text-xs text-muted-foreground">
+                  {selectedUser.email}
+                </p>
               </div>
-              <Badge className="ml-auto" variant={selectedUser.is_active ? "success" : "danger"}>{selectedUser.is_active ? "Ativo" : "Inativo"}</Badge>
+              <Badge
+                className="ml-auto"
+                variant={selectedUser.is_active ? "success" : "danger"}
+              >
+                {selectedUser.is_active ? "Ativo" : "Inativo"}
+              </Badge>
             </div>
             <div className="space-y-4 py-4">
-              <div><p className="text-xs text-muted-foreground">Função</p><p className="mt-1 text-sm font-medium">{roleLabels[selectedUser.role]}</p></div>
+              <div>
+                <p className="text-xs text-muted-foreground">Função</p>
+                <p className="mt-1 text-sm font-medium">
+                  {roleLabels[selectedUser.role]}
+                </p>
+              </div>
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-muted-foreground">Meta diária</span>
+                <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Meta diária
+                </span>
                 <div className="flex gap-2">
-                  <Input className="min-w-0" type="number" min="0" step="1" value={goalDrafts[selectedUser.id] ?? String(selectedUser.daily_goal ?? 0)} onChange={(event) => setGoalDrafts((current) => ({ ...current, [selectedUser.id]: event.target.value }))} />
-                  <Button variant="outline" onClick={() => saveGoal(selectedUser.id)} disabled={savingGoal === selectedUser.id}><Save />Salvar</Button>
+                  <Input
+                    className="min-w-0"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={
+                      goalDrafts[selectedUser.id] ??
+                      String(selectedUser.daily_goal ?? 0)
+                    }
+                    onChange={(event) =>
+                      setGoalDrafts((current) => ({
+                        ...current,
+                        [selectedUser.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => saveGoal(selectedUser.id)}
+                    disabled={savingGoal === selectedUser.id}
+                  >
+                    <Save />
+                    Salvar
+                  </Button>
+                </div>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+                  Telefone vinculado ao Enviar
+                </span>
+                <div className="flex gap-2">
+                  <Input
+                    className="min-w-0"
+                    inputMode="numeric"
+                    placeholder="5582999999999"
+                    value={
+                      phoneDrafts[selectedUser.id] ?? selectedUser.phone ?? ""
+                    }
+                    onChange={(event) =>
+                      setPhoneDrafts((current) => ({
+                        ...current,
+                        [selectedUser.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => savePhone(selectedUser.id)}
+                  >
+                    <Save />
+                    Salvar
+                  </Button>
                 </div>
               </label>
             </div>
             <div className="grid grid-cols-2 gap-3 border-t pt-4">
-              <Button variant="outline" onClick={() => setSelectedUserId(null)}>Fechar</Button>
-              <Button variant={selectedUser.is_active ? "destructive" : "default"} onClick={() => toggle(selectedUser.id, selectedUser.is_active)}>{selectedUser.is_active ? "Desativar acesso" : "Ativar acesso"}</Button>
+              <Button variant="outline" onClick={() => setSelectedUserId(null)}>
+                Fechar
+              </Button>
+              <Button
+                variant={selectedUser.is_active ? "destructive" : "default"}
+                onClick={() => toggle(selectedUser.id, selectedUser.is_active)}
+              >
+                {selectedUser.is_active ? "Desativar acesso" : "Ativar acesso"}
+              </Button>
             </div>
           </Card>
         </div>
