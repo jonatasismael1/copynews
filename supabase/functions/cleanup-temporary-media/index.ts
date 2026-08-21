@@ -188,6 +188,7 @@ Deno.serve(async (req) => {
         "report_date",
         dataCutoff.toISOString().slice(0, 10),
       ),
+      instagram_profile_snapshots: await deleteOlderThan(admin, "instagram_profile_snapshots", "collected_at", dataCutoff.toISOString()),
       audit_logs: await deleteOlderThan(admin, "audit_logs", "created_at", dataCutoff.toISOString()),
       instagram_collection_runs: await deleteOlderThan(admin, "instagram_collection_runs", "started_at", dataCutoff.toISOString()),
       instagram_posts: await deleteOlderThan(admin, "instagram_posts", "published_at", dataCutoff.toISOString()),
