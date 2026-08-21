@@ -279,17 +279,22 @@ async function instagramMetadata(sourceUrl) {
   const url = new URL(sourceUrl);
   url.search = "?__a=1";
   url.hash = "";
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Instagram 219.0.0.12.117 Android",
-      "X-IG-App-ID": "936619743392459",
-      "Accept-Language": "pt-BR,pt;q=0.9",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  const metadata = response.ok
-    ? parseInstagramMetadata(await response.text())
-    : { caption: null, author: null, provider: "none" };
+  let metadata = { caption: null, author: null, provider: "none" };
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Instagram 219.0.0.12.117 Android",
+        "X-IG-App-ID": "936619743392459",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.ok) metadata = parseInstagramMetadata(await response.text());
+  } catch (error) {
+    console.warn(
+      JSON.stringify({ event: "instagram.metadata.failed", message: error.message }),
+    );
+  }
   try {
     const embedUrl = new URL(url);
     embedUrl.search = "";
