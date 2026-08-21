@@ -132,16 +132,27 @@ function persistentLines(frames) {
 }
 function imageHeadline(lines) {
   if (!lines.length) return [];
-  const medianHeight = [...lines].sort((a, b) => a.height - b.height)[
-    Math.floor(lines.length / 2)
+  const unique = [];
+  for (const line of lines) {
+    const duplicateIndex = unique.findIndex(
+      (candidate) =>
+        similarity(line.text, candidate.text) >= 0.82 &&
+        Math.abs(line.y - candidate.y) <= Math.max(line.height, candidate.height),
+    );
+    if (duplicateIndex < 0) unique.push(line);
+    else if (line.confidence > unique[duplicateIndex].confidence)
+      unique[duplicateIndex] = line;
+  }
+  const medianHeight = [...unique].sort((a, b) => a.height - b.height)[
+    Math.floor(unique.length / 2)
   ].height;
-  const candidates = lines.filter(
+  const candidates = unique.filter(
     (line) =>
       line.height >= medianHeight * 0.9 &&
       line.text.length >= 8 &&
       line.text.length <= 140,
   );
-  return (candidates.length ? candidates : lines)
+  return (candidates.length ? candidates : unique)
     .sort((a, b) => a.y - b.y || a.x - b.x)
     .slice(0, 6);
 }
