@@ -129,7 +129,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
   async function processDeliveryJob(job) {
     const dir = join(tmpdir(), `copy-news-delivery-${job.id}`); await fs.mkdir(dir, { recursive: true });
     const steps = { delivery_link: { status: "pending" }, ...(job.steps || {}) }; const evolution = new EvolutionService(log);
-    const persist = async (extra = {}) => db.from("news_send_history").update({ steps, lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), updated_at: new Date().toISOString(), ...extra }).eq("id", job.id);
+    const persist = async (extra = {}) => { const { error } = await db.from("news_send_history").update({ steps, lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(), updated_at: new Date().toISOString(), ...extra }).eq("id", job.id); if (error) throw error; };
     try {
       const [{ data: existingNews }, { data: recipient }] = await Promise.all([
         job.news_id ? db.from("news_items").select("id,source_url,original_title,original_caption,clean_original_caption,source_caption,temporary_media_path,temporary_media_paths").eq("id", job.news_id).single() : Promise.resolve({ data: null }),

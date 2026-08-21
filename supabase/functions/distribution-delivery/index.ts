@@ -28,5 +28,8 @@ Deno.serve(async (req) => {
       media = (data || []).filter((item) => item.signedUrl).map((item, index) => ({ url: externalizeStorageUrl(item.signedUrl, new URL(req.url).origin), name: paths[index]?.split("/").pop() || `noticia-original-baixada-${index + 1}`, kind: /\.(mp4|mov|webm)$/i.test(paths[index] || "") ? "video" : "image" }));
     }
     return json({ title, caption, source_url: delivery.source_url, source_author: news?.source_author || null, sender_name: delivery.sender_name || "Copy News", recipient_name: delivery.recipient_name, recipient_vehicle: delivery.recipient_vehicle, created_at: delivery.created_at, media, media_expired: paths.length > 0 && media.length === 0 });
-  } catch { return json({ error: "Não foi possível abrir esta entrega" }, 400); }
+  } catch (error) {
+    console.error("distribution-delivery.failed", error instanceof Error ? error.message : "unknown");
+    return json({ error: "Não foi possível abrir esta entrega" }, 400);
+  }
 });

@@ -12,19 +12,13 @@ import {
 } from "@/lib/media-download";
 
 type SharedNews = {
-  generated_title: string | null;
-  generated_caption: string | null;
-  highlight: string | null;
-  editorial_tone: string | null;
-  summary: string | null;
+  original_title: string | null;
+  original_caption: string | null;
+  clean_original_caption: string | null;
   source_url: string;
   source_author: string | null;
   source_caption: string | null;
   transcript: string | null;
-  ocr_text: string | null;
-  ai_confidence: string | null;
-  ai_warnings: string[];
-  detected_facts: string[];
   download_url: string | null;
   download_urls?: { url: string; index: number }[];
   publications: { platform: string; published_url: string; published_at: string }[];
@@ -103,21 +97,17 @@ export function SharedNewsPage() {
       <div className="mx-auto max-w-4xl space-y-5">
         <div className="rounded-3xl bg-sidebar p-6 text-white shadow-sm sm:p-8">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">Copy News</p>
-          <h1 className="mt-3 font-display text-2xl font-bold leading-tight text-white sm:text-4xl">{data.generated_title || "Notícia compartilhada"}</h1>
-          {data.generated_title && <p className="mt-2 text-xs text-white/65">{data.generated_title.length} caracteres</p>}
-          {data.highlight && <p className="mt-4 inline-flex rounded-full bg-emerald-300 px-3 py-1 text-sm font-bold text-slate-950">{data.highlight} · {data.highlight.length} caracteres</p>}
+          <h1 className="mt-3 font-display text-2xl font-bold leading-tight text-white sm:text-4xl">{data.original_title || "Notícia compartilhada"}</h1>
+          {data.original_title && <p className="mt-2 text-xs text-white/65">{data.original_title.length} caracteres</p>}
           <div className="mt-5 flex flex-wrap gap-2">
-            {data.generated_title && <Button onClick={() => copy(data.generated_title!, "Título")}><Clipboard /> Copiar título</Button>}
-            {data.generated_caption && <Button variant="secondary" onClick={() => copy(data.generated_caption!, "Legenda")}><Clipboard /> Copiar legenda</Button>}
+            {data.original_title && <Button onClick={() => copy(data.original_title!, "Título")}><Clipboard /> Copiar título</Button>}
+            {(data.clean_original_caption || data.original_caption) && <Button variant="secondary" onClick={() => copy(data.clean_original_caption || data.original_caption || "", "Legenda")}><Clipboard /> Copiar legenda</Button>}
             {data.download_url && <Button className="border-white/30 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-950" variant="outline" onClick={saveMedia} disabled={preparingMedia}>{preparingMedia ? <LoaderCircle className="animate-spin" /> : <Download />} {isAppleMobile() ? "Salvar na galeria" : "Baixar mídia"}</Button>}
           </div>
         </div>
-        <SharedField title="Legenda gerada" value={data.generated_caption} onCopy={copy} />
+        <SharedField title="Legenda original" value={data.clean_original_caption || data.original_caption} onCopy={copy} />
         <div className="grid gap-5 md:grid-cols-2">
-          <SharedField title="Resumo" value={data.summary} onCopy={copy} />
-          <SharedField title="Legenda original" value={data.source_caption} onCopy={copy} />
           <SharedField title="Transcrição" value={data.transcript} onCopy={copy} />
-          <SharedField title="Texto identificado na imagem" value={data.ocr_text} onCopy={copy} />
         </div>
         <Card>
           <CardHeader><CardTitle>Fonte</CardTitle></CardHeader>

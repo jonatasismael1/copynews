@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       const { data: news, error } = await admin
         .from("news_items")
         .select(
-          "id,public_slug,source_url,source_platform,source_author,source_caption,temporary_media_path,temporary_media_paths,transcript,ocr_text,generated_title,generated_caption,highlight,editorial_tone,summary,ai_confidence,ai_warnings,detected_facts,created_at,publications(platform,published_url,published_at)",
+          "id,public_slug,source_url,source_platform,source_author,source_caption,original_title,original_caption,clean_original_caption,temporary_media_path,temporary_media_paths,transcript,created_at,publications(platform,published_url,published_at)",
         )
         .eq("public_slug", slug)
         .eq("share_enabled", true)
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
       throw new Error("Forbidden");
     const { data: current, error: readError } = await admin
       .from("news_items")
-      .select("id,created_by,assigned_to,generated_title,public_slug")
+      .select("id,created_by,assigned_to,original_title,public_slug")
       .eq("id", body.news_id)
       .single();
     if (readError || !current) throw new Error("Notícia não encontrada");
@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
       return json({ disabled: true });
     }
     if (body.action !== "enable") throw new Error("Ação inválida");
-    const slug = current.public_slug || slugify(current.generated_title || "noticia");
+    const slug = current.public_slug || slugify(current.original_title || "noticia");
     const { data: updated, error: updateError } = await admin
       .from("news_items")
       .update({
