@@ -302,9 +302,16 @@ async function instagramMetadata(sourceUrl) {
       },
       signal: AbortSignal.timeout(10_000),
     });
-    const fullImage = embedResponse.ok
-      ? parseInstagramEmbedImage(await embedResponse.text())
-      : null;
+    const embedHtml = embedResponse.ok ? await embedResponse.text() : "";
+    const embedMetadata = embedHtml
+      ? parseInstagramMetadata(embedHtml)
+      : { caption: null, author: null };
+    if (!metadata.caption && embedMetadata.caption)
+      metadata.caption = embedMetadata.caption;
+    if (!metadata.author && embedMetadata.author)
+      metadata.author = embedMetadata.author;
+    if (metadata.caption) metadata.provider = "instagram-meta";
+    const fullImage = embedHtml ? parseInstagramEmbedImage(embedHtml) : null;
     if (fullImage)
       metadata.mediaItems = [
         {
@@ -317,6 +324,18 @@ async function instagramMetadata(sourceUrl) {
     console.warn(
       JSON.stringify({ event: "instagram.embed.failed", message: error.message }),
     );
+  }
+  if (!metadata.mediaItems?.length && /^\/p\//i.test(url.pathname)) {
+    const mediaUrl = new URL(url);
+    mediaUrl.pathname = `${mediaUrl.pathname.replace(/\/?$/, "/")}media/`;
+    mediaUrl.search = "?size=l";
+    metadata.mediaItems = [
+      {
+        url: mediaUrl.toString(),
+        type: "image",
+        filename: "instagram-original.jpg",
+      },
+    ];
   }
   return metadata;
 }
