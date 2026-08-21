@@ -99,6 +99,11 @@ function persistentLines(frames) {
   );
   for (const frame of frames)
     for (const line of frame) {
+      const matches = frames.flatMap((candidateFrame) =>
+        candidateFrame.filter(
+          (candidate) => similarity(line.text, candidate.text) >= 0.72,
+        ),
+      );
       const matchingFrames = frames.filter((candidateFrame) =>
         candidateFrame.some(
           (candidate) => similarity(line.text, candidate.text) >= 0.72,
@@ -109,8 +114,16 @@ function persistentLines(frames) {
         !selected.some(
           (candidate) => similarity(line.text, candidate.text) >= 0.72,
         )
-      )
-        selected.push({ ...line, repeats: matchingFrames });
+      ) {
+        const best = matches.sort(
+          (a, b) =>
+            tokens(b.text).size * 12 +
+            b.confidence +
+            b.text.length * 0.15 -
+            (tokens(a.text).size * 12 + a.confidence + a.text.length * 0.15),
+        )[0];
+        selected.push({ ...best, repeats: matchingFrames });
+      }
     }
   return selected.sort((a, b) => a.y - b.y || a.x - b.x);
 }
