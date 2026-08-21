@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
     }
     return json({ title, caption, source_url: delivery.source_url, source_author: news?.source_author || null, sender_name: delivery.sender_name || "Copy News", recipient_name: delivery.recipient_name, recipient_vehicle: delivery.recipient_vehicle, created_at: delivery.created_at, media, media_expired: paths.length > 0 && media.length === 0, recipient_confirmed_at: delivery.recipient_confirmed_at });
   } catch (error) {
-    console.error("distribution-delivery.failed", error instanceof Error ? error.message : "unknown");
+    console.error("distribution-delivery.failed", error instanceof Error ? error.message : JSON.stringify(error));
     return json({ error: "Não foi possível abrir esta entrega" }, 400);
   }
 });
