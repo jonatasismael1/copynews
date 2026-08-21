@@ -45,13 +45,14 @@ function similarity(a, b) {
 function valid(text, confidence) {
   if (
     confidence < 45 ||
-    text.length < 4 ||
+    text.length < 2 ||
     /^[@#]/.test(text) ||
     /https?:|www\.|\.com\b/i.test(text)
   )
     return false;
   const letters = (text.match(/[A-Za-zÀ-ÿ]/g) || []).length;
-  return letters >= Math.max(3, text.length * 0.55);
+  if (/^\d{2,4}$/.test(text)) return true;
+  return letters >= Math.max(2, text.length * 0.55);
 }
 function linesFromTsv(raw) {
   const rows = String(raw || "")
