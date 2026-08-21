@@ -15,7 +15,22 @@ export async function handler(event) {
 
   const source = `https://www.instagram.com/p/${shortcode}/media/?size=l`;
   try {
-    const response = await fetch(source, {
+    let mediaSource = source;
+    const appId = process.env.INSTAGRAM_APP_ID || "";
+    const appSecret = process.env.INSTAGRAM_APP_SECRET || "";
+    if (appId && appSecret) {
+      const oembed = new URL("https://graph.facebook.com/v25.0/instagram_oembed");
+      oembed.searchParams.set("url", `https://www.instagram.com/p/${shortcode}/`);
+      oembed.searchParams.set("access_token", `${appId}|${appSecret}`);
+      oembed.searchParams.set("omitscript", "true");
+      const metadataResponse = await fetch(oembed, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      const metadata = await metadataResponse.json().catch(() => ({}));
+      if (metadataResponse.ok && metadata.thumbnail_url)
+        mediaSource = metadata.thumbnail_url;
+    }
+    const response = await fetch(mediaSource, {
       redirect: "follow",
       headers: {
         "User-Agent":
