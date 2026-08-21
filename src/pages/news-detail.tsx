@@ -250,7 +250,7 @@ export function NewsDetailPage() {
     (profile?.role === "writer" &&
       (data.created_by === profile.id || data.assigned_to === profile.id));
   const editorReady =
-    job?.status === "completed" && Boolean(title.trim() && caption.trim());
+    job?.status === "completed" && Boolean(title.trim());
   const editorType = mediaEditorType(job?.step_results);
   const editorUrl =
     editorType === "video"

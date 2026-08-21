@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { spawn } from "node:child_process";
 import { extractMetadata } from "./adapters.mjs";
-import { normalizeHeadlineCase } from "./openrouter.mjs";
+import { normalizeHeadlineCase, readFrames } from "./openrouter.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeError = (error) => String(error?.message || error || "Falha inesperada").replace(/https?:\/\/\S+/g, "[url]").replace(/[A-Za-z0-9_-]{30,}/g, "[redacted]").slice(0, 400);
@@ -102,7 +102,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
   }
 
   async function processPreview(preview) {
-    const dir = join(tmpdir(), `copy-news-preview-${preview.id}`); await fs.mkdir(dir, { recursive: true });
+    const dir = join(tmpdir(), `copy-news-preview-${preview.id}`); const framesDir = join(dir, "frames"); await fs.mkdir(framesDir, { recursive: true });
     let metadata = null;
     try {
       metadata = await extractMetadata(preview.source_url); const sources = await cobaltSources(preview.source_url); const files = [];
@@ -111,11 +111,14 @@ export function createDistributionProcessor({ db, workerId, log }) {
         const recovered = await downloadVideoWithYtDlp(preview.source_url, dir, "preview-reel"); files.splice(0, files.length, recovered);
       }
       let mediaKind = files.length > 1 ? "carousel" : "video";
-      for (const file of files) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; }
+      for (const [index, file] of files.entries()) { const image = imageMime(file.bytes); if (files.length === 1 && image) mediaKind = "image"; const output = join(framesDir, `frame-${index}-%02d.jpg`); await execute("ffmpeg", image ? ["-y", "-v", "error", "-i", file.input, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output] : ["-y", "-v", "error", "-i", file.input, "-vf", "fps=1/3,scale=960:-1", "-frames:v", "6", "-q:v", "4", output]); }
       if (expectsVideo(preview.source_url) && mediaKind === "image") throw new Error("A origem retornou apenas a capa do Reel, sem o vídeo");
-      const metadataTitle = String(metadata?.title || "").trim(); const titleState = metadataTitle ? "found" : "absent";
+      const frames = await Promise.all((await fs.readdir(framesDir)).sort().slice(0, 8).map(async (name) => (await fs.readFile(join(framesDir, name))).toString("base64")));
+      let ocr = null; let titleState = "absent";
+      try { ocr = frames.length && process.env.OPENROUTER_API_KEY ? await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini") : null; titleState = ocr?.title ? "found" : "absent"; } catch { titleState = "failed"; }
+      const metadataTitle = String(metadata?.title || "").trim(); const visualTitle = String(ocr?.title || metadataTitle).trim();
       const caption = String(metadata?.caption || "").trim(); const captionState = caption ? "found" : metadata?.provider === "none" ? "failed" : "absent";
-      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: mediaKind, media_count: files.length, original_title: metadataTitle ? normalizeHeadlineCase(metadataTitle, caption) : null, original_caption: caption || null, title_state: titleState, caption_state: captionState, error_message: null, lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
+      await db.from("distribution_direct_previews").update({ status: "ready", media_kind: mediaKind, media_count: files.length, original_title: visualTitle ? normalizeHeadlineCase(visualTitle, caption) : null, original_caption: caption || null, title_state: visualTitle ? "found" : titleState, caption_state: captionState, error_message: null, lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("id", preview.id);
       log("distribution.preview.ready", { previewId: preview.id, mediaKind, mediaCount: files.length, titleState, captionState });
     } catch (error) {
       const caption = String(metadata?.caption || "").trim();
@@ -157,7 +160,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
       }
       await persist({ delivery_media_paths: deliveryPaths, delivery_media_expires_at: new Date(Date.now() + 7 * 86400000).toISOString(), error_message: mediaWarning });
       const publicBase = String(process.env.PUBLIC_APP_URL || "https://copynews.netlify.app").replace(/\/$/, "");
-      const messageIdValue = await evolution.text(phone, `📰 *Conteúdo enviado pelo Copy News*\n\n${publicBase}/envio/${job.share_slug}`);
+      const messageIdValue = await evolution.text(phone, `📰 *Conteúdo para ser publicado*\n\n${publicBase}/envio/${job.share_slug}`);
       steps.delivery_link = { status: "sent", ...(messageIdValue ? { message_id: messageIdValue } : {}) };
       await persist({ status: "success", link_message_id: messageIdValue, sent_at: new Date().toISOString(), lease_owner: null, lease_expires_at: null }); log("distribution.delivery.completed", { jobId: job.id, mediaCount: deliveryPaths.length });
     } catch (error) {

@@ -15,6 +15,8 @@ import {
 } from "./adapters.mjs";
 import {
   cleanSourceCaption,
+  normalizeHeadlineCase,
+  readFrames,
   transcribeAudio,
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
@@ -701,11 +703,26 @@ async function processJob(job) {
       });
     }
     if (!results.ocr) {
-      results.ocr = { text: "", confidence: null, skipped: true };
+      if (!mediaFiles.length) {
+        results.ocr = { text: "", confidence: null };
+      } else {
+        if (!process.env.OPENROUTER_API_KEY) throw new Error("O OCR visual não foi configurado");
+        await fs.mkdir(framesDir, { recursive: true });
+        const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
+        for (const [index, item] of mediaFiles.entries()) {
+          const output = join(framesDir, `frame-${index}-%02d.jpg`);
+          await run("ffmpeg", item.kind === "image"
+            ? ["-y", "-i", item.path, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output]
+            : ["-y", "-i", item.path, "-vf", "fps=1/3,scale=960:-1", "-frames:v", String(framesPerMedia), "-q:v", "4", output]);
+        }
+        const frames = await Promise.all((await fs.readdir(framesDir)).sort().slice(0, 8).map(async (name) => (await fs.readFile(join(framesDir, name))).toString("base64")));
+        results.ocr = frames.length ? await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini") : { text: "", confidence: 0 };
+      }
+      if (!results.original_title && results.ocr.title) results.original_title = normalizeHeadlineCase(results.ocr.title, results.clean_original_caption || "");
       await updateNews(job.news_items.id, {
-        raw_ocr_text: null,
-        ocr_text: null,
-        ocr_confidence: null,
+        raw_ocr_text: results.ocr.text || "",
+        ocr_text: results.ocr.text || "",
+        ocr_confidence: results.ocr.confidence,
         original_title: results.original_title || null,
       });
       await update(job.id, {
