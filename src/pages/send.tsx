@@ -554,7 +554,7 @@ export function SendPage() {
           {batchMode ? <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4 sm:px-6">
             <textarea className="min-h-40 w-full rounded-xl border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-primary" placeholder="Cole de 2 a 10 links, um por linha" value={batchText} onChange={(event)=>{setBatchText(event.target.value);setBatchPreviews([])}} />
             <p className="mt-2 text-xs text-muted-foreground">{batchUrls.length} link(s) válido(s). O carregamento respeita a ordem da lista.</p>
-            {batchPreparer.isPending && <div className="mt-4 rounded-xl bg-muted p-4 text-sm"><LoaderCircle className="mr-2 inline animate-spin text-primary"/>Carregando uma notícia por vez...</div>}
+            {batchPreparer.isPending && <div className="mt-4 rounded-xl bg-muted p-4 text-sm"><LoaderCircle className="mr-2 inline animate-spin text-primary"/>Notícias na fila do servidor. Você pode sair desta tela e voltar depois.</div>}
             {batchPreviews.length > 0 && <div className="mt-4 space-y-2">{batchPreviews.map((item,index)=><div key={item.id} className="rounded-xl border p-3"><p className="font-semibold">Notícia {index+1}</p><p className="line-clamp-2 text-xs text-muted-foreground">{item.original_title||item.source_url}</p><Badge className="mt-2" variant={item.media_count>0?"success":"warning"}>{item.media_count>0?"Pronta":"Pronta sem mídia"}</Badge></div>)}</div>}
           </div> : <><div className="shrink-0 px-5 pb-3 sm:px-6">
             <div className="relative">
@@ -650,6 +650,7 @@ export function SendPage() {
               <div className="rounded-xl bg-muted p-5 text-center text-sm">
                 <LoaderCircle className="mx-auto mb-2 animate-spin text-primary" />
                 Analisando mídia, título e legenda...
+                <p className="mt-1 text-xs text-muted-foreground">O processamento continua no servidor mesmo com o celular bloqueado ou fora desta tela.</p>
               </div>
             )}
             {directPreview?.status === "failed" && (
