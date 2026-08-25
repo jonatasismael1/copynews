@@ -449,7 +449,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
                 "-vf",
                 "fps=1/3,scale=960:-1",
                 "-frames:v",
-                "6",
+                "4",
                 "-q:v",
                 "4",
                 output,

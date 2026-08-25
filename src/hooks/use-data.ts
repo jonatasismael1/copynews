@@ -107,14 +107,16 @@ export function useSendDirectUrl() {
 
 export function usePrepareDistributionBatch() {
   return useMutation({ mutationFn: async (sourceUrls:string[]) => {
-    const previews:DistributionDirectPreview[]=[];
-    for(const sourceUrl of sourceUrls){
-      const created=await distributionAction({action:"create_preview",source_url:sourceUrl}) as DistributionDirectPreview;
-      let current=created;
-      for(let attempt=0;attempt<120&&["queued","processing"].includes(current.status);attempt+=1){await new Promise(resolve=>setTimeout(resolve,1500));current=await distributionAction({action:"preview",preview_id:created.id}) as DistributionDirectPreview;}
-      if(current.status!=="ready")throw new Error(`Não foi possível preparar o link ${previews.length+1}`);
-      previews.push(current);
+    const created=await distributionAction({action:"create_previews",source_urls:sourceUrls}) as DistributionDirectPreview[];
+    const order=new Map(created.map((item,index)=>[item.id,index]));
+    let previews=created;
+    for(let attempt=0;attempt<180&&previews.some((item)=>["queued","processing"].includes(item.status));attempt+=1){
+      await new Promise(resolve=>setTimeout(resolve,1500));
+      previews=await distributionAction({action:"previews",preview_ids:created.map((item)=>item.id)}) as DistributionDirectPreview[];
     }
+    previews.sort((a,b)=>(order.get(a.id)??0)-(order.get(b.id)??0));
+    const incomplete=previews.findIndex((item)=>item.status!=="ready");
+    if(incomplete>=0)throw new Error(`Não foi possível preparar o link ${incomplete+1}`);
     return previews;
   }});
 }

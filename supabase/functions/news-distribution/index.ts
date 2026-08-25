@@ -66,6 +66,15 @@ async function resolveDirect(ctx: Awaited<ReturnType<typeof context>>, body: Rec
 
 async function createPreview(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) { const sourceUrl = String(body.source_url || "").trim(); const normalized = normalizeUrl(sourceUrl); const { data, error } = await ctx.client.from("distribution_direct_previews").insert({ organization_id: ctx.profile.organization_id, source_url: sourceUrl, normalized_url: normalized, created_by: ctx.user.id }).select().single(); if (error) throw error; return json(data, 202); }
 
+async function createPreviews(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
+  const sourceUrls = Array.isArray(body.source_urls) ? [...new Set(body.source_urls.map((value) => String(value || "").trim()).filter(Boolean))] : [];
+  if (sourceUrls.length < 2 || sourceUrls.length > 10) throw new Error("Informe de 2 a 10 publicaÃ§Ãµes");
+  const rows = sourceUrls.map((sourceUrl) => ({ organization_id: ctx.profile.organization_id, source_url: sourceUrl, normalized_url: normalizeUrl(sourceUrl), created_by: ctx.user.id }));
+  const { data, error } = await ctx.client.from("distribution_direct_previews").insert(rows).select();
+  if (error) throw error;
+  return json(data, 202);
+}
+
 async function enqueueDirect(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
   if (!["admin", "editor", "writer"].includes(ctx.profile.role)) throw new Error("Forbidden");
   const previewId = String(body.preview_id || ""); const recipientId = String(body.recipient_id || "");
@@ -112,7 +121,9 @@ Deno.serve(async (req) => {
     if (action === "send") return enqueue(ctx, body);
     if (action === "resolve_url") return resolveDirect(ctx, body);
     if (action === "create_preview") return createPreview(ctx, body);
+    if (action === "create_previews") return createPreviews(ctx, body);
     if (action === "preview") { const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").eq("id", String(body.preview_id || "")).single(); if (error) throw error; return json(data); }
+    if (action === "previews") { const ids = Array.isArray(body.preview_ids) ? body.preview_ids.map(String).slice(0, 10) : []; const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").in("id", ids); if (error) throw error; return json(data); }
     if (action === "send_direct") return enqueueDirect(ctx, body);
     if (action === "send_batch") return enqueueBatch(ctx, body);
     if (action === "list") {

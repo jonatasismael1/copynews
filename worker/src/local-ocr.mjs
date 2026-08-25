@@ -162,12 +162,17 @@ export async function readFramesLocally(
   { requirePersistence = paths.length > 1 } = {},
 ) {
   const frames = [];
-  for (const path of paths) {
-    try {
-      frames.push((await capture(path)).flatMap(linesFromTsv));
-    } catch {
-      frames.push([]);
-    }
+  for (let index = 0; index < paths.length; index += 2) {
+    const batch = await Promise.all(
+      paths.slice(index, index + 2).map(async (path) => {
+        try {
+          return (await capture(path)).flatMap(linesFromTsv);
+        } catch {
+          return [];
+        }
+      }),
+    );
+    frames.push(...batch);
   }
   const chosen = requirePersistence
     ? persistentLines(frames)
