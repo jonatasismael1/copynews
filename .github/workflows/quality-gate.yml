@@ -32,6 +32,7 @@ jobs:
       - run: pytest tests
         working-directory: instagram-api
         env:
+          PYTHONPATH: .
           DATABASE_URL: postgresql://postgres:postgres@localhost/postgres
           API_KEY: test-api-key-with-at-least-32-characters
           DEFAULT_ORGANIZATION_ID: 00000000-0000-0000-0000-000000000001
