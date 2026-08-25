@@ -13,6 +13,7 @@ import type {
   DistributionRecipient,
   NewsSendHistory,
   DistributionDirectPreview,
+  DistributionOperationalAlert,
 } from "@/lib/database.types";
 import type {
   CreateNewsInput,
@@ -98,6 +99,15 @@ export function useCreateDistributionPreview() { return useMutation({ mutationFn
 
 export function useDistributionPreview(previewId?: string | null) {
   return useQuery({ queryKey: ["distribution-preview", previewId], enabled: Boolean(previewId), queryFn: () => distributionAction({ action: "preview", preview_id: previewId }) as Promise<DistributionDirectPreview>, refetchInterval: (query) => ["queued", "processing"].includes(query.state.data?.status || "") ? 1500 : false });
+}
+
+export function useDistributionOperations() {
+  return useQuery({ queryKey: ["distribution-operations"], queryFn: () => distributionAction({ action: "recent_previews" }) as Promise<{previews:DistributionDirectPreview[];alerts:DistributionOperationalAlert[]}>, refetchInterval: (query) => query.state.data?.previews.some((item)=>["queued","processing"].includes(item.status)) ? 3000 : 30000 });
+}
+
+export function useResolveDistributionAlert() {
+  const queryClient=useQueryClient();
+  return useMutation({mutationFn:(id:string)=>distributionAction({action:"resolve_alert",id}),onSuccess:()=>queryClient.invalidateQueries({queryKey:["distribution-operations"]})});
 }
 
 export function useSendDirectUrl() {

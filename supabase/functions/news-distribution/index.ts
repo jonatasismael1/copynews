@@ -64,12 +64,29 @@ async function resolveDirect(ctx: Awaited<ReturnType<typeof context>>, body: Rec
   return json({ type: "not_found", normalized_url: normalized });
 }
 
-async function createPreview(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) { const sourceUrl = String(body.source_url || "").trim(); const normalized = normalizeUrl(sourceUrl); const { data, error } = await ctx.client.from("distribution_direct_previews").insert({ organization_id: ctx.profile.organization_id, source_url: sourceUrl, normalized_url: normalized, created_by: ctx.user.id }).select().single(); if (error) throw error; return json(data, 202); }
+const cacheFields = ["media_kind", "media_count", "original_title", "original_caption", "title_state", "caption_state", "ocr_confidence", "confidence_level", "timings"];
+
+async function previewRows(ctx: Awaited<ReturnType<typeof context>>, sourceUrls: string[]) {
+  const normalized = sourceUrls.map(normalizeUrl);
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: cached } = await ctx.admin.from("distribution_direct_previews").select("*").eq("organization_id", ctx.profile.organization_id).in("normalized_url", normalized).eq("status", "ready").gt("media_count", 0).gte("completed_at", cutoff).order("completed_at", { ascending: false });
+  const byUrl = new Map<string, Record<string, unknown>>();
+  for (const item of cached || []) if (!byUrl.has(item.normalized_url)) byUrl.set(item.normalized_url, item);
+  return sourceUrls.map((sourceUrl, index) => {
+    const base: Record<string, unknown> = { organization_id: ctx.profile.organization_id, source_url: sourceUrl, normalized_url: normalized[index], created_by: ctx.user.id };
+    const hit = byUrl.get(normalized[index]);
+    if (!hit) return base;
+    for (const field of cacheFields) base[field] = hit[field];
+    return { ...base, status: "ready", stage: "ready", progress: 100, cache_hit: true, cached_from: hit.id, heartbeat_at: new Date().toISOString(), completed_at: new Date().toISOString() };
+  });
+}
+
+async function createPreview(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) { const sourceUrl = String(body.source_url || "").trim(); const rows = await previewRows(ctx, [sourceUrl]); const { data, error } = await ctx.client.from("distribution_direct_previews").insert(rows[0]).select().single(); if (error) throw error; return json(data, data.cache_hit ? 200 : 202); }
 
 async function createPreviews(ctx: Awaited<ReturnType<typeof context>>, body: Record<string, unknown>) {
   const sourceUrls = Array.isArray(body.source_urls) ? [...new Set(body.source_urls.map((value) => String(value || "").trim()).filter(Boolean))] : [];
   if (sourceUrls.length < 2 || sourceUrls.length > 10) throw new Error("Informe de 2 a 10 publicaÃ§Ãµes");
-  const rows = sourceUrls.map((sourceUrl) => ({ organization_id: ctx.profile.organization_id, source_url: sourceUrl, normalized_url: normalizeUrl(sourceUrl), created_by: ctx.user.id }));
+  const rows = await previewRows(ctx, sourceUrls);
   const { data, error } = await ctx.client.from("distribution_direct_previews").insert(rows).select();
   if (error) throw error;
   return json(data, 202);
@@ -124,6 +141,12 @@ Deno.serve(async (req) => {
     if (action === "create_previews") return createPreviews(ctx, body);
     if (action === "preview") { const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").eq("id", String(body.preview_id || "")).single(); if (error) throw error; return json(data); }
     if (action === "previews") { const ids = Array.isArray(body.preview_ids) ? body.preview_ids.map(String).slice(0, 10) : []; const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").in("id", ids); if (error) throw error; return json(data); }
+    if (action === "recent_previews") {
+      const previews = await ctx.client.from("distribution_direct_previews").select("*").order("created_at", { ascending: false }).limit(30);
+      const alerts = ctx.profile.role === "admin" ? await ctx.client.from("distribution_operational_alerts").select("*").eq("status", "open").order("last_seen_at", { ascending: false }).limit(10) : { data: [], error: null };
+      if (previews.error || alerts.error) throw previews.error || alerts.error;
+      return json({ previews: previews.data, alerts: alerts.data });
+    }
     if (action === "send_direct") return enqueueDirect(ctx, body);
     if (action === "send_batch") return enqueueBatch(ctx, body);
     if (action === "list") {
@@ -144,6 +167,7 @@ Deno.serve(async (req) => {
       if (error) throw error; return json(data);
     }
     if (action === "delete") { const { error } = await ctx.client.from("distribution_recipients").delete().eq("id", String(body.id)); if (error) throw error; return json({ deleted: true }); }
+    if (action === "resolve_alert") { const { error } = await ctx.client.from("distribution_operational_alerts").update({ status: "resolved", resolved_at: new Date().toISOString() }).eq("id", String(body.id)); if (error) throw error; return json({ resolved: true }); }
     throw new Error("Ação inválida");
   } catch (error) {
     const message = safeError(error); const status = message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 400;

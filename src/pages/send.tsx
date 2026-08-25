@@ -31,6 +31,8 @@ import {
   useCreateDistributionPreview,
   useDistribution,
   useDistributionPreview,
+  useDistributionOperations,
+  useResolveDistributionAlert,
   useManageDistributionRecipient,
   useNews,
   usePrepareDistributionBatch,
@@ -65,6 +67,7 @@ const statusMeta = {
   },
 };
 const completed = new Set(["success", "partial"]);
+const previewStageLabels:Record<DistributionDirectPreview["stage"],string>={queued:"Aguardando na fila",metadata:"Lendo dados",download:"Obtendo mídia",frames:"Extraindo quadros",ocr:"Lendo título",finalizing:"Finalizando",ready:"Pronto",failed:"Falhou"};
 function maskPhone(phone: string) {
   return phone.replace(/^(55)(\d{2})(\d{5})(\d{4})$/, "+$1 ($2) $3-$4");
 }
@@ -126,6 +129,8 @@ export function SendPage() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [directCandidate, setDirectCandidate] = useState(false);
   const { data: directPreview } = useDistributionPreview(previewId);
+  const { data: operations } = useDistributionOperations();
+  const alertResolver = useResolveDistributionAlert();
   const [manageOpen, setManageOpen] = useState(false);
   const [editing, setEditing] = useState<DistributionRecipient | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -376,6 +381,11 @@ export function SendPage() {
         title="Enviar"
         description="Conteúdo original para sua equipe, com histórico e processamento em segundo plano."
       />
+      {(operations?.previews.length||operations?.alerts.length) ? <section className="space-y-3">
+        <div className="flex items-center justify-between"><h2 className="font-display text-lg font-bold">Processamentos</h2><span className="text-xs text-muted-foreground">Continuam mesmo fora desta tela</span></div>
+        {operations?.alerts.map((alert)=><div key={alert.id} className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><div className="min-w-0 flex-1"><b>{alert.title}</b><span className="ml-2 text-xs">{alert.occurrences} ocorrência(s)</span></div><Button size="sm" variant="ghost" onClick={()=>alertResolver.mutate(alert.id)}>Dispensar</Button></div>)}
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{operations?.previews.slice(0,6).map((item)=><Card key={item.id}><CardContent className="p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{item.original_title||new URL(item.normalized_url).pathname}</p><Badge variant={item.status==="failed"?"danger":item.status==="ready"?"success":"secondary"}>{previewStageLabels[item.stage||"queued"]}</Badge></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{width:`${item.progress||0}%`}} /></div><div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span>{item.progress||0}%</span>{item.timings?.total ? <span>{Math.round(item.timings.total/1000)}s</span>:null}{item.cache_hit?<span>Resultado reaproveitado</span>:null}{item.confidence_level==="low"?<span className="text-amber-700">Confira o título</span>:null}{item.confidence_level==="unavailable"?<span>Título para edição manual</span>:null}</div></CardContent></Card>)}</div>
+      </section>:null}
       <section className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative max-w-md flex-1">

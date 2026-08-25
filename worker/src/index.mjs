@@ -1023,4 +1023,11 @@ setInterval(
     ),
   15 * 60_000,
 ).unref();
+setInterval(
+  () =>
+    distribution.monitorPreviews().catch((error) =>
+      log("distribution.monitor.error", { message: error.message }),
+    ),
+  60_000,
+).unref();
 loop();

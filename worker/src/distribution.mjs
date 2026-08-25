@@ -364,6 +364,10 @@ export function createDistributionProcessor({ db, workerId, log }) {
       .from("distribution_direct_previews")
       .update({
         status: "processing",
+        stage: "metadata",
+        progress: 8,
+        stage_started_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString(),
         attempts: preview.attempts + 1,
         lease_owner: workerId,
         lease_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
@@ -377,13 +381,77 @@ export function createDistributionProcessor({ db, workerId, log }) {
     return data;
   }
 
+  async function raiseOperationalAlert(preview, alertType, title, details = {}, severity = "warning") {
+    const dedupeKey = `${alertType}:${preview.normalized_url || "queue"}`.slice(0, 240);
+    const { error } = await db.from("distribution_operational_alerts").insert({
+      organization_id: preview.organization_id,
+      alert_type: alertType,
+      severity,
+      title,
+      details,
+      dedupe_key: dedupeKey,
+    });
+    if (error?.code === "23505") {
+      const { data: current } = await db
+        .from("distribution_operational_alerts")
+        .select("id,occurrences")
+        .eq("organization_id", preview.organization_id)
+        .eq("dedupe_key", dedupeKey)
+        .eq("status", "open")
+        .maybeSingle();
+      if (current)
+        await db.from("distribution_operational_alerts").update({
+          occurrences: current.occurrences + 1,
+          last_seen_at: new Date().toISOString(),
+          details,
+        }).eq("id", current.id);
+    } else if (error) log("distribution.alert.failed", { alertType, message: safeError(error) });
+  }
+
+  async function monitorPreviews() {
+    const cutoff = new Date(Date.now() - 2 * 60_000).toISOString();
+    const { data: stalled } = await db
+      .from("distribution_direct_previews")
+      .select("id,organization_id,normalized_url,status,stage,heartbeat_at,created_at")
+      .in("status", ["queued", "processing"])
+      .or(`heartbeat_at.lt.${cutoff},and(heartbeat_at.is.null,created_at.lt.${cutoff})`)
+      .limit(10);
+    for (const preview of stalled || [])
+      await raiseOperationalAlert(
+        preview,
+        "stalled_queue",
+        "Processamento de publicação aparentemente parado",
+        { preview_id: preview.id, stage: preview.stage, status: preview.status },
+        "critical",
+      );
+  }
+
   async function processPreview(preview) {
     const dir = join(tmpdir(), `copy-news-preview-${preview.id}`);
     const framesDir = join(dir, "frames");
     await fs.mkdir(framesDir, { recursive: true });
     let metadata = null;
+    const startedAt = Date.now();
+    let stageStartedAt = startedAt;
+    let currentStage = "metadata";
+    const timings = { ...(preview.timings || {}) };
+    const transition = async (stage, progress) => {
+      const now = Date.now();
+      timings[currentStage] = Math.max(0, now - stageStartedAt);
+      currentStage = stage;
+      stageStartedAt = now;
+      await db.from("distribution_direct_previews").update({
+        stage,
+        progress,
+        stage_started_at: new Date(now).toISOString(),
+        heartbeat_at: new Date(now).toISOString(),
+        timings,
+        updated_at: new Date(now).toISOString(),
+      }).eq("id", preview.id);
+    };
     try {
       metadata = await extractMetadata(preview.source_url);
+      await transition("download", 22);
       let sources;
       try {
         sources = await cobaltSources(preview.source_url);
@@ -419,6 +487,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
         files.splice(0, files.length, recovered);
       }
       let mediaKind = files.length > 1 ? "carousel" : "video";
+      await transition("frames", 52);
       for (const [index, file] of files.entries()) {
         const image = imageMime(file.bytes);
         if (files.length === 1 && image) mediaKind = "image";
@@ -464,6 +533,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
         .map((name) => join(framesDir, name));
       let ocr = null;
       let titleState = "absent";
+      await transition("ocr", 72);
       try {
         ocr = await readFramesLocally(framePaths, {
           requirePersistence: mediaKind === "video",
@@ -492,10 +562,27 @@ export function createDistributionProcessor({ db, workerId, log }) {
         : metadata?.provider === "none"
           ? "failed"
           : "absent";
+      await transition("finalizing", 94);
+      const ocrConfidence = Number.isFinite(Number(ocr?.confidence))
+        ? Math.max(0, Math.min(1, Number(ocr.confidence)))
+        : null;
+      const confidenceLevel = visualTitle
+        ? ocrConfidence === null
+          ? "medium"
+          : ocrConfidence >= 0.82
+            ? "high"
+            : ocrConfidence >= 0.65
+              ? "medium"
+              : "low"
+        : "unavailable";
+      timings[currentStage] = Date.now() - stageStartedAt;
+      timings.total = Date.now() - startedAt;
       await db
         .from("distribution_direct_previews")
         .update({
           status: "ready",
+          stage: "ready",
+          progress: 100,
           media_kind: mediaKind,
           media_count: files.length,
           original_title: visualTitle
@@ -504,6 +591,11 @@ export function createDistributionProcessor({ db, workerId, log }) {
           original_caption: caption || null,
           title_state: visualTitle ? "found" : titleState,
           caption_state: captionState,
+          ocr_confidence: ocrConfidence,
+          confidence_level: confidenceLevel,
+          timings,
+          heartbeat_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
           error_message: null,
           lease_owner: null,
           lease_expires_at: null,
@@ -516,24 +608,36 @@ export function createDistributionProcessor({ db, workerId, log }) {
         mediaCount: files.length,
         titleState,
         captionState,
+        confidenceLevel,
+        durationMs: timings.total,
       });
+      if (timings.total >= 120_000)
+        await raiseOperationalAlert(preview, "slow_processing", "Processamento de publicação acima de 2 minutos", { preview_id: preview.id, duration_ms: timings.total, timings });
     } catch (error) {
       const caption = String(metadata?.caption || "").trim();
+      timings[currentStage] = Date.now() - stageStartedAt;
+      timings.total = Date.now() - startedAt;
       const { error: updateError } = await db
         .from("distribution_direct_previews")
         .update({
           status: "ready",
+          stage: "ready",
+          progress: 100,
           media_kind: null,
           media_count: 0,
           original_title: null,
           original_caption: caption || null,
           title_state: "failed",
+          confidence_level: "unavailable",
           caption_state: caption
             ? "found"
             : metadata?.provider === "none"
               ? "failed"
               : "absent",
           error_message: safeError(error),
+          timings,
+          heartbeat_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
           lease_owner: null,
           lease_expires_at: null,
           updated_at: new Date().toISOString(),
@@ -544,6 +648,14 @@ export function createDistributionProcessor({ db, workerId, log }) {
         previewId: preview.id,
         message: safeError(error),
       });
+      const { count } = await db.from("distribution_direct_previews")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", preview.organization_id)
+        .eq("media_count", 0)
+        .eq("title_state", "failed")
+        .gte("created_at", new Date(Date.now() - 15 * 60_000).toISOString());
+      if ((count || 0) >= 3)
+        await raiseOperationalAlert(preview, "download_failures", "Falhas repetidas ao obter mídias", { failures_last_15_minutes: count }, "critical");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -1216,6 +1328,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
     process: processJob,
     claimPreview,
     processPreview,
+    monitorPreviews,
   };
 }
 
