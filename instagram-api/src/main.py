@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.orm import Session
-from .collector import collect_all, collect_profile, ingest_items
+from .collector import apify_health, collect_all, collect_profile, ingest_items
 from .config import get_settings
 from .db import engine, get_db
 from .models import CollectionRun, InstagramPost, MetricSnapshot, PostMetricsHistory, ProfileSnapshot, Publication, TrackedProfile
@@ -52,7 +52,7 @@ def health():
         with engine.connect() as conn: conn.execute(text("select 1"))
         database = "ok"
     except Exception: database = "error"
-    return {"status": "ok" if database == "ok" else "degraded", "database": database, "scheduler": scheduler.running, "schedule": ["14:00", "21:00"], "timezone": settings.app_timezone, "time": datetime.now(timezone.utc)}
+    return {"status": "ok" if database == "ok" else "degraded", "database": database, "scheduler": scheduler.running, "schedule": ["14:00", "21:00"], "timezone": settings.app_timezone, "apify": apify_health(), "time": datetime.now(timezone.utc)}
 
 
 @app.get("/profiles", response_model=list[ProfileOut], dependencies=[Depends(authorize)])

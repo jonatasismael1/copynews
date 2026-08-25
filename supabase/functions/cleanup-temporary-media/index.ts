@@ -137,6 +137,8 @@ async function deleteOlderThan(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  let runId: string | null = null;
+  let admin: ReturnType<typeof adminClient> | null = null;
   try {
     if (req.headers.get("x-cron-secret") !== env("CRON_SECRET"))
       throw new Error("Unauthorized");
@@ -147,13 +149,16 @@ Deno.serve(async (req) => {
     const mediaCutoff = new Date(now - 48 * 60 * 60 * 1000);
     const dataCutoff = new Date(now);
     dataCutoff.setUTCMonth(dataCutoff.getUTCMonth() - 3);
-    const admin = adminClient();
+    admin = adminClient();
+    const { data: audit } = await admin.from("retention_cleanup_runs").insert({status:dryRun?"dry_run":"running",media_cutoff:mediaCutoff.toISOString(),data_cutoff:dataCutoff.toISOString()}).select("id").single();
+    runId=audit?.id||null;
 
     const candidates: Record<string, string[]> = {};
     for (const bucket of ["temporary-media", "news-designs"])
       candidates[bucket] = await expiredPaths(admin, bucket, mediaCutoff);
 
     if (dryRun) {
+      if(runId)await admin.from("retention_cleanup_runs").update({finished_at:new Date().toISOString(),removed_media:Object.fromEntries(Object.entries(candidates).map(([bucket,paths])=>[bucket,paths.length]))}).eq("id",runId);
       return json({
         dry_run: true,
         media_cutoff: mediaCutoff.toISOString(),
@@ -195,6 +200,7 @@ Deno.serve(async (req) => {
       oauth_states: await deleteOlderThan(admin, "oauth_states", "expires_at", new Date().toISOString()),
     };
 
+    if(runId)await admin.from("retention_cleanup_runs").update({status:"success",finished_at:new Date().toISOString(),removed_media:removedByBucket,deleted_rows:deleted}).eq("id",runId);
     return json({
       media_cutoff: mediaCutoff.toISOString(),
       data_cutoff: dataCutoff.toISOString(),
@@ -209,6 +215,7 @@ Deno.serve(async (req) => {
       : "Unexpected error";
     const status = message === "Unauthorized" ? 401 : 500;
     console.error(JSON.stringify({ event: "retention_cleanup_failed", message }));
+    if(runId&&admin)await admin.from("retention_cleanup_runs").update({status:"failed",finished_at:new Date().toISOString(),error_message:message.slice(0,300)}).eq("id",runId).catch(()=>null);
     return json({ error: message }, status);
   }
 });

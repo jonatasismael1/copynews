@@ -63,6 +63,16 @@ export function SettingsPage() {
     (account) =>
       account.user_id === profile?.id && account.status === "connected",
   );
+  const { data: systemHealth, refetch: refreshHealth, isFetching: healthLoading } = useQuery({
+    queryKey: ["system-health"],
+    enabled: profile?.role === "admin" && settingsTab === "backend",
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("system-health", { body: {} });
+      if (error) throw error;
+      return data as {checked_at:string;database:{status:string};worker:{status:string;latency_ms?:number};instagram:{status:string;latency_ms?:number;data?:{apify?:{configured_tokens:number;active_slot:number;exhausted_slots:number[]}}};evolution:{status:string;latency_ms?:number};queues:{editorial:number;distribution:number;open_alerts:number};last_instagram_run?:{status:string;started_at:string;error?:string}|null;last_daily_report?:{status:string;report_date:string;error_message?:string}|null;instagram_accounts:{total:number;attention:number};storage:{new_files_24h:number;new_bytes_24h:number}};
+    },
+    refetchInterval: 60_000,
+  });
 
   const { data: lookups } = useQuery({
     queryKey: ["settings-lookups"],
@@ -105,7 +115,7 @@ export function SettingsPage() {
     queueMicrotask(() => setConnectingInstagram(true));
     void (async () => {
       try {
-        const refreshed = await refetchAccounts();
+        await refetchAccounts();
         const { error } = await supabase.functions.invoke(
           "sync-instagram-publications",
           {
@@ -131,6 +141,7 @@ export function SettingsPage() {
     })();
   }, [
     profile?.id,
+    profile?.role,
     queryClient,
     refetchAccounts,
     searchParams,
@@ -352,6 +363,30 @@ export function SettingsPage() {
           Configuração de backend
         </Button>
       </div>
+
+      {settingsTab === "backend" && profile?.role === "admin" && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <div><CardTitle>Saúde operacional</CardTitle><p className="mt-1 text-xs text-muted-foreground">Serviços, filas, coleta, relatórios e armazenamento.</p></div>
+            <Button size="sm" variant="outline" disabled={healthLoading} onClick={()=>void refreshHealth()}><RefreshCw className={healthLoading?"animate-spin":""}/>Atualizar</Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!systemHealth ? <p className="text-sm text-muted-foreground">Carregando diagnóstico...</p> : <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[['Supabase',systemHealth.database.status],['Worker',systemHealth.worker.status],['Instagram/Apify',systemHealth.instagram.status],['Evolution',systemHealth.evolution.status]].map(([name,status])=><div key={name} className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">{name}</p><div className="mt-2 flex items-center justify-between"><b className="capitalize">{status}</b><Badge variant={status==='ok'?'success':'danger'}>{status==='ok'?'Online':'Atenção'}</Badge></div></div>)}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                <div className="rounded-xl bg-muted p-3"><span>Fila editorial</span><b className="float-right">{systemHealth.queues.editorial}</b></div>
+                <div className="rounded-xl bg-muted p-3"><span>Fila de envios</span><b className="float-right">{systemHealth.queues.distribution}</b></div>
+                <div className="rounded-xl bg-muted p-3"><span>Alertas abertos</span><b className="float-right">{systemHealth.queues.open_alerts}</b></div>
+                <div className="rounded-xl bg-muted p-3"><span>Mídias novas (24h)</span><b className="float-right">{systemHealth.storage.new_files_24h}</b></div>
+              </div>
+              <div className="rounded-xl border p-3 text-sm"><b>Apify:</b> {systemHealth.instagram.data?.apify?.configured_tokens||0} token(s), usando posição {systemHealth.instagram.data?.apify?.active_slot||'—'}. {systemHealth.instagram.data?.apify?.exhausted_slots?.length?`Esgotados: ${systemHealth.instagram.data.apify.exhausted_slots.join(', ')}.`:'Nenhum token marcado como esgotado.'}</div>
+              <p className="text-xs text-muted-foreground">Verificado em {new Date(systemHealth.checked_at).toLocaleString('pt-BR')} • {(systemHealth.storage.new_bytes_24h/1024/1024).toFixed(1)} MB adicionados nas últimas 24h.</p>
+            </>}
+          </CardContent>
+        </Card>
+      )}
 
       {settingsTab === "general" && (
         <>

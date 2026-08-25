@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FocusEvent } from "react";
+import { useMemo, useState, type FocusEvent } from "react";
 import {
   CheckCircle2,
   ClipboardPaste,
@@ -33,6 +33,7 @@ import {
   useDistributionPreview,
   useDistributionOperations,
   useResolveDistributionAlert,
+  useManageDistributionPreview,
   useManageDistributionRecipient,
   useNews,
   usePrepareDistributionBatch,
@@ -40,6 +41,7 @@ import {
   useSendDirectUrl,
   useSendDistributionBatch,
   useSendNews,
+  useUpdateDistributionPreview,
 } from "@/hooks/use-data";
 import type {
   DistributionDirectPreview,
@@ -112,6 +114,7 @@ export function SendPage() {
   const resolver = useResolveDistributionUrl();
   const previewCreator = useCreateDistributionPreview();
   const directSender = useSendDirectUrl();
+  const previewUpdater = useUpdateDistributionPreview();
   const batchPreparer = usePrepareDistributionBatch();
   const batchSender = useSendDistributionBatch();
   const [batchMode, setBatchMode] = useState(false);
@@ -128,9 +131,11 @@ export function SendPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [directCandidate, setDirectCandidate] = useState(false);
+  const [reviewedTitle,setReviewedTitle]=useState("");
   const { data: directPreview } = useDistributionPreview(previewId);
   const { data: operations } = useDistributionOperations();
   const alertResolver = useResolveDistributionAlert();
+  const previewManager=useManageDistributionPreview();
   const [manageOpen, setManageOpen] = useState(false);
   const [editing, setEditing] = useState<DistributionRecipient | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -138,7 +143,7 @@ export function SendPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [recipientDetail, setRecipientDetail] =
     useState<DistributionRecipient | null>(null);
-  const histories = data?.history || [];
+  const histories = useMemo(() => data?.history || [], [data?.history]);
   const stats = useMemo(
     () =>
       new Map(
@@ -196,14 +201,6 @@ export function SendPage() {
     [news, newsSearch],
   );
 
-  useEffect(() => {
-    setSelectedNews(null);
-    setPreviewId(null);
-    setDirectCandidate(false);
-  }, [recipient]);
-  useEffect(() => {
-    setDirectCandidate(false);
-  }, [newsSearch]);
   async function resolveUrl(value = newsSearch) {
     if (directCandidate && value === newsSearch) return startDirectPreview();
     if (!isUrl(value)) return;
@@ -384,7 +381,7 @@ export function SendPage() {
       {(operations?.previews.length||operations?.alerts.length) ? <section className="space-y-3">
         <div className="flex items-center justify-between"><h2 className="font-display text-lg font-bold">Processamentos</h2><span className="text-xs text-muted-foreground">Continuam mesmo fora desta tela</span></div>
         {operations?.alerts.map((alert)=><div key={alert.id} className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><div className="min-w-0 flex-1"><b>{alert.title}</b><span className="ml-2 text-xs">{alert.occurrences} ocorrência(s)</span></div><Button size="sm" variant="ghost" onClick={()=>alertResolver.mutate(alert.id)}>Dispensar</Button></div>)}
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{operations?.previews.slice(0,6).map((item)=><Card key={item.id}><CardContent className="p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{item.original_title||new URL(item.normalized_url).pathname}</p><Badge variant={item.status==="failed"?"danger":item.status==="ready"?"success":"secondary"}>{previewStageLabels[item.stage||"queued"]}</Badge></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{width:`${item.progress||0}%`}} /></div><div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span>{item.progress||0}%</span>{item.timings?.total ? <span>{Math.round(item.timings.total/1000)}s</span>:null}{item.cache_hit?<span>Resultado reaproveitado</span>:null}{item.confidence_level==="low"?<span className="text-amber-700">Confira o título</span>:null}{item.confidence_level==="unavailable"?<span>Título para edição manual</span>:null}</div></CardContent></Card>)}</div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{operations?.previews.slice(0,6).map((item)=><Card key={item.id}><CardContent className="p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{item.original_title||new URL(item.normalized_url).pathname}</p><Badge variant={item.status==="failed"?"danger":item.status==="ready"?"success":"secondary"}>{previewStageLabels[item.stage||"queued"]}</Badge></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{width:`${item.progress||0}%`}} /></div><div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span>{item.progress||0}%</span>{item.timings?.total ? <span>{Math.round(item.timings.total/1000)}s</span>:null}{item.cache_hit?<span>Resultado reaproveitado</span>:null}{item.confidence_level==="low"?<span className="text-amber-700">Confira o título</span>:null}{item.confidence_level==="unavailable"?<span>Título para edição manual</span>:null}</div>{item.error_message&&<p className="mt-2 text-xs text-destructive">{item.error_message}</p>}<div className="mt-2 flex gap-2">{item.status==="failed"&&item.retry_count<3?<Button size="sm" variant="outline" onClick={()=>previewManager.mutate({id:item.id,action:"retry_preview"})}>Tentar novamente</Button>:null}{["queued","processing"].includes(item.status)?<Button size="sm" variant="ghost" onClick={()=>previewManager.mutate({id:item.id,action:"cancel_preview"})}>Cancelar</Button>:null}</div></CardContent></Card>)}</div>
       </section>:null}
       <section className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -481,6 +478,8 @@ export function SendPage() {
                       onClick={() => {
                         setRecipient(item);
                         setSelectedNews(null);
+                        setPreviewId(null);
+                        setDirectCandidate(false);
                       }}
                     >
                       <Send size={15} />
@@ -580,6 +579,7 @@ export function SendPage() {
                   setNewsSearch(e.target.value);
                   setSelectedNews(null);
                   setPreviewId(null);
+                  setDirectCandidate(false);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && isUrl(newsSearch)) void resolveUrl();
@@ -696,6 +696,12 @@ export function SendPage() {
                         : "Não encontrada"}
                     </b>
                   </p>
+                  <div className="mt-3 space-y-2 border-t pt-3">
+                    <label className="font-semibold" htmlFor="reviewed-preview-title">Título para envio</label>
+                    <div className="flex gap-2"><Input id="reviewed-preview-title" value={reviewedTitle||directPreview.original_title||""} onChange={(event)=>setReviewedTitle(event.target.value)} placeholder="Confira ou informe o título"/><Button type="button" size="sm" variant="outline" disabled={previewUpdater.isPending||!(reviewedTitle||directPreview.original_title||"").trim()} onClick={()=>previewUpdater.mutate({previewId:directPreview.id,title:reviewedTitle||directPreview.original_title||""},{onSuccess:()=>toast.success("Título confirmado")})}>Confirmar</Button></div>
+                    {directPreview.confidence_level==="low"&&<p className="font-medium text-amber-700">O OCR teve baixa confiança. Confira antes de enviar.</p>}
+                    {directPreview.confidence_level==="unavailable"&&<p className="text-muted-foreground">Nenhum título confiável foi encontrado; preencha manualmente.</p>}
+                  </div>
                 </div>
               </div>
             )}

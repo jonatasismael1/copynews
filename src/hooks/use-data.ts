@@ -109,11 +109,13 @@ export function useResolveDistributionAlert() {
   const queryClient=useQueryClient();
   return useMutation({mutationFn:(id:string)=>distributionAction({action:"resolve_alert",id}),onSuccess:()=>queryClient.invalidateQueries({queryKey:["distribution-operations"]})});
 }
+export function useManageDistributionPreview(){const queryClient=useQueryClient();return useMutation({mutationFn:({id,action}:{id:string;action:"retry_preview"|"cancel_preview"})=>distributionAction({action,preview_id:id}),onSuccess:()=>queryClient.invalidateQueries({queryKey:["distribution-operations"]})});}
 
 export function useSendDirectUrl() {
   const queryClient = useQueryClient();
   return useMutation({ mutationFn: ({previewId,recipientId}:{previewId:string;recipientId:string}) => distributionAction({ action: "send_direct", preview_id: previewId, recipient_id: recipientId }), onSuccess: () => queryClient.invalidateQueries({queryKey:["distribution"]}) });
 }
+export function useUpdateDistributionPreview(){const queryClient=useQueryClient();return useMutation({mutationFn:({previewId,title}:{previewId:string;title:string})=>distributionAction({action:"update_preview",preview_id:previewId,original_title:title}) as Promise<DistributionDirectPreview>,onSuccess:(data)=>queryClient.setQueryData(["distribution-preview",data.id],data)});}
 
 export function usePrepareDistributionBatch() {
   return useMutation({ mutationFn: async (sourceUrls:string[]) => {

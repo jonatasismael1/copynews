@@ -10,11 +10,13 @@ class Settings(BaseSettings):
     default_organization_id: UUID
     default_created_by: UUID
     apify_token: str = Field(min_length=20)
+    apify_token_2: str = ""
     apify_actor_id: str = "apify/instagram-scraper"
     app_timezone: str = "America/Maceio"
     max_posts_per_profile: int = 50
     tracking_days: int = 30
     report_days: int = 7
+    apify_daily_lookback_days: int = 1
     request_timeout_seconds: float = 360
     evolution_api_url: str = ""
     evolution_api_key: str = ""

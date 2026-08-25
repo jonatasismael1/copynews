@@ -18,6 +18,38 @@ from .post_classification import apply_classification, classify_post_for_profile
 log = logging.getLogger(__name__)
 settings = get_settings()
 collection_lock = asyncio.Lock()
+_apify_state = {"month": "", "active_slot": 1, "exhausted": set()}
+
+
+class ApifyCreditsExhausted(RuntimeError):
+    pass
+
+
+def _apify_tokens() -> list[tuple[int, str]]:
+    values = [(1, settings.apify_token)]
+    if settings.apify_token_2.strip() and settings.apify_token_2.strip() != settings.apify_token.strip():
+        values.append((2, settings.apify_token_2.strip()))
+    return values
+
+
+def _reset_apify_month() -> None:
+    month = datetime.now(ZoneInfo(settings.app_timezone)).strftime("%Y-%m")
+    if _apify_state["month"] != month:
+        _apify_state.update({"month": month, "active_slot": 1, "exhausted": set()})
+
+
+def apify_health() -> dict:
+    _reset_apify_month()
+    return {"configured_tokens": len(_apify_tokens()), "active_slot": _apify_state["active_slot"], "exhausted_slots": sorted(_apify_state["exhausted"]), "resets_monthly": True}
+
+
+def _credits_exhausted(response: httpx.Response) -> bool:
+    if response.status_code == 402:
+        return True
+    if response.status_code not in {400, 403, 429}:
+        return False
+    text = response.text.lower()[:2000]
+    return any(term in text for term in ("not enough usage", "insufficient", "credit", "monthly usage", "usage limit", "spending limit"))
 
 
 def _integer(item: dict, *keys: str) -> int | None:
@@ -76,7 +108,7 @@ def _content_kind(data: dict) -> str:
     return normalize_format(data.get("media_type"), data.get("raw_payload"), data.get("url"))
 
 
-async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
+async def _run_actor_with_token(usernames: list[str], token: str) -> tuple[str, list[dict]]:
     actor = settings.apify_actor_id.replace("/", "~")
     endpoint = f"https://api.apify.com/v2/acts/{actor}/runs"
     profile_urls = [f"https://www.instagram.com/{name}/" for name in usernames]
@@ -86,7 +118,7 @@ async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
             "resultsType": "posts",
             "directUrls": profile_urls,
             "resultsLimit": settings.max_posts_per_profile,
-            "onlyPostsNewerThan": (local_today - timedelta(days=settings.report_days - 1)).isoformat(),
+            "onlyPostsNewerThan": (local_today - timedelta(days=max(1, settings.apify_daily_lookback_days) - 1)).isoformat(),
             "addParentData": True,
         }
     else:
@@ -95,10 +127,12 @@ async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
             "maxItems": settings.max_posts_per_profile * len(usernames),
             "customMapFunction": "(object) => { return {...object} }",
         }
-    headers = {"Authorization": f"Bearer {settings.apify_token}"}
+    headers = {"Authorization": f"Bearer {token}"}
     timeout = httpx.Timeout(settings.request_timeout_seconds, connect=30)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(endpoint, params={"waitForFinish": 60}, headers=headers, json=body)
+        if _credits_exhausted(response):
+            raise ApifyCreditsExhausted("Créditos da Apify esgotados")
         response.raise_for_status()
         run = response.json()["data"]
         deadline = asyncio.get_running_loop().time() + settings.request_timeout_seconds
@@ -116,6 +150,25 @@ async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
         if items and all(item.get("noResults") is True for item in items if isinstance(item, dict)):
             raise RuntimeError("Apify retornou noResults; verifique o limite/plano da conta")
         return run["id"], items
+
+
+async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
+    _reset_apify_month()
+    tokens = _apify_tokens()
+    available = [(slot, token) for slot, token in tokens if slot not in _apify_state["exhausted"]]
+    available.sort(key=lambda item: item[0] != _apify_state["active_slot"])
+    for slot, token in available:
+        try:
+            result = await _run_actor_with_token(usernames, token)
+            _apify_state["active_slot"] = slot
+            log.info("apify collection succeeded token_slot=%s profiles=%s", slot, len(usernames))
+            return result
+        except ApifyCreditsExhausted:
+            _apify_state["exhausted"].add(slot)
+            log.warning("apify credits exhausted token_slot=%s", slot)
+    next_reset = datetime.now(ZoneInfo(settings.app_timezone)).replace(day=1) + timedelta(days=32)
+    next_reset = next_reset.replace(day=1).strftime("%d/%m/%Y")
+    raise ApifyCreditsExhausted(f"Créditos das contas Apify esgotados. A coleta volta automaticamente em {next_reset}")
 
 
 def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict], collected_at: datetime, target_date: date | None = None) -> dict:

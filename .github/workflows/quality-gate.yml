@@ -1,0 +1,38 @@
+name: Quality gate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm test --prefix worker
+      - name: Production bundle guard
+        env:
+          VITE_SUPABASE_URL: https://supabase1.dbe.digital
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build:production
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: instagram-api/requirements-dev.txt
+      - run: pip install -r instagram-api/requirements-dev.txt
+      - run: pytest instagram-api/tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost/postgres
+          API_KEY: test-api-key-with-at-least-32-characters
+          DEFAULT_ORGANIZATION_ID: 00000000-0000-0000-0000-000000000001
+          DEFAULT_CREATED_BY: 00000000-0000-0000-0000-000000000002
+          APIFY_TOKEN: apify_api_test_token_long_enough

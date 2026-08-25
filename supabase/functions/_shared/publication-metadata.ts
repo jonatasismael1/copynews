@@ -159,7 +159,7 @@ export async function inspectPublicationUrl(raw: string) {
   const description =
     meta(html, "property", "og:description") ||
     meta(html, "name", "description");
-  let thumbnail = meta(html, "property", "og:image");
+  const thumbnail = meta(html, "property", "og:image");
   const ld = jsonLdValues(html);
   const ldItem = ld.find((item) =>
     item.datePublished || item.uploadDate || item.dateCreated,

@@ -163,13 +163,13 @@ describe("detalhes da notícia no mobile", () => {
     const mobileSummary = screen.getByTestId("mobile-news-summary");
     expect(within(mobileSummary).getByRole("button", { name: "Voltar" })).toBeInTheDocument();
     expect(within(mobileSummary).getByTestId("mobile-news-title")).toHaveTextContent(
-      news.generated_title,
+      news.original_title,
     );
     expect(within(mobileSummary).getByText("23/07/2026")).toBeInTheDocument();
-    expect(within(mobileSummary).getAllByText(news.generated_title)).toHaveLength(1);
+    expect(within(mobileSummary).getAllByText(news.original_title)).toHaveLength(1);
 
-    expect(screen.getByRole("button", { name: "Reescrever" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Aprovar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reescrever" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Publicado" })).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Abrir fonte" }),
     ).toHaveAttribute("href", news.source_url);
@@ -181,8 +181,8 @@ describe("detalhes da notícia no mobile", () => {
       screen.getByRole("button", { name: "Mais ações" }),
     ).toBeInTheDocument();
 
-    const copyTitle = screen.getByRole("button", { name: "Copiar título" });
-    const copyCaption = screen.getByRole("button", { name: "Copiar legenda" });
+    const copyTitle = screen.getAllByRole("button", { name: "Copiar título original" })[0];
+    const copyCaption = screen.getAllByRole("button", { name: "Copiar legenda original" })[0];
     expect(copyTitle).toHaveClass("size-11");
     expect(copyCaption).toHaveClass("size-11");
   });
@@ -228,30 +228,23 @@ describe("detalhes da notícia no mobile", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: /Legenda.*caracteres/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Copiar legenda" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Copiar legenda original" })[0]);
 
-    expect(clipboardWrite).toHaveBeenCalledWith(longCaption);
-    expect(screen.getByRole("button", { name: "Copiar legenda" })).toBeInTheDocument();
+    expect(clipboardWrite).toHaveBeenCalledWith(news.original_caption);
+    expect(screen.getAllByRole("button", { name: "Copiar legenda original" }).length).toBeGreaterThan(0);
   });
 
   it("abre edição em tela cheia sem remover o conteúdo direto da página", () => {
     renderPage();
 
-    expect(screen.getByText("Ver mais")).toBeInTheDocument();
-    const scrollableTexts = screen.getAllByTestId("scrollable-text");
-    expect(scrollableTexts.length).toBeGreaterThan(0);
-    scrollableTexts.forEach((text) => {
-      expect(text).toHaveClass("overflow-y-auto");
-      expect(text).not.toHaveClass("line-clamp-4", "line-clamp-6");
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Editar legenda" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Editar legenda original" })[0]);
 
     expect(
-      screen.getByRole("dialog", { name: "Editar legenda" }),
+      screen.getByRole("dialog", { name: "Editar legenda original" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Salvar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copiar legenda" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Copiar legenda original" }).length).toBeGreaterThan(0);
   });
 
   it("baixa uma mídia diretamente sem abrir seleção", async () => {

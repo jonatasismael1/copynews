@@ -141,6 +141,20 @@ Deno.serve(async (req) => {
     if (action === "create_previews") return createPreviews(ctx, body);
     if (action === "preview") { const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").eq("id", String(body.preview_id || "")).single(); if (error) throw error; return json(data); }
     if (action === "previews") { const ids = Array.isArray(body.preview_ids) ? body.preview_ids.map(String).slice(0, 10) : []; const { data, error } = await ctx.client.from("distribution_direct_previews").select("*").in("id", ids); if (error) throw error; return json(data); }
+    if (action === "update_preview") {
+      const title=String(body.original_title||"").replace(/\s+/g," ").trim().slice(0,300);
+      if(!title)throw new Error("Informe um título válido");
+      const {data,error}=await ctx.client.from("distribution_direct_previews").update({original_title:title,title_state:"found",confidence_level:"high",updated_at:new Date().toISOString()}).eq("id",String(body.preview_id||"")).eq("status","ready").select().single();
+      if(error)throw error;return json(data);
+    }
+    if(action==="retry_preview"){
+      const {data:current,error:readError}=await ctx.client.from("distribution_direct_previews").select("retry_count").eq("id",String(body.preview_id||"")).single();if(readError)throw readError;
+      if(Number(current.retry_count)>=3)throw new Error("Limite de 3 tentativas atingido");
+      const {data,error}=await ctx.client.from("distribution_direct_previews").update({status:"queued",stage:"queued",progress:0,error_message:null,error_code:null,cancel_requested_at:null,retry_count:Number(current.retry_count)+1,lease_owner:null,lease_expires_at:null,heartbeat_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",String(body.preview_id||"")).select().single();if(error)throw error;return json(data,202);
+    }
+    if(action==="cancel_preview"){
+      const {data,error}=await ctx.client.from("distribution_direct_previews").update({cancel_requested_at:new Date().toISOString(),error_code:"cancelled",error_message:"Processamento cancelado pelo usuário",status:"failed",stage:"failed",progress:100,completed_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",String(body.preview_id||"")).in("status",["queued","processing"]).select().maybeSingle();if(error)throw error;return json(data||{cancelled:false});
+    }
     if (action === "recent_previews") {
       const previews = await ctx.client.from("distribution_direct_previews").select("*").order("created_at", { ascending: false }).limit(30);
       const alerts = ctx.profile.role === "admin" ? await ctx.client.from("distribution_operational_alerts").select("*").eq("status", "open").order("last_seen_at", { ascending: false }).limit(10) : { data: [], error: null };

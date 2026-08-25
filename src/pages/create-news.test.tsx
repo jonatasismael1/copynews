@@ -47,7 +47,7 @@ describe("criação automática de notícia", () => {
       screen.getByRole("switch", { name: /Transcrever áudio/i }),
     ).not.toBeChecked();
     expect(
-      screen.getByRole("button", { name: "Processar notícia" }),
+      screen.getByRole("button", { name: "Importar conteúdo" }),
     ).toBeDisabled();
     expect(
       screen.getByRole("button", {
@@ -85,7 +85,7 @@ describe("criação automática de notícia", () => {
       target: { value: "Preservar os créditos." },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Processar notícia" }),
+      screen.getByRole("button", { name: "Importar conteúdo" }),
     );
 
     await waitFor(() =>
@@ -131,13 +131,13 @@ describe("criação automática de notícia", () => {
       target: { files: [media] },
     });
     expect(screen.getByText("fonte.jpg")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Processar notícia" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Importar conteúdo" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Adicionar observações" }));
     fireEvent.change(screen.getByLabelText("Observações"), {
       target: { value: "Contexto da imagem." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Processar notícia" }));
+    fireEvent.click(screen.getByRole("button", { name: "Importar conteúdo" }));
 
     await waitFor(() =>
       expect(mutateAsync).toHaveBeenCalledWith({
@@ -156,6 +156,6 @@ describe("criação automática de notícia", () => {
       target: { files: [media] },
     });
     expect(screen.getByText("fonte.mov")).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: /Transcrever áudio/i })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: /Transcrever áudio/i })).toBeEnabled();
   });
 });

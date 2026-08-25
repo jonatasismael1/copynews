@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from src.collector import parse_item
 from src.notifications import safe_error
+from src.collector import _credits_exhausted
+import httpx
 from src.reports import _label, _volume_observation, build_messages, comparison
 from src.post_classification import apply_classification, classify_post_for_profile, empty_profile_summary, validate_profile_summary
 
@@ -88,3 +90,11 @@ def test_half_day_uses_half_of_daily_volume_targets():
     for count, fragment in expected.items():
         rendered = " ".join(_volume_observation({"username": "francesfmagreste", "originated_by_profile": count}, half_day=True))
         assert fragment.lower() in rendered.lower()
+
+
+def test_apify_credit_detection_is_specific():
+    request = httpx.Request("POST", "https://api.apify.com/v2/acts/x/runs")
+    assert _credits_exhausted(httpx.Response(402, request=request, text="payment required"))
+    assert _credits_exhausted(httpx.Response(403, request=request, text="Monthly usage limit reached"))
+    assert not _credits_exhausted(httpx.Response(429, request=request, text="Too many requests"))
+    assert not _credits_exhausted(httpx.Response(500, request=request, text="internal error"))

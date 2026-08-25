@@ -315,6 +315,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
     "DISTRIBUTION_EVOLUTION_API_KEY",
   ];
   const configured = required.every((key) => process.env[key]);
+  const errorCode=(error)=>{const message=safeError(error).toLowerCase();if(/private|privad|login|required|forbidden/.test(message))return "private_media";if(/timeout|timed out/.test(message))return "timeout";if(/download|cobalt|media|mídia/.test(message))return "download_failed";if(/ocr|title|título/.test(message))return "ocr_failed";if(/cancel/.test(message))return "cancelled";return "internal_error";};
 
   async function claim() {
     if (!configured) return null;
@@ -323,6 +324,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
       .from("news_send_history")
       .select("*")
       .in("status", ["queued", "processing"])
+      .is("cancel_requested_at", null)
       .or(`lease_expires_at.is.null,lease_expires_at.lt.${expired}`)
       .order("queued_at")
       .limit(1);
@@ -436,6 +438,8 @@ export function createDistributionProcessor({ db, workerId, log }) {
     let currentStage = "metadata";
     const timings = { ...(preview.timings || {}) };
     const transition = async (stage, progress) => {
+      const {data:state}=await db.from("distribution_direct_previews").select("cancel_requested_at").eq("id",preview.id).single();
+      if(state?.cancel_requested_at)throw new Error("Processamento cancelado pelo usuário");
       const now = Date.now();
       timings[currentStage] = Math.max(0, now - stageStartedAt);
       currentStage = stage;
@@ -615,13 +619,15 @@ export function createDistributionProcessor({ db, workerId, log }) {
         await raiseOperationalAlert(preview, "slow_processing", "Processamento de publicação acima de 2 minutos", { preview_id: preview.id, duration_ms: timings.total, timings });
     } catch (error) {
       const caption = String(metadata?.caption || "").trim();
+      const code = errorCode(error);
+      const cancelled = code === "cancelled";
       timings[currentStage] = Date.now() - stageStartedAt;
       timings.total = Date.now() - startedAt;
       const { error: updateError } = await db
         .from("distribution_direct_previews")
         .update({
-          status: "ready",
-          stage: "ready",
+          status: cancelled ? "failed" : "ready",
+          stage: cancelled ? "failed" : "ready",
           progress: 100,
           media_kind: null,
           media_count: 0,
@@ -635,6 +641,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
               ? "failed"
               : "absent",
           error_message: safeError(error),
+          error_code: code,
           timings,
           heartbeat_at: new Date().toISOString(),
           completed_at: new Date().toISOString(),
@@ -644,7 +651,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
         })
         .eq("id", preview.id);
       if (updateError) throw updateError;
-      log("distribution.preview.ready_without_media", {
+      log(cancelled ? "distribution.preview.cancelled" : "distribution.preview.ready_without_media", {
         previewId: preview.id,
         message: safeError(error),
       });
