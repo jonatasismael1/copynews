@@ -29,7 +29,8 @@ jobs:
           cache: pip
           cache-dependency-path: instagram-api/requirements-dev.txt
       - run: pip install -r instagram-api/requirements-dev.txt
-      - run: pytest instagram-api/tests
+      - run: pytest tests
+        working-directory: instagram-api
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost/postgres
           API_KEY: test-api-key-with-at-least-32-characters
