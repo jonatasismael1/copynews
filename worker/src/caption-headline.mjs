@@ -65,13 +65,19 @@ function editDistance(left, right) {
 }
 
 export function alignHeadlineWithCaption(title, caption) {
-  const repairedTitle = String(title || "")
+  let repairedTitle = String(title || "")
     .replace(/\bAspim\b/giu, "Assim")
     .replace(/\bvocê\s+n[oó]\s+precina\s+encolhen\b/giu, "você só precisa escolher")
     .replace(/\b[aA]e\s+curar\b/gu, "se curar")
     .replace(/\bA\s+mae\b/gu, "A mãe")
     .replace(/\bc\s+u(?=\s|[😂🤣]|$)/giu, "cu")
     .trim();
+  if (
+    /você só precisa escolher$/iu.test(repairedTitle) &&
+    /\bse curar\b/iu.test(String(caption || ""))
+  ) {
+    repairedTitle += " se curar";
+  }
   const titleTokens = normalizedWords(repairedTitle);
   const derived = deriveHeadlineFromCaption(caption);
   if (derived) {

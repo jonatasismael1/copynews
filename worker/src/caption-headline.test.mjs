@@ -31,6 +31,14 @@ test("corrige OCR cursivo quando a mesma frase existe na legenda", () => {
   );
 });
 
+test("completa o final visual truncado quando ele aparece literalmente na legenda", () => {
+  const source = "Assim como ela, talvez, você só precisa escolher se curar. Às vezes, você não deixou de acreditar no amor.";
+  assert.equal(
+    alignHeadlineWithCaption("Aspim como ela, talvez, você nó precina encolhen", source),
+    "Assim como ela talvez você só precisa escolher se curar.",
+  );
+});
+
 test("não troca manchete por trecho apenas vagamente relacionado da legenda", () => {
   assert.equal(
     alignHeadlineWithCaption("A mãe tenta vender e a filha mostra o cu", "Vendas online, amostras e muitos mais. Continua a novela destas duas."),
