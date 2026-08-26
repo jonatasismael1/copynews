@@ -88,6 +88,7 @@ async function claim() {
     .or(
       `lease_expires_at.is.null,lease_expires_at.lt.${new Date().toISOString()}`,
     )
+    .order("priority", { ascending: false })
     .order("created_at")
     .limit(1);
   if (error) throw error;

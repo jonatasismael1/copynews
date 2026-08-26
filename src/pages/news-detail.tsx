@@ -305,6 +305,29 @@ export function NewsDetailPage() {
       toast.error(error.message);
       return;
     }
+    const detectedTitle = data.original_title ?? data.generated_title ?? "";
+    if (
+      showToast &&
+      profile?.id &&
+      profile.organization_id &&
+      title.trim() &&
+      title.trim() !== detectedTitle.trim()
+    ) {
+      const { error: correctionError } = await supabase
+        .from("news_title_corrections")
+        .insert({
+          organization_id: profile.organization_id,
+          news_item_id: data.id,
+          corrected_by: profile.id,
+          detected_title: detectedTitle || null,
+          corrected_title: title.trim(),
+          ocr_confidence: data.ocr_confidence ?? null,
+          raw_ocr_text: data.raw_ocr_text || data.ocr_text || null,
+          source_author: data.source_author || null,
+        });
+      if (correctionError)
+        console.warn("title_correction_not_recorded", correctionError.message);
+    }
     if (nextStatus !== status) setStatus(nextStatus);
     lastSaved.current = savedSignature;
     setSavedAt(new Date());
@@ -998,6 +1021,19 @@ export function NewsDetailPage() {
       </ResponsiveSection></div>
 
       <div className="grid gap-3 md:gap-6 lg:grid-cols-2">
+        {data.ocr_confidence != null && data.ocr_confidence < 0.72 && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 lg:col-span-2">
+            <div className="flex items-start gap-3">
+              <TriangleAlert className="mt-0.5 shrink-0" size={20} />
+              <div>
+                <p className="font-semibold">Título precisa de revisão</p>
+                <p className="mt-1 text-sm">
+                  O OCR teve {Math.round(data.ocr_confidence * 100)}% de confiança. Compare o título com a mídia e com o OCR bruto antes de publicar.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
         {(
           [
             ["title", "Título original", title, setTitle],

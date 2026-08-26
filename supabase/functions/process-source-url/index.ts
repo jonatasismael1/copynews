@@ -153,6 +153,8 @@ Deno.serve(
         current_step: hasMedia ? "extract_audio" : "validate_url",
         status: "queued",
         progress: 0,
+        priority: 100,
+        requested_by_user: true,
         step_results: {
           notes: body.notes || null,
           transcribe_audio: transcribeAudio,

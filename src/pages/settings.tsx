@@ -69,7 +69,7 @@ export function SettingsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("system-health", { body: {} });
       if (error) throw error;
-      return data as {checked_at:string;database:{status:string};worker:{status:string;latency_ms?:number};instagram:{status:string;latency_ms?:number;data?:{apify?:{configured_tokens:number;active_slot:number;exhausted_slots:number[]}}};evolution:{status:string;latency_ms?:number};queues:{editorial:number;distribution:number;open_alerts:number};last_instagram_run?:{status:string;started_at:string;error?:string}|null;last_daily_report?:{status:string;report_date:string;error_message?:string}|null;instagram_accounts:{total:number;attention:number};storage:{new_files_24h:number;new_bytes_24h:number}};
+      return data as {checked_at:string;overall_status:"ok"|"warning"|"critical";database:{status:string};worker:{status:string;latency_ms?:number};instagram:{status:string;latency_ms?:number;data?:{apify?:{configured_tokens:number;active_slot:number;exhausted_slots:number[]}}};evolution:{status:string;latency_ms?:number};queues:{editorial:number;distribution:number;open_alerts:number};last_instagram_run?:{status:string;started_at:string;error?:string}|null;last_daily_report?:{status:string;report_date:string;error_message?:string}|null;instagram_accounts:{total:number;attention:number};storage:{new_files_24h:number;new_bytes_24h:number};processing_24h:{total:number;completed:number;failed:number;low_confidence:number;average_seconds:number;corrections:number};retention?:{status:string;started_at:string;finished_at?:string}|null;backup?:{status:string;started_at:string;finished_at?:string;restore_verified_at?:string;size_bytes?:number}|null};
     },
     refetchInterval: 60_000,
   });
@@ -380,6 +380,15 @@ export function SettingsPage() {
                 <div className="rounded-xl bg-muted p-3"><span>Fila de envios</span><b className="float-right">{systemHealth.queues.distribution}</b></div>
                 <div className="rounded-xl bg-muted p-3"><span>Alertas abertos</span><b className="float-right">{systemHealth.queues.open_alerts}</b></div>
                 <div className="rounded-xl bg-muted p-3"><span>Mídias novas (24h)</span><b className="float-right">{systemHealth.storage.new_files_24h}</b></div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+                <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Processamentos em 24h</p><b className="mt-1 block text-lg">{systemHealth.processing_24h.completed}/{systemHealth.processing_24h.total}</b><span className="text-xs text-muted-foreground">{systemHealth.processing_24h.failed} falhas</span></div>
+                <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Tempo médio</p><b className="mt-1 block text-lg">{systemHealth.processing_24h.average_seconds}s</b><span className="text-xs text-muted-foreground">por notícia concluída</span></div>
+                <div className="rounded-xl border p-3"><p className="text-xs text-muted-foreground">Qualidade do OCR</p><b className="mt-1 block text-lg">{systemHealth.processing_24h.low_confidence}</b><span className="text-xs text-muted-foreground">baixa confiança · {systemHealth.processing_24h.corrections} correções</span></div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                <div className="rounded-xl border p-3"><p className="font-semibold">Retenção automática</p><p className="mt-1 text-muted-foreground">{systemHealth.retention ? `${systemHealth.retention.status} · ${new Date(systemHealth.retention.started_at).toLocaleString('pt-BR')}` : 'Ainda sem execução registrada'}</p></div>
+                <div className="rounded-xl border p-3"><p className="font-semibold">Backup do banco</p><p className="mt-1 text-muted-foreground">{systemHealth.backup ? `${systemHealth.backup.status} · ${new Date(systemHealth.backup.started_at).toLocaleString('pt-BR')}` : 'Ainda sem backup registrado'}</p></div>
               </div>
               <div className="rounded-xl border p-3 text-sm"><b>Apify:</b> {systemHealth.instagram.data?.apify?.configured_tokens||0} token(s), usando posição {systemHealth.instagram.data?.apify?.active_slot||'—'}. {systemHealth.instagram.data?.apify?.exhausted_slots?.length?`Esgotados: ${systemHealth.instagram.data.apify.exhausted_slots.join(', ')}.`:'Nenhum token marcado como esgotado.'}</div>
               <p className="text-xs text-muted-foreground">Verificado em {new Date(systemHealth.checked_at).toLocaleString('pt-BR')} • {(systemHealth.storage.new_bytes_24h/1024/1024).toFixed(1)} MB adicionados nas últimas 24h.</p>
