@@ -8,7 +8,8 @@ const normalizedWords = (value) =>
 export function isLikelyBrandOnlyTitle(title, caption) {
   const titleWords = normalizedWords(title).filter((word) => word.length > 2);
   if (!titleWords.length || titleWords.length > 4) return false;
-  const captionWords = new Set(normalizedWords(caption));
+  const editorialCaption = String(caption || "").replace(/[@#][\p{L}\p{N}_.]+/gu, " ");
+  const captionWords = new Set(normalizedWords(editorialCaption));
   return titleWords.filter((word) => captionWords.has(word)).length === 0;
 }
 
