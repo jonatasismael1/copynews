@@ -38,3 +38,16 @@ test("preserva todas as linhas curtas de uma manchete persistente", () => {
   assert.equal(title.includes("Quase tragédia: É um menino"), true);
   assert.equal(title.includes("Noticiou Brasil"), false);
 });
+
+test("prefere a leitura completa mesmo quando a incompleta tem confiança maior", () => {
+  const frame = [
+    line("Ela confiou nele... Namorado trola", 700, 90, 42),
+    line("Ela confiou namorado trola", 700, 96, 42),
+    line("Namorada e brincadeira termina em", 768, 92, 30),
+    line("Quase tragédia: É um menino", 836, 92, 30),
+  ];
+  const title = selectTemporalHeadline([frame, frame, frame])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(title.includes("confiou nele"), true);
+});

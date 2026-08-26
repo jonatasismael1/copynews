@@ -151,8 +151,13 @@ function imageHeadline(lines) {
         Math.abs(line.y - candidate.y) <= Math.max(line.height, candidate.height),
     );
     if (duplicateIndex < 0) unique.push(line);
-    else if (line.confidence > unique[duplicateIndex].confidence)
-      unique[duplicateIndex] = line;
+    else {
+      const currentQuality = tokens(line.text).size * 12 + line.confidence;
+      const savedQuality =
+        tokens(unique[duplicateIndex].text).size * 12 +
+        unique[duplicateIndex].confidence;
+      if (currentQuality > savedQuality) unique[duplicateIndex] = line;
+    }
   }
   const medianHeight = [...unique].sort((a, b) => a.height - b.height)[
     Math.floor(unique.length / 2)
