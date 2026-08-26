@@ -21,6 +21,7 @@ import {
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
 import { readFramesLocally } from "./local-ocr.mjs";
+import { deriveHeadlineFromCaption, isLikelyBrandOnlyTitle } from "./caption-headline.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
@@ -743,7 +744,16 @@ async function processJob(job) {
         }
         results.ocr ||= { text: "", confidence: 0, provider: "none" };
       }
-      if (!results.original_title && results.ocr.title) results.original_title = normalizeHeadlineCase(results.ocr.title, results.clean_original_caption || "");
+      if (!results.original_title && results.ocr.title) {
+        const caption = results.clean_original_caption || results.original_caption || "";
+        const visualTitle = isLikelyBrandOnlyTitle(results.ocr.title, caption)
+          ? ""
+          : results.ocr.title;
+        results.original_title = normalizeHeadlineCase(
+          visualTitle || deriveHeadlineFromCaption(caption),
+          caption,
+        );
+      }
       await updateNews(job.news_items.id, {
         raw_ocr_text: results.ocr.text || "",
         ocr_text: results.ocr.text || "",
