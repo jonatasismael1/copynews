@@ -510,7 +510,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
                 "-frames:v",
                 "1",
                 "-q:v",
-                "4",
+                "5",
                 output,
               ]
             : [
@@ -520,9 +520,9 @@ export function createDistributionProcessor({ db, workerId, log }) {
                 "-i",
                 file.input,
                 "-vf",
-                "fps=1/3,scale=960:-1",
+                "trim=start=1:end=6,fps=1,scale=960:-1",
                 "-frames:v",
-                "4",
+                "5",
                 "-q:v",
                 "4",
                 output,
@@ -541,6 +541,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
       try {
         ocr = await readFramesLocally(framePaths, {
           requirePersistence: mediaKind === "video",
+          temporalWindow: mediaKind === "video",
         });
         if (!ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
           const frames = await Promise.all(

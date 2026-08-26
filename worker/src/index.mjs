@@ -713,10 +713,12 @@ async function processJob(job) {
           const output = join(framesDir, `frame-${index}-%02d.jpg`);
           await run("ffmpeg", item.kind === "image"
             ? ["-y", "-i", item.path, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output]
-            : ["-y", "-i", item.path, "-vf", "fps=1/3,scale=960:-1", "-frames:v", String(framesPerMedia), "-q:v", "4", output]);
+            : ["-y", "-i", item.path, "-vf", "trim=start=1:end=6,fps=1,scale=960:-1", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "4", output]);
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
-        results.ocr = await readFramesLocally(framePaths);
+        results.ocr = await readFramesLocally(framePaths, {
+          temporalWindow: mediaFiles.some((item) => item.kind === "video"),
+        });
         if (!results.ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
           const frames = await Promise.all(framePaths.map(async (path) => (await fs.readFile(path)).toString("base64")));
           results.ocr = await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini");

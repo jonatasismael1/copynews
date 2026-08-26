@@ -141,6 +141,7 @@ export function SendPage() {
   const [form, setForm] = useState(emptyForm);
   const [historyItem, setHistoryItem] = useState<NewsSendHistory | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [processingOpen, setProcessingOpen] = useState(false);
   const [recipientDetail, setRecipientDetail] =
     useState<DistributionRecipient | null>(null);
   const histories = useMemo(() => data?.history || [], [data?.history]);
@@ -378,11 +379,6 @@ export function SendPage() {
         title="Enviar"
         description="Conteúdo original para sua equipe, com histórico e processamento em segundo plano."
       />
-      {(operations?.previews.length||operations?.alerts.length) ? <section className="space-y-3">
-        <div className="flex items-center justify-between"><h2 className="font-display text-lg font-bold">Processamentos</h2><span className="text-xs text-muted-foreground">Continuam mesmo fora desta tela</span></div>
-        {operations?.alerts.map((alert)=><div key={alert.id} className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><div className="min-w-0 flex-1"><b>{alert.title}</b><span className="ml-2 text-xs">{alert.occurrences} ocorrência(s)</span></div><Button size="sm" variant="ghost" onClick={()=>alertResolver.mutate(alert.id)}>Dispensar</Button></div>)}
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{operations?.previews.slice(0,6).map((item)=><Card key={item.id}><CardContent className="p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{item.original_title||new URL(item.normalized_url).pathname}</p><Badge variant={item.status==="failed"?"danger":item.status==="ready"?"success":"secondary"}>{previewStageLabels[item.stage||"queued"]}</Badge></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{width:`${item.progress||0}%`}} /></div><div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span>{item.progress||0}%</span>{item.timings?.total ? <span>{Math.round(item.timings.total/1000)}s</span>:null}{item.cache_hit?<span>Resultado reaproveitado</span>:null}{item.confidence_level==="low"?<span className="text-amber-700">Confira o título</span>:null}{item.confidence_level==="unavailable"?<span>Título para edição manual</span>:null}</div>{item.error_message&&<p className="mt-2 text-xs text-destructive">{item.error_message}</p>}<div className="mt-2 flex gap-2">{item.status==="failed"&&item.retry_count<3?<Button size="sm" variant="outline" onClick={()=>previewManager.mutate({id:item.id,action:"retry_preview"})}>Tentar novamente</Button>:null}{["queued","processing"].includes(item.status)?<Button size="sm" variant="ghost" onClick={()=>previewManager.mutate({id:item.id,action:"cancel_preview"})}>Cancelar</Button>:null}</div></CardContent></Card>)}</div>
-      </section>:null}
       <section className="space-y-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative max-w-md flex-1">
@@ -530,6 +526,17 @@ export function SendPage() {
         </div>
         <HistoryList items={histories.slice(0, 6)} onOpen={setHistoryItem} />
       </section>
+      {(operations?.previews.length || operations?.alerts.length) ? (
+        <section className="rounded-2xl border bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-base font-semibold">Processamentos</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Continuam no servidor mesmo fora desta tela.</p>
+            </div>
+            <Button variant="outline" onClick={() => setProcessingOpen(true)}>Ver processamentos</Button>
+          </div>
+        </section>
+      ) : null}
       {profile?.role === "admin" && (
         <Button
           className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-20 rounded-full px-4 shadow-xl lg:bottom-6 lg:right-6"
@@ -794,6 +801,18 @@ export function SendPage() {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6">
             <HistoryList items={histories} onOpen={setHistoryItem} />
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={processingOpen} onOpenChange={setProcessingOpen}>
+        <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-3xl">
+          <div className="shrink-0 p-5 pb-3 sm:p-6 sm:pb-3">
+            <DialogTitle>Processamentos</DialogTitle>
+            <DialogDescription>O trabalho continua no servidor mesmo se você sair do Copy News.</DialogDescription>
+          </div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
+            {operations?.alerts.map((alert)=><div key={alert.id} className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><div className="min-w-0 flex-1"><b>{alert.title}</b><span className="ml-2 text-xs">{alert.occurrences} ocorrência(s)</span></div><Button size="sm" variant="ghost" onClick={()=>alertResolver.mutate(alert.id)}>Dispensar</Button></div>)}
+            <div className="grid gap-2 sm:grid-cols-2">{operations?.previews.map((item)=><Card key={item.id}><CardContent className="p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-semibold">{item.original_title||new URL(item.normalized_url).pathname}</p><Badge variant={item.status==="failed"?"danger":item.status==="ready"?"success":"secondary"}>{previewStageLabels[item.stage||"queued"]}</Badge></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all" style={{width:`${item.progress||0}%`}} /></div><div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground"><span>{item.progress||0}%</span>{item.timings?.total ? <span>{Math.round(item.timings.total/1000)}s</span>:null}{item.cache_hit?<span>Resultado reaproveitado</span>:null}{item.confidence_level==="low"?<span className="text-amber-700">Confira o título</span>:null}{item.confidence_level==="unavailable"?<span>Título para edição manual</span>:null}</div>{item.error_message&&<p className="mt-2 text-xs text-destructive">{item.error_message}</p>}<div className="mt-2 flex gap-2">{item.status==="failed"&&item.retry_count<3?<Button size="sm" variant="outline" onClick={()=>previewManager.mutate({id:item.id,action:"retry_preview"})}>Tentar novamente</Button>:null}{["queued","processing"].includes(item.status)?<Button size="sm" variant="ghost" onClick={()=>previewManager.mutate({id:item.id,action:"cancel_preview"})}>Cancelar</Button>:null}</div></CardContent></Card>)}</div>
           </div>
         </DialogContent>
       </Dialog>

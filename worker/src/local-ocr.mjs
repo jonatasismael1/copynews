@@ -168,9 +168,45 @@ function imageHeadline(lines) {
     .slice(0, 6);
 }
 
+export function selectTemporalHeadline(frames) {
+  const usableFrames = frames.filter((frame) => frame.length);
+  if (!usableFrames.length) return [];
+  const repeatedShortLines = usableFrames
+    .flatMap((frame) => frame)
+    .filter((line) => tokens(line.text).size <= 4)
+    .filter((line, index, all) =>
+      all.findIndex((candidate) => similarity(line.text, candidate.text) >= 0.82) === index,
+    )
+    .filter((line) =>
+      usableFrames.filter((frame) =>
+        frame.some((candidate) => similarity(line.text, candidate.text) >= 0.82),
+      ).length >= Math.max(2, Math.ceil(usableFrames.length * 0.8)),
+    );
+  const candidates = usableFrames.map((frame, frameIndex) => {
+    let lines = imageHeadline(frame).filter((line) =>
+      !repeatedShortLines.some((repeated) => similarity(line.text, repeated.text) >= 0.82),
+    );
+    const richLines = lines.filter((line) => tokens(line.text).size >= 6);
+    if (richLines.length) {
+      const firstRichLineY = Math.min(...richLines.map((line) => line.y));
+      lines = lines.filter((line) =>
+        tokens(line.text).size >= 3 || line.y > firstRichLineY,
+      );
+    }
+    const tokenCount = lines.reduce((sum, line) => sum + tokens(line.text).size, 0);
+    const confidence = lines.reduce((sum, line) => sum + line.confidence, 0);
+    return {
+      lines,
+      score: tokenCount * 18 + confidence * 0.25 + lines.reduce((sum, line) => sum + line.text.length, 0) + frameIndex,
+    };
+  });
+  const best = candidates.sort((a, b) => b.score - a.score)[0];
+  return best?.lines.length ? best.lines : persistentLines(usableFrames);
+}
+
 export async function readFramesLocally(
   paths,
-  { requirePersistence = paths.length > 1 } = {},
+  { requirePersistence = paths.length > 1, temporalWindow = false } = {},
 ) {
   const frames = [];
   for (let index = 0; index < paths.length; index += 2) {
@@ -185,8 +221,10 @@ export async function readFramesLocally(
     );
     frames.push(...batch);
   }
-  const chosen = requirePersistence
-    ? persistentLines(frames)
+  const chosen = temporalWindow
+    ? selectTemporalHeadline(frames)
+    : requirePersistence
+      ? persistentLines(frames)
     : imageHeadline(frames[0] || []);
   const title = chosen
     .map((line) => line.text)
