@@ -55,7 +55,7 @@ function similarity(a, b) {
 }
 function valid(text, confidence) {
   if (
-    confidence < 45 ||
+    confidence < 35 ||
     (text.length < 2 && !/^[aeo]$/i.test(text)) ||
     /^[@#]/.test(text) ||
     /https?:|www\.|\.com\b/i.test(text)
