@@ -169,7 +169,7 @@ function imageHeadline(lines) {
       line.text.length <= 140,
   );
   const sorted = (candidates.length ? candidates : unique)
-    .filter((line) => line.confidence >= 70)
+    .filter((line) => line.confidence >= 60)
     .sort((a, b) => a.y - b.y || a.x - b.x);
   if (!sorted.length) return unique.sort((a, b) => a.y - b.y || a.x - b.x).slice(0, 6);
   const clusters = [];

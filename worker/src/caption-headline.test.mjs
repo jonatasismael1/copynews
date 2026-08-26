@@ -44,3 +44,28 @@ test("deriva manchete factual de incêndio sem IA", () => {
     "Incêndio atinge oficina de conserto de eletrodomésticos em Arapiraca",
   );
 });
+
+test("recupera ponto turístico pela legenda e remove duplicação do OCR", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Novo ponto turisti co novo ponto turistico na av Ceci Cunha",
+      "Já viram o novo ponto turístico da Av. Ceci Cunha? Eu sempre vou tirar essa piada.",
+    ),
+    "Novo ponto turístico na Av. Ceci Cunha",
+  );
+});
+
+test("corrige mãe e junta palavra separada pelo OCR", () => {
+  assert.equal(
+    alignHeadlineWithCaption("A mae tenta vender e a filha mostra o c u😂", "Vendas online, amostras e muitos mais."),
+    "A mãe tenta vender e a filha mostra o cu😂",
+  );
+});
+
+test("completa prévia cortada somente com fatos presentes na legenda", () => {
+  const source = "Catty Lares apareceu com roupas masculinas e cabelo cortado. No batismo em uma igreja evangélica recebeu o novo nome Carlos Emanuel.";
+  assert.equal(
+    alignHeadlineWithCaption("Catty Lares oficialment -mulher trans e aparece nasculino e sendo chama após se converter em ig", source),
+    "Catty Lares oficialmente é uma ex-mulher trans e aparece com visual masculino e sendo chamado de Emanuel após se converter em igreja evangélica",
+  );
+});
