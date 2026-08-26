@@ -83,7 +83,7 @@ async function claim() {
   const { data: rows, error } = await db
     .from("processing_jobs")
     .select("*,news_items(*)")
-    .in("status", ["queued", "retrying"])
+    .in("status", ["queued", "retrying", "running"])
     .or(
       `lease_expires_at.is.null,lease_expires_at.lt.${new Date().toISOString()}`,
     )
@@ -102,7 +102,7 @@ async function claim() {
       attempts: job.attempts + 1,
     })
     .eq("id", job.id)
-    .in("status", ["queued", "retrying"])
+    .eq("status", job.status)
     .select()
     .maybeSingle();
   return updateError || !data ? null : { ...job, ...data };
