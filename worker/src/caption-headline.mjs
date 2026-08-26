@@ -25,3 +25,8 @@ export function deriveHeadlineFromCaption(caption) {
   const subject = /\bela\b/i.test(text) ? "Mulher" : "Homem";
   return `${subject} morre após ser atropelado por motocicleta${roadName ? ` em ${roadName}` : ""}`;
 }
+
+export function recoverBrandOnlyHeadline(title, caption) {
+  if (!isLikelyBrandOnlyTitle(title, caption)) return String(title || "").trim();
+  return deriveHeadlineFromCaption(caption);
+}

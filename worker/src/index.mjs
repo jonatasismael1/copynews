@@ -21,7 +21,7 @@ import {
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
 import { readFramesLocally } from "./local-ocr.mjs";
-import { deriveHeadlineFromCaption, isLikelyBrandOnlyTitle } from "./caption-headline.mjs";
+import { deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
@@ -311,7 +311,7 @@ async function processJob(job) {
         results.metadata.caption,
       ) || null;
       results.original_title = normalizeHeadlineCase(
-        results.metadata.title || "",
+        recoverBrandOnlyHeadline(results.metadata.title, results.clean_original_caption || ""),
         results.clean_original_caption || "",
       ) || null;
       await updateNews(job.news_items.id, {
@@ -430,7 +430,7 @@ async function processJob(job) {
                 refreshed.caption,
               ) || null;
               results.original_title = normalizeHeadlineCase(
-                refreshed.title || "",
+                recoverBrandOnlyHeadline(refreshed.title, results.clean_original_caption || ""),
                 results.clean_original_caption || "",
               ) || null;
               await updateNews(job.news_items.id, {
