@@ -768,8 +768,12 @@ async function processJob(job) {
       });
     }
     if (!results.copy) {
-      const originalTitle = String(results.original_title || job.news_items.original_title || "").trim();
       const originalCaption = String(results.clean_original_caption || results.original_caption || job.news_items.original_caption || job.news_items.source_caption || "").trim();
+      const originalTitle = recoverBrandOnlyHeadline(
+        results.original_title || job.news_items.original_title || "",
+        originalCaption,
+      );
+      results.original_title = originalTitle || null;
       results.copy = { title: originalTitle, caption: originalCaption, source: "original", highlights: [], warnings: [] };
       await updateNews(job.news_items.id, {
         original_title: originalTitle || null,
