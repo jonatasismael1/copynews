@@ -38,7 +38,7 @@ def activity(times: list[str]) -> tuple[str, str, str]:
 def _label(username: str) -> str:
     aliases = {
         "francesfmagreste": "Agreste", "francesfmarapiraca": "Arapiraca",
-        "francesfmcoruripee": "Coruripe", "francefmdelmiro": "Delmiro",
+        "francesfmcoruripee": "Coruripe", "francesfmdelmiro": "Delmiro",
         "francesfmpenedo": "Penedo", "quilombofm": "Quilombo FM",
     }
     return aliases.get(username.lower(), f"@{username}")

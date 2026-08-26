@@ -35,7 +35,7 @@ def _run(**overrides):
 def test_report_is_split_and_uses_unique_metrics():
     item = {**empty_profile_summary("one"), "posts_found": 2, "originated_by_profile": 1, "own_without_collab": 1, "received_by_collab": 1, "received_external": 1, "views_monitored": 100, "reels_count": 1, "posts_count": 1, "posting_times": ["08:00"]}
     messages = build_messages(_run(profile_summaries=[item, {**item, "username": "two"}]))
-    assert len(messages) == 3
+    assert len(messages) == 4
     assert "Publicações únicas: 42" in messages[0]
     assert "Aparições nos perfis: 49" in messages[0]
     assert "Views únicas monitoradas: 284.320" in messages[0]
