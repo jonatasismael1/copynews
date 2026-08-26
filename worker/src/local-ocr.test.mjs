@@ -23,3 +23,18 @@ test("prioriza a manchete que aparece depois e ignora a marca persistente", () =
   assert.equal(title.includes("Homem morre após ser atropelado por motocicleta"), true);
   assert.equal(title.includes("Fernando Corrêa"), true);
 });
+
+test("preserva todas as linhas curtas de uma manchete persistente", () => {
+  const frame = [
+    line("Ela confiou nele... Namorado trola", 700),
+    line("Namorada e brincadeira termina em", 760),
+    line("Quase tragédia: É um menino", 820),
+    line("Noticiou Brasil", 960),
+  ];
+  const title = selectTemporalHeadline([frame, frame, frame, frame, frame])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(title.includes("Namorada e brincadeira termina em"), true);
+  assert.equal(title.includes("Quase tragédia: É um menino"), true);
+  assert.equal(title.includes("Noticiou Brasil"), false);
+});

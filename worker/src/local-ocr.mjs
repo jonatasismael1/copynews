@@ -173,7 +173,7 @@ export function selectTemporalHeadline(frames) {
   if (!usableFrames.length) return [];
   const repeatedShortLines = usableFrames
     .flatMap((frame) => frame)
-    .filter((line) => tokens(line.text).size <= 4)
+    .filter((line) => tokens(line.text).size <= 2)
     .filter((line, index, all) =>
       all.findIndex((candidate) => similarity(line.text, candidate.text) >= 0.82) === index,
     )
