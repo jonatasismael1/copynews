@@ -3,6 +3,9 @@ alter table public.distribution_direct_previews
   add column if not exists retry_count integer not null default 0 check (retry_count between 0 and 5),
   add column if not exists cancel_requested_at timestamptz;
 
+alter table public.news_send_history
+  add column if not exists cancel_requested_at timestamptz;
+
 create index if not exists distribution_previews_active_created_idx
   on public.distribution_direct_previews (created_at)
   where status in ('queued','processing');

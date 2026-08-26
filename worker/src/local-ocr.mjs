@@ -9,14 +9,25 @@ function captureMode(path, psm) {
     );
     let output = "";
     let error = "";
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(() => reject(new Error("OCR local excedeu 15 segundos")));
+    }, 15_000);
     child.stdout.on("data", (chunk) => (output += chunk));
     child.stderr.on("data", (chunk) => (error += chunk));
-    child.on("error", reject);
-    child.on("close", (code) =>
+    child.on("error", (cause) => finish(() => reject(cause)));
+    child.on("close", (code) => finish(() =>
       code === 0
         ? resolve(output)
         : reject(new Error(`Tesseract saiu com ${code}: ${error.slice(-200)}`)),
-    );
+    ));
   });
 }
 const capture = (path) =>
