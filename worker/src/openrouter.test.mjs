@@ -155,6 +155,16 @@ test("título curto também precisa ser realmente reescrito", () => {
   );
 });
 
+test("preserva nomes de estados ao normalizar manchetes em caixa alta", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "ADOLESCENTE MORRE EM ALAGOAS; JOVEM ERA FILHO DE PEDRO WILSON",
+      "O adolescente morreu em Alagoas e era filho de Pedro Wilson.",
+    ),
+    "Adolescente morre em Alagoas; jovem era filho de Pedro Wilson",
+  );
+});
+
 test("legenda curta também precisa ser realmente reescrita", () => {
   const sources = classify({
     originalTitle: "Defesa Civil interdita ponte em Pilar",

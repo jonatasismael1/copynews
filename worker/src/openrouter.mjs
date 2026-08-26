@@ -268,6 +268,19 @@ export function normalizeHeadlineCase(value, caption = "") {
       ),
       phrase,
     );
+  const stateNames = [
+    "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
+    "Espírito Santo", "Goiás", "Maranhão", "Mato Grosso",
+    "Mato Grosso do Sul", "Minas Gerais", "Pará", "Paraíba", "Paraná",
+    "Pernambuco", "Piauí", "Rio de Janeiro", "Rio Grande do Norte",
+    "Rio Grande do Sul", "Rondônia", "Roraima", "Santa Catarina",
+    "São Paulo", "Sergipe", "Tocantins",
+  ];
+  for (const state of stateNames)
+    normalizedTitle = normalizedTitle.replace(
+      new RegExp(`\\b${normalize(state).replace(/\\s+/g, "\\s+")}\\b`, "giu"),
+      state,
+    );
   return normalizedTitle;
 }
 

@@ -159,7 +159,7 @@ function imageHeadline(lines) {
   ].height;
   const candidates = unique.filter(
     (line) =>
-      line.height >= medianHeight * 0.9 &&
+      line.height >= medianHeight * 0.7 &&
       line.text.length >= 8 &&
       line.text.length <= 140,
   );
