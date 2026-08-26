@@ -21,7 +21,7 @@ import {
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
 import { readFramesLocally } from "./local-ocr.mjs";
-import { deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
+import { alignHeadlineWithCaption, deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
@@ -731,8 +731,8 @@ async function processJob(job) {
         for (const [index, item] of mediaFiles.entries()) {
           const output = join(framesDir, `frame-${index}-%02d.jpg`);
           await run("ffmpeg", item.kind === "image"
-            ? ["-y", "-i", item.path, "-vf", "scale=960:-1", "-frames:v", "1", "-q:v", "4", output]
-            : ["-y", "-i", item.path, "-vf", "trim=start=1:end=6,fps=1,scale=1200:-1", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
+            ? ["-y", "-i", item.path, "-vf", "scale=1440:-1", "-frames:v", "1", "-q:v", "3", output]
+            : ["-y", "-i", item.path, "-vf", "trim=start=0:end=6,fps=5/6,scale=1200:-1", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         results.ocr = await readFramesLocally(framePaths, {
@@ -751,7 +751,7 @@ async function processJob(job) {
           ? ""
           : results.ocr.title;
         results.original_title = normalizeHeadlineCase(
-          visualTitle || deriveHeadlineFromCaption(caption),
+          alignHeadlineWithCaption(visualTitle, caption) || deriveHeadlineFromCaption(caption),
           caption,
         );
       }
