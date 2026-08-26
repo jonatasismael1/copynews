@@ -744,8 +744,9 @@ async function processJob(job) {
         }
         results.ocr ||= { text: "", confidence: 0, provider: "none" };
       }
-      if (!results.original_title && results.ocr.title) {
-        const caption = results.clean_original_caption || results.original_caption || "";
+      const caption = results.clean_original_caption || results.original_caption || "";
+      const currentTitleIsBrand = isLikelyBrandOnlyTitle(results.original_title, caption);
+      if ((!results.original_title || currentTitleIsBrand) && results.ocr.title) {
         const visualTitle = isLikelyBrandOnlyTitle(results.ocr.title, caption)
           ? ""
           : results.ocr.title;
