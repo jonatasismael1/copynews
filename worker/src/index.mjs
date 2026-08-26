@@ -402,6 +402,24 @@ async function processJob(job) {
               });
             }
           }
+          if (isInstagramReelUrl(job.news_items.source_url)) {
+            try {
+              acquired = await downloadVideoWithYtDlp(
+                job.news_items.source_url,
+                dir,
+                "instagram-reel",
+              );
+              log("media.reel_video_recovered", {
+                jobId: job.id,
+                provider: "yt-dlp",
+              });
+            } catch (fallbackError) {
+              log("media.reel_video_unavailable", {
+                jobId: job.id,
+                message: fallbackError.message,
+              });
+            }
+          }
           if (!results.metadata.mediaItems?.length) {
             const refreshed = await extractMetadata(job.news_items.source_url);
             if (refreshed.caption || refreshed.mediaItems?.length) {
