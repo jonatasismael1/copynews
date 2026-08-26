@@ -172,7 +172,7 @@ function imageHeadline(lines) {
     const cluster = clusters.at(-1);
     const previous = cluster?.at(-1);
     const maximumGap = previous
-      ? Math.max(previous.height, current.height) * 2.5
+      ? Math.max(96, Math.max(previous.height, current.height) * 2.5)
       : 0;
     if (!previous || current.y - previous.y <= maximumGap) {
       if (cluster) cluster.push(current);

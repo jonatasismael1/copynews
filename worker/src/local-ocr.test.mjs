@@ -26,10 +26,10 @@ test("prioriza a manchete que aparece depois e ignora a marca persistente", () =
 
 test("preserva todas as linhas curtas de uma manchete persistente", () => {
   const frame = [
-    line("Ela confiou nele... Namorado trola", 700),
-    line("Namorada e brincadeira termina em", 760),
-    line("Quase tragédia: É um menino", 820),
-    line("Noticiou Brasil", 960),
+    line("Ela confiou nele... Namorado trola", 700, 90, 24),
+    line("Namorada e brincadeira termina em", 768, 90, 24),
+    line("Quase tragédia: É um menino", 836, 90, 24),
+    line("Noticiou Brasil", 976, 90, 24),
   ];
   const title = selectTemporalHeadline([frame, frame, frame, frame, frame])
     .map((item) => item.text)
