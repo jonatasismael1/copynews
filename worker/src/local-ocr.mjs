@@ -163,9 +163,30 @@ function imageHeadline(lines) {
       line.text.length >= 8 &&
       line.text.length <= 140,
   );
-  return (candidates.length ? candidates : unique)
-    .sort((a, b) => a.y - b.y || a.x - b.x)
-    .slice(0, 6);
+  const sorted = (candidates.length ? candidates : unique)
+    .filter((line) => line.confidence >= 70)
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  if (!sorted.length) return unique.sort((a, b) => a.y - b.y || a.x - b.x).slice(0, 6);
+  const clusters = [];
+  for (const current of sorted) {
+    const cluster = clusters.at(-1);
+    const previous = cluster?.at(-1);
+    const maximumGap = previous
+      ? Math.max(previous.height, current.height) * 2.5
+      : 0;
+    if (!previous || current.y - previous.y <= maximumGap) {
+      if (cluster) cluster.push(current);
+      else clusters.push([current]);
+    } else {
+      clusters.push([current]);
+    }
+  }
+  const score = (cluster) =>
+    cluster.reduce(
+      (sum, line) => sum + tokens(line.text).size * 18 + line.confidence * 0.2,
+      0,
+    );
+  return clusters.sort((a, b) => score(b) - score(a))[0].slice(0, 6);
 }
 
 export function selectTemporalHeadline(frames) {
