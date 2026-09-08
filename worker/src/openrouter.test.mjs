@@ -225,6 +225,16 @@ test("normaliza nome e cidade em caixa alta confirmados pela legenda", () => {
   );
 });
 
+test("usa componentes da arroba e local final para restaurar nomes", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "PREFEITO VAVAL WANDERLEY CONVERSA SOBRE MOMENTO MEMORÁVEL EM CACIMBINHAS",
+      "Conversamos com o prefeito @vaval_wanderley15 durante a festa em cacimbinhas.",
+    ),
+    "Prefeito Vaval Wanderley conversa sobre momento memorável em Cacimbinhas",
+  );
+});
+
 test("legenda curta também precisa ser realmente reescrita", () => {
   const sources = classify({
     originalTitle: "Defesa Civil interdita ponte em Pilar",

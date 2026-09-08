@@ -272,8 +272,14 @@ export function normalizeHeadlineCase(value, caption = "") {
   const handles = (caption.match(/@[\p{L}\p{N}_.]+/gu) || []).map((handle) =>
     normalize(handle.slice(1)),
   );
+  const handleParts = handles.flatMap((handle) =>
+    handle.split(/[._\d]+/u).filter((part) => part.length >= 4),
+  );
   for (const word of tokens(normalizedTitle).filter((item) => item.length >= 4)) {
-    if (!handles.some((handle) => handle.length > word.length && handle.startsWith(word)))
+    if (
+      !handles.some((handle) => handle.length > word.length && handle.startsWith(word)) &&
+      !handleParts.includes(word)
+    )
       continue;
     normalizedTitle = normalizedTitle.replace(
       new RegExp(`\\b${word}\\b`, "giu"),
@@ -300,6 +306,14 @@ export function normalizeHeadlineCase(value, caption = "") {
       new RegExp(`\\b${normalize(place)}\\b`, "giu"),
       place,
     );
+  const trailingPlace = /\b(em|no|na)\s+([\p{L}'’-]{3,})([.!?]?)$/iu.exec(normalizedTitle);
+  if (
+    trailingPlace &&
+    new RegExp(`\\b${normalize(trailingPlace[1])}\\s+${normalize(trailingPlace[2])}\\b`, "u")
+      .test(normalize(caption))
+  ) {
+    normalizedTitle = `${normalizedTitle.slice(0, trailingPlace.index)}${trailingPlace[1]} ${properCase(trailingPlace[2])}${trailingPlace[3]}`;
+  }
   const namedRoles = [...caption.matchAll(
     /\b(?:prefeit[oa]|governador(?:a)?|senador(?:a)?|deputad[oa])\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)(?:\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+))?/giu,
   )].map((match) => [match[1], match[2]].filter(Boolean).map(properCase).join(" "));
