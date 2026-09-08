@@ -169,3 +169,33 @@ test("remove uma marca curta antes da manchete ancorada pela legenda", () => {
     "Samu Lino voando e não tem como esquecer desse momento absurdo com a Tati",
   );
 });
+
+test("remove fragmento ilegível no fim quando a legenda confirma a manchete", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Vamos passar a bota na corrupgao, diz menina da bota ao falar sobre candidatura Palme ra nel eb",
+      "A Menina da Bota falou sobre uma possível candidatura e disse que vai passar a bota na corrupção.",
+    ),
+    "Vamos passar a bota na corrupção, diz menina da bota ao falar sobre candidatura",
+  );
+});
+
+test("junta palavra antes de remover uma leitura repetida", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Lindbergh critica ato na Paulista e acusa Paulistae acusa manifestantes de aliança com Trump",
+      "Lindbergh Farias criticou o ato na Paulista e acusa os manifestantes de aliança com Trump.",
+    ),
+    "Lindbergh critica ato na Paulista e acusa manifestantes de aliança com Trump",
+  );
+});
+
+test("corrige nome antes de remover o começo repetido", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "André Mendonça dá o André Mendonga dá troco ao jogo sujo do qual é vítima, afirma Mario Sabino ista ao vivo",
+      "André Mendonça dá o troco ao jogo sujo do qual é vítima, afirma Mario Sabino.",
+    ),
+    "André Mendonça dá o troco ao jogo sujo do qual é vítima afirma Mario Sabino",
+  );
+});

@@ -263,13 +263,6 @@ function imageHeadline(lines) {
   );
 }
 
-export function selectCarouselHeadline(frames) {
-  return frames
-    .map((frame) => imageHeadline(frame))
-    .filter((lines) => lines.length)
-    .sort((a, b) => headlineScore(b) - headlineScore(a))[0] || [];
-}
-
 export function selectTemporalHeadline(frames) {
   const usableFrames = frames.filter((frame) => frame.length);
   if (!usableFrames.length) return [];
@@ -319,12 +312,15 @@ export function selectTemporalHeadline(frames) {
   return best?.lines.length ? best.lines : persistentLines(usableFrames);
 }
 
+export function selectSourceOcrFrames(paths, hasVideo) {
+  return hasVideo ? paths : paths.slice(0, 1);
+}
+
 export async function readFramesLocally(
   paths,
   {
     requirePersistence = paths.length > 1,
     temporalWindow = false,
-    carouselWindow = false,
   } = {},
 ) {
   const frames = [];
@@ -340,8 +336,6 @@ export async function readFramesLocally(
   }
   const chosen = temporalWindow
     ? selectTemporalHeadline(frames)
-    : carouselWindow
-      ? selectCarouselHeadline(frames)
     : requirePersistence
       ? persistentLines(frames)
     : imageHeadline(frames[0] || []);

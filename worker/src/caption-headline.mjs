@@ -136,6 +136,42 @@ function stripEditorialFooter(value) {
   return text.slice(0, marker.index).replace(/[\s|\-:;,.]+$/u, "").trim();
 }
 
+function stripUnknownTrailingFragment(value, caption) {
+  const spans = wordSpans(value);
+  const captionWords = new Set(normalizedWords(caption));
+  if (spans.length < 7 || captionWords.size < 5) return value;
+
+  let lastCaptionMatch = -1;
+  let matchingMeaningfulWords = 0;
+  for (let index = 0; index < spans.length; index += 1) {
+    const word = spans[index].normalized;
+    if (word.length < 3 || ignoredAnchorWords.has(word)) continue;
+    if (captionWords.has(word)) {
+      lastCaptionMatch = index;
+      matchingMeaningfulWords += 1;
+    }
+  }
+  if (matchingMeaningfulWords < 5 || lastCaptionMatch < 0) return value;
+
+  const trailing = spans.slice(lastCaptionMatch + 1);
+  if (trailing.length < 2 || trailing.length > 5) return value;
+  const meaningfulTrailing = trailing.filter(
+    (item) => item.normalized.length >= 3 && !ignoredAnchorWords.has(item.normalized),
+  );
+  if (meaningfulTrailing.some((item) => captionWords.has(item.normalized))) return value;
+
+  const trailingText = trailing.map((item) => item.normalized).join(" ");
+  const looksTruncated =
+    trailing.some((item) => item.normalized.length <= 2) ||
+    /(?:^|\s)ista ao vivo$/u.test(trailingText);
+  if (!looksTruncated) return value;
+
+  return value
+    .slice(0, trailing[0].start)
+    .replace(/[\s|\-:;,.]+$/u, "")
+    .trim();
+}
+
 function repairCaptionSpelling(value, caption) {
   const sourceSpans = wordSpans(value);
   const captionSpans = wordSpans(caption);
@@ -162,7 +198,23 @@ function repairCaptionSpelling(value, caption) {
   };
   for (const item of [...sourceSpans].reverse()) {
     if (item.normalized.length <= 1) continue;
-    const replacement = canonical.get(item.normalized);
+    let replacement = canonical.get(item.normalized);
+    if (!replacement && item.normalized.length >= 5) {
+      const fuzzy = captionSpans.find((candidate) => {
+        if (candidate.normalized.length !== item.normalized.length) return false;
+        const mismatches = [...item.normalized].reduce(
+          (total, letter, index) => total + (letter === candidate.normalized[index] ? 0 : 1),
+          0,
+        );
+        if (mismatches !== 1) return false;
+        const mismatchAt = [...item.normalized].findIndex(
+          (letter, index) => letter !== candidate.normalized[index],
+        );
+        return /[cgq]/u.test(item.normalized[mismatchAt]) &&
+          /[cgq]/u.test(candidate.normalized[mismatchAt]);
+      });
+      replacement = fuzzy?.text;
+    }
     if (!replacement || replacement === item.text) continue;
     const before = result.slice(0, item.start);
     const atSentenceStart =
@@ -248,18 +300,20 @@ function editDistance(left, right) {
 }
 
 export function alignHeadlineWithCaption(title, caption) {
-  let repairedTitle = restoreCaptionConfirmedCopula(
-    repairCaptionSpelling(
-      splitCaptionFusions(
-        stripSocialPrefix(
-          collapseImmediateRepeatedPhrases(decodeMixedAlphaNumerics(title)),
+  let repairedTitle = collapseImmediateRepeatedPhrases(
+    restoreCaptionConfirmedCopula(
+      repairCaptionSpelling(
+        splitCaptionFusions(
+          stripSocialPrefix(
+            collapseImmediateRepeatedPhrases(decodeMixedAlphaNumerics(title)),
+            caption,
+          ),
           caption,
         ),
         caption,
       ),
       caption,
     ),
-    caption,
   )
     .replace(/\bnao\b/giu, "não")
     .replace(/\bAspim\b/giu, "Assim")
@@ -274,6 +328,12 @@ export function alignHeadlineWithCaption(title, caption) {
   ) {
     repairedTitle += " se curar";
   }
+  const titleBeforeSuffixCleanup = repairedTitle;
+  repairedTitle = stripUnknownTrailingFragment(
+    stripEditorialFooter(repairedTitle),
+    caption,
+  );
+  const removedNoisySuffix = repairedTitle !== titleBeforeSuffixCleanup;
   const titleTokens = normalizedWords(repairedTitle);
   const derived = deriveHeadlineFromCaption(caption);
   if (derived) {
@@ -301,15 +361,16 @@ export function alignHeadlineWithCaption(title, caption) {
       if (!best || similarity > best.similarity) best = { phrase, similarity };
     }
   }
-  if (best?.similarity < 0.84) return stripEditorialFooter(repairedTitle);
+  if (best?.similarity < 0.84) return repairedTitle;
   const beginsUppercase = /^[^\p{L}]*\p{Lu}/u.test(repairedTitle);
-  return stripEditorialFooter(beginsUppercase
+  const aligned = stripEditorialFooter(beginsUppercase
     ? best.phrase.replace(
         /^([^\p{L}]*)(\p{Ll})/u,
         (_match, prefix, letter) =>
           `${prefix}${letter.toLocaleUpperCase("pt-BR")}`,
       )
     : best.phrase);
+  return removedNoisySuffix ? aligned.replace(/\.+$/u, "") : aligned;
 }
 
 export function recoverBrandOnlyHeadline(title, caption) {

@@ -20,7 +20,7 @@ import {
   transcribeAudio,
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
-import { readFramesLocally } from "./local-ocr.mjs";
+import { readFramesLocally, selectSourceOcrFrames } from "./local-ocr.mjs";
 import { alignHeadlineWithCaption, deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
@@ -737,12 +737,12 @@ async function processJob(job) {
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         const hasVideo = mediaFiles.some((item) => item.kind === "video");
-        // Em carrosséis, cada slide é independente. Comparamos a hierarquia
-        // visual dos slides em vez de exigir texto repetido entre capa e anexos.
-        results.ocr = await readFramesLocally(framePaths, {
+        // A capa do carrossel é o card editorial; os demais slides podem ser
+        // documentos. Dentro da capa, a hierarquia visual escolhe a manchete.
+        const ocrFramePaths = selectSourceOcrFrames(framePaths, hasVideo);
+        results.ocr = await readFramesLocally(ocrFramePaths, {
           requirePersistence: hasVideo,
           temporalWindow: hasVideo,
-          carouselWindow: !hasVideo && framePaths.length > 1,
         });
         if (!results.ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
           const frames = await Promise.all(framePaths.map(async (path) => (await fs.readFile(path)).toString("base64")));
