@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectTemporalHeadline } from "./local-ocr.mjs";
+import { selectSourceOcrFrames, selectTemporalHeadline } from "./local-ocr.mjs";
 
 const line = (text, y, confidence = 90, height = 42) => ({
   text,
@@ -83,4 +83,45 @@ test("não confunde fragmento curto persistente com a manchete completa", () => 
   assert.equal(title.includes("Samu Lino voando e não tem"), true);
   assert.equal(title.includes("como esquecer desse momento"), true);
   assert.equal(title.includes("Lança um espanhol"), false);
+});
+
+test("remove a assinatura pequena acima de uma manchete persistente", () => {
+  const frame = [
+    line("TNT Sports Brasil", 80, 92, 24),
+    line("Samu Lino voando e não tem", 130, 94, 34),
+    line("como esquecer desse momento", 174, 94, 34),
+    line("absurdo com a Tati KKKKKKKKK", 218, 94, 34),
+  ];
+
+  const title = selectTemporalHeadline([frame, frame, frame, frame, frame])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(title.includes("TNT Sports Brasil"), false);
+  assert.equal(
+    title,
+    "Samu Lino voando e não tem como esquecer desse momento absurdo com a Tati KKKKKKKKK",
+  );
+});
+
+test("remove uma chamada promocional pequena abaixo da manchete", () => {
+  const frame = [
+    line("Lindbergh critica ato na Paulista", 700, 94, 52),
+    line("e acusa manifestantes de aliança", 764, 94, 52),
+    line("com Trump", 828, 94, 52),
+    line("Fique informado em T82.com.br", 910, 93, 24),
+  ];
+
+  const title = selectTemporalHeadline([frame, frame, frame])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(
+    title,
+    "Lindbergh critica ato na Paulista e acusa manifestantes de aliança com Trump",
+  );
+});
+
+test("usa somente a capa no OCR de carrossel e mantém a janela do vídeo", () => {
+  const paths = ["capa.jpg", "documento-1.jpg", "documento-2.jpg"];
+  assert.deepEqual(selectSourceOcrFrames(paths, false), ["capa.jpg"]);
+  assert.deepEqual(selectSourceOcrFrames(paths, true), paths);
 });

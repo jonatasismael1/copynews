@@ -129,3 +129,33 @@ test("recupera o verbo curto omitido quando a legenda confirma a voz passiva", (
     "“Aqui não cola sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador",
   );
 });
+
+test("preserva o verbo é quando a legenda também contém a conjunção e", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Trabalhador salva menina de atropelamento em segundos e é recompensado",
+      "Um trabalhador evitou o atropelamento e depois foi recompensado.",
+    ),
+    "Trabalhador salva menina de atropelamento em segundos e é recompensado",
+  );
+});
+
+test("corrige dígitos confundidos com letras usando a legenda como dicionário", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Homem com mandado de pris40 por pensão alimentícia d3tido em Palmeira dos Índios",
+      "A polícia cumpriu um mandado de prisão por pensão alimentícia em Palmeira dos Índios.",
+    ),
+    "Homem com mandado de prisão por pensão alimentícia detido em Palmeira dos Índios",
+  );
+});
+
+test("remove chamada promocional acrescentada ao fim do título", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "André Mendonça dá o troco ao jogo sujo do qual é vítima, afirma Mario Sabino veja mais no",
+      "André Mendonça dá o troco ao jogo sujo do qual é vítima, afirma Mario Sabino. Veja mais no YouTube.",
+    ),
+    "André Mendonça dá o troco ao jogo sujo do qual é vítima afirma Mario Sabino",
+  );
+});

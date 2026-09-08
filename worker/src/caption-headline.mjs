@@ -111,6 +111,23 @@ function splitCaptionFusions(value, caption) {
   return result;
 }
 
+function decodeMixedAlphaNumerics(value) {
+  return String(value || "").replace(/[\p{L}\p{N}]+/gu, (word) => {
+    const letters = word.match(/\p{L}/gu) || [];
+    const digits = word.match(/\p{N}/gu) || [];
+    if (letters.length < 4 || !digits.length) return word;
+    return word.replace(/0/g, "o").replace(/1/g, "i").replace(/3/g, "e").replace(/4/g, "a");
+  });
+}
+
+function stripEditorialFooter(value) {
+  const text = String(value || "").trim();
+  const marker = /\b(?:fique informado|veja mais|acesse(?: o| a)?|assista ao vivo)\b/iu.exec(text);
+  if (!marker || normalizedWords(text.slice(0, marker.index)).length < 4)
+    return text;
+  return text.slice(0, marker.index).replace(/[\s|\-:;,.]+$/u, "").trim();
+}
+
 function repairCaptionSpelling(value, caption) {
   const sourceSpans = wordSpans(value);
   const captionSpans = wordSpans(caption);
@@ -136,6 +153,7 @@ function repairCaptionSpelling(value, caption) {
     return target;
   };
   for (const item of [...sourceSpans].reverse()) {
+    if (item.normalized.length <= 1) continue;
     const replacement = canonical.get(item.normalized);
     if (!replacement || replacement === item.text) continue;
     const before = result.slice(0, item.start);
@@ -225,7 +243,10 @@ export function alignHeadlineWithCaption(title, caption) {
   let repairedTitle = restoreCaptionConfirmedCopula(
     repairCaptionSpelling(
       splitCaptionFusions(
-        stripSocialPrefix(collapseImmediateRepeatedPhrases(title), caption),
+        stripSocialPrefix(
+          collapseImmediateRepeatedPhrases(decodeMixedAlphaNumerics(title)),
+          caption,
+        ),
         caption,
       ),
       caption,
@@ -271,15 +292,15 @@ export function alignHeadlineWithCaption(title, caption) {
       if (!best || similarity > best.similarity) best = { phrase, similarity };
     }
   }
-  if (best?.similarity < 0.84) return repairedTitle;
+  if (best?.similarity < 0.84) return stripEditorialFooter(repairedTitle);
   const beginsUppercase = /^[^\p{L}]*\p{Lu}/u.test(repairedTitle);
-  return beginsUppercase
+  return stripEditorialFooter(beginsUppercase
     ? best.phrase.replace(
         /^([^\p{L}]*)(\p{Ll})/u,
         (_match, prefix, letter) =>
           `${prefix}${letter.toLocaleUpperCase("pt-BR")}`,
       )
-    : best.phrase;
+    : best.phrase);
 }
 
 export function recoverBrandOnlyHeadline(title, caption) {

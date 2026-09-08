@@ -30,8 +30,28 @@ function captureMode(path, psm) {
     ));
   });
 }
-const capture = (path) =>
-  Promise.all([captureMode(path, 6), captureMode(path, 11)]);
+async function capture(path) {
+  let primary;
+  try {
+    primary = await captureMode(path, 6);
+  } catch {
+    return [await captureMode(path, 11)];
+  }
+  const primaryHeadline = imageHeadline(linesFromTsv(primary));
+  const primaryTokens = primaryHeadline.reduce(
+    (sum, line) => sum + tokens(line.text).size,
+    0,
+  );
+  // PSM 6 é mais rápido e consistente nos cards jornalísticos. O modo
+  // esparso fica como fallback apenas quando a primeira leitura é insuficiente;
+  // executar ambos ao mesmo tempo disputava CPU e fazia quadros válidos expirar.
+  if (primaryTokens >= 6) return [primary];
+  try {
+    return [primary, await captureMode(path, 11)];
+  } catch {
+    return [primary];
+  }
+}
 
 const normalized = (value) =>
   String(value || "")
@@ -215,19 +235,56 @@ export function selectTemporalHeadline(frames) {
       ).length >= Math.max(2, Math.ceil(usableFrames.length * 0.8)),
     );
   const candidates = usableFrames.map((frame, frameIndex) => {
-    let lines = imageHeadline(frame).filter((line) =>
-      // Uma leitura curta do PSM 11 pode ser apenas um fragmento da manchete
-      // completa reconhecida pelo PSM 6. Remova somente a própria linha curta
-      // persistente (marca/editoria), nunca uma linha longa que a contenha.
-      tokens(line.text).size > 2 ||
-      !repeatedShortLines.some((repeated) => similarity(line.text, repeated.text) >= 0.82),
-    );
-    const richLines = lines.filter((line) => tokens(line.text).size >= 6);
+    const headlineLines = imageHeadline(frame);
+    let lines = headlineLines.filter((line) => {
+      const adjacentHeadlineLine = headlineLines.some((candidate) => {
+        if (candidate === line || tokens(candidate.text).size < 3) return false;
+        const smallerHeight = Math.min(line.height, candidate.height);
+        const largerHeight = Math.max(line.height, candidate.height);
+        return (
+          smallerHeight >= largerHeight * 0.65 &&
+          Math.abs(line.y - candidate.y) <= largerHeight * 1.7
+        );
+      });
+      // Uma linha curta persistente pode ser uma marca isolada, mas também a
+      // última linha real da manchete ("com Trump"). Preserve-a quando estiver
+      // visualmente conectada ao bloco principal.
+      return (
+        tokens(line.text).size > 2 ||
+        adjacentHeadlineLine ||
+        !repeatedShortLines.some(
+          (repeated) => similarity(line.text, repeated.text) >= 0.82,
+        )
+      );
+    });
+    const richLines = lines.filter((line) => tokens(line.text).size >= 5);
     if (richLines.length) {
       const firstRichLineY = Math.min(...richLines.map((line) => line.y));
-      lines = lines.filter((line) =>
-        tokens(line.text).size >= 3 || line.y > firstRichLineY,
-      );
+      const lastRichLineY = Math.max(...richLines.map((line) => line.y));
+      const headlineHeight = Math.max(...richLines.map((line) => line.height));
+      lines = lines.filter((line) => {
+        const connectedBelow = headlineLines.some((candidate) => {
+          if (candidate === line || candidate.y >= line.y || tokens(candidate.text).size < 3)
+            return false;
+          const smallerHeight = Math.min(line.height, candidate.height);
+          const largerHeight = Math.max(line.height, candidate.height);
+          return (
+            smallerHeight >= largerHeight * 0.65 &&
+            line.y - candidate.y <= largerHeight * 2.4
+          );
+        });
+        return (
+        // Assinaturas, chamadas promocionais e nomes de perfil costumam ficar
+        // fora do bloco principal, com poucas palavras e corpo menor. Mantém
+        // editorias que tenham o mesmo peso visual da manchete.
+        !(
+          (line.y < firstRichLineY || (line.y > lastRichLineY && !connectedBelow)) &&
+          tokens(line.text).size <= 4 &&
+          line.height < headlineHeight * 0.8
+        ) &&
+        (tokens(line.text).size >= 3 || line.y > firstRichLineY)
+        );
+      });
     }
     const tokenCount = lines.reduce((sum, line) => sum + tokens(line.text).size, 0);
     const confidence = lines.reduce((sum, line) => sum + line.confidence, 0);
@@ -238,6 +295,10 @@ export function selectTemporalHeadline(frames) {
   });
   const best = candidates.sort((a, b) => b.score - a.score)[0];
   return best?.lines.length ? best.lines : persistentLines(usableFrames);
+}
+
+export function selectSourceOcrFrames(paths, hasVideo) {
+  return hasVideo ? paths : paths.slice(0, 1);
 }
 
 export async function readFramesLocally(
