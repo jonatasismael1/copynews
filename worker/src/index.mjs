@@ -733,7 +733,7 @@ async function processJob(job) {
           const output = join(framesDir, `frame-${index}-%02d.jpg`);
           await run("ffmpeg", item.kind === "image"
             ? ["-y", "-i", item.path, "-vf", "scale=1440:-1", "-frames:v", "1", "-q:v", "3", output]
-            : ["-y", "-i", item.path, "-vf", "trim=start=0:end=6,fps=5/6,scale=1200:-1", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
+            : ["-y", "-i", item.path, "-vf", "trim=start=0:end=6,fps=5/6,scale=1400:-1", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         results.ocr = await readFramesLocally(framePaths, {

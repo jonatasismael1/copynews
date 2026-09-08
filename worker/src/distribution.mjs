@@ -520,7 +520,7 @@ export function createDistributionProcessor({ db, workerId, log }) {
                 "-i",
                 file.input,
                 "-vf",
-                "trim=start=0:end=6,fps=5/6,scale=1200:-1",
+                "trim=start=0:end=6,fps=5/6,scale=1400:-1",
                 "-frames:v",
                 "5",
                 "-q:v",
