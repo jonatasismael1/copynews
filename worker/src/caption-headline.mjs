@@ -264,8 +264,9 @@ function restoreCaptionConfirmedCurrency(value, caption) {
   let result = String(value || "");
   for (const match of String(caption || "").matchAll(/R\$\s*(\d[\d.,]*)/giu)) {
     const amount = match[1];
-    const bareAmount = new RegExp(`(?<!R\\$\\s*)\\b${amount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "u");
-    result = result.replace(bareAmount, `R$ ${amount}`);
+    const integerAmount = amount.match(/^\d+/u)?.[0] || amount;
+    const bareAmount = new RegExp(`(?<!R\\$\\s*)\\b${integerAmount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s+mil\\b)`, "u");
+    result = result.replace(bareAmount, `R$ ${integerAmount}`);
   }
   return result;
 }

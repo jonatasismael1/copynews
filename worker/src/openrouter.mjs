@@ -231,7 +231,7 @@ function isMostlyUppercase(value) {
       letter === letter.toLocaleUpperCase("pt-BR") &&
       letter !== letter.toLocaleLowerCase("pt-BR"),
   );
-  return uppercase.length / letters.length >= 0.65;
+  return uppercase.length / letters.length >= 0.4;
 }
 
 const properCase = (value) => String(value || "")

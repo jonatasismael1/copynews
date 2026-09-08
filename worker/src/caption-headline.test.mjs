@@ -231,6 +231,16 @@ test("restaura o marcador de moeda confirmado pela legenda", () => {
   );
 });
 
+test("restaura moeda quando a legenda possui centavos e a arte usa valor arredondado", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Mulher cobra cirurgia de 319 mil",
+      "A mulher cobra do Estado uma cirurgia sem sentir dor. No processo, o valor foi fixado em R$ 319,4 mil.",
+    ),
+    "Mulher cobra cirurgia de R$ 319 mil",
+  );
+});
+
 test("corrige copula sem acento em chamada de condenação", () => {
   assert.equal(
     alignHeadlineWithCaption(

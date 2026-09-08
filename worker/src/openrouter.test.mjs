@@ -198,7 +198,7 @@ test("restaura nomes próprios da legenda mesmo em OCR já parcialmente normaliz
 test("normaliza uma citação em caixa alta mesmo com complemento misto", () => {
   assert.equal(
     normalizeHeadlineCase(
-      '"NÃO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS" Ouvinte desabafa e mostra abandono em Murici',
+      '"Não CUIDA NEM da CIDADE DELE, IMAGINA DOS OUTROS" Ouvinte desabafa e mostra abandono em Murici',
       'Um ouvinte de Murici disse: "NÃO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS".',
     ),
     '"Não cuida nem da cidade dele, imagina dos outros" ouvinte desabafa e mostra abandono em Murici',
