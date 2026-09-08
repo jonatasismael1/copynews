@@ -51,3 +51,14 @@ test("prefere a leitura completa mesmo quando a incompleta tem confiança maior"
     .join(" ");
   assert.equal(title.includes("confiou nele"), true);
 });
+
+test("deduplica duas leituras sobrepostas do mesmo título", () => {
+  const frame = [
+    line('"Aqui não cold Sém', 700, 94, 42),
+    line('“Aqui não cola sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador', 700, 91, 42),
+  ];
+  const title = selectTemporalHeadline([frame, frame, frame])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(title, '“Aqui não cola sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador');
+});

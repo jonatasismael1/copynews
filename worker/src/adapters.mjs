@@ -156,6 +156,51 @@ function safeFilename(url, fallback) {
   }
 }
 
+function jsonLdArticle(html) {
+  const documents = [];
+  for (const match of html.matchAll(
+    /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    try {
+      documents.push(JSON.parse(decodeHtml(match[1]).trim()));
+    } catch {
+      // JSON-LD malformado não impede os fallbacks de HTML e metatags.
+    }
+  }
+  const queue = [...documents];
+  while (queue.length) {
+    const value = queue.shift();
+    if (Array.isArray(value)) {
+      queue.push(...value);
+      continue;
+    }
+    if (!value || typeof value !== "object") continue;
+    if (Array.isArray(value["@graph"])) queue.push(...value["@graph"]);
+    const types = Array.isArray(value["@type"])
+      ? value["@type"]
+      : [value["@type"]];
+    if (types.some((type) =>
+      /^(?:NewsArticle|Article|ReportageNewsArticle|BlogPosting)$/i.test(
+        String(type || ""),
+      ))) return value;
+  }
+  return null;
+}
+
+function jsonLdText(value) {
+  if (typeof value === "string") return value.trim() || null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = jsonLdText(item);
+      if (found) return found;
+    }
+  }
+  if (value && typeof value === "object")
+    return jsonLdText(value.url) || jsonLdText(value.contentUrl) ||
+      jsonLdText(value.name);
+  return null;
+}
+
 export function parseInstagramMetadata(html) {
   const ogTitle = metaContent(html, "property", "og:title");
   const description = metaContent(html, "name", "description");
@@ -224,30 +269,37 @@ export function parseInstagramEmbedImage(html) {
 }
 
 export function parseArticleMetadata(html, sourceUrl) {
+  const structured = jsonLdArticle(html);
   const title =
+    jsonLdText(structured?.headline) ||
     metaContent(html, "property", "og:title") ||
     tagText(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/i) ||
     tagText(html, /<title\b[^>]*>([\s\S]*?)<\/title>/i);
   const description =
     metaContent(html, "property", "og:description") ||
-    metaContent(html, "name", "description");
+    metaContent(html, "name", "description") ||
+    jsonLdText(structured?.description);
   const article =
     tagText(
       html,
       /<main\b[^>]*class=["'][^"']*(?:article|post|news)[^"']*["'][^>]*>([\s\S]*?)<\/main>/i,
     ) ||
-    tagText(html, /<article\b[^>]*>([\s\S]*?)<\/article>/i);
+    tagText(html, /<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
+    jsonLdText(structured?.articleBody);
   const image =
     metaContent(html, "property", "og:image") ||
-    metaContent(html, "name", "twitter:image");
+    metaContent(html, "name", "twitter:image") ||
+    jsonLdText(structured?.image);
   const author =
     tagText(
       html,
       /<[^>]+class=["'][^"']*(?:author|source-date)[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i,
-    ) || metaContent(html, "name", "author");
+    ) || metaContent(html, "name", "author") ||
+    jsonLdText(structured?.author);
   const publishedAt =
     metaContent(html, "property", "article:published_time") ||
     html.match(/<time\b[^>]*datetime=["']([^"']+)["']/i)?.[1] ||
+    jsonLdText(structured?.datePublished) ||
     null;
   const parts = [description, article]
     .filter(Boolean)

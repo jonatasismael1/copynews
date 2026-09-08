@@ -5,6 +5,120 @@ const normalizedWords = (value) =>
     .toLowerCase()
     .match(/[a-z0-9]+/g) || [];
 
+const wordSpans = (value) =>
+  [...String(value || "").matchAll(/[\p{L}\p{N}]+/gu)].map((match) => ({
+    text: match[0],
+    normalized: normalizedWords(match[0])[0] || "",
+    start: match.index,
+    end: match.index + match[0].length,
+  }));
+
+function removeRange(value, start, end) {
+  return `${value.slice(0, start)} ${value.slice(end)}`
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/(["“”'‘’])\s+(["“”'‘’])/g, "$2")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collapseImmediateRepeatedPhrases(value) {
+  let result = String(value || "").replace(/\s+/g, " ").trim();
+  // Primeiro resolve o caso mais danoso: uma leitura curta e defeituosa do
+  // começo seguida pela leitura completa da mesma região do quadro.
+  let spans = wordSpans(result);
+  for (let repeatedAt = 2; repeatedAt < Math.min(spans.length - 1, 12); repeatedAt += 1) {
+    if (
+      spans[0].normalized === spans[repeatedAt].normalized &&
+      spans[1].normalized === spans[repeatedAt + 1].normalized
+    ) {
+      let start = spans[repeatedAt].start;
+      while (start > 0 && /["“'‘]/.test(result[start - 1])) start -= 1;
+      result = result.slice(start).trim();
+      break;
+    }
+  }
+
+  // Depois remove repetições contíguas exatas, comuns quando dois modos do
+  // Tesseract devolvem a mesma linha ("sinal de derrota sinal de derrota").
+  for (let pass = 0; pass < 4; pass += 1) {
+    spans = wordSpans(result);
+    let duplicate = null;
+    for (let size = Math.min(8, Math.floor(spans.length / 2)); size >= 2 && !duplicate; size -= 1) {
+      for (let start = 0; start + size * 2 <= spans.length; start += 1) {
+        const left = spans.slice(start, start + size).map((item) => item.normalized).join(" ");
+        const right = spans.slice(start + size, start + size * 2).map((item) => item.normalized).join(" ");
+        if (left === right) {
+          duplicate = {
+            start: spans[start + size].start,
+            end: spans[start + size * 2 - 1].end,
+          };
+          break;
+        }
+      }
+    }
+    if (!duplicate) break;
+    result = removeRange(result, duplicate.start, duplicate.end);
+  }
+  return result;
+}
+
+const socialNoise = /(?:@|\b(?:facebook|instagram|youtube|tiktok|whatsapp)\b|oficial\b|(?:\.com(?:\.br)?|\.net(?:\.br)?)\b)/iu;
+const ignoredAnchorWords = new Set([
+  "a", "as", "o", "os", "de", "da", "das", "do", "dos", "e", "em",
+  "na", "nas", "no", "nos", "para", "por", "que", "sem", "um", "uma",
+]);
+
+function stripSocialPrefix(value, caption) {
+  const spans = wordSpans(value);
+  const captionWords = new Set(normalizedWords(caption));
+  if (spans.length < 5 || captionWords.size < 4) return value;
+  const meaningful = (item) =>
+    item.normalized.length >= 3 && !ignoredAnchorWords.has(item.normalized);
+  const matchesCaption = (item) => meaningful(item) && captionWords.has(item.normalized);
+  let anchor = -1;
+  for (let index = 0; index < spans.length - 1; index += 1) {
+    if (!matchesCaption(spans[index])) continue;
+    const next = spans.slice(index + 1, index + 4).find((item) => meaningful(item));
+    if (next && matchesCaption(next)) {
+      anchor = index;
+      break;
+    }
+  }
+  if (anchor <= 0) return value;
+  const prefix = value.slice(0, spans[anchor].start);
+  if (!socialNoise.test(prefix)) return value;
+  return value.slice(spans[anchor].start).trim();
+}
+
+function repairCaptionSpelling(value, caption) {
+  const sourceSpans = wordSpans(value);
+  const captionSpans = wordSpans(caption);
+  if (!sourceSpans.length || !captionSpans.length) return value;
+  const canonical = new Map();
+  for (const item of captionSpans) {
+    const saved = canonical.get(item.normalized);
+    // Prefere a forma capitalizada existente na legenda para nomes próprios.
+    if (!saved || (/^\p{Lu}/u.test(item.text) && !/^\p{Lu}/u.test(saved)))
+      canonical.set(item.normalized, item.text);
+  }
+  let result = value;
+  for (const item of [...sourceSpans].reverse()) {
+    const replacement = canonical.get(item.normalized);
+    if (!replacement || replacement === item.text) continue;
+    const before = result.slice(0, item.start);
+    const atSentenceStart =
+      !/[\p{L}\p{N}]/u.test(before) ||
+      /(?:[.!?]\s*["”'’]?|["”'’]?\s*:)\s*$/u.test(before);
+    const corrected = atSentenceStart
+      ? replacement.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase("pt-BR"))
+      : ignoredAnchorWords.has(item.normalized)
+        ? replacement.toLocaleLowerCase("pt-BR")
+        : replacement;
+    result = `${result.slice(0, item.start)}${corrected}${result.slice(item.end)}`;
+  }
+  return result;
+}
+
 export function isLikelyBrandOnlyTitle(title, caption) {
   const titleWords = normalizedWords(title).filter((word) => word.length > 2);
   if (!titleWords.length || titleWords.length > 4) return false;
@@ -65,7 +179,10 @@ function editDistance(left, right) {
 }
 
 export function alignHeadlineWithCaption(title, caption) {
-  let repairedTitle = String(title || "")
+  let repairedTitle = repairCaptionSpelling(
+    stripSocialPrefix(collapseImmediateRepeatedPhrases(title), caption),
+    caption,
+  )
     .replace(/\bAspim\b/giu, "Assim")
     .replace(/\bvocê\s+n[oó]\s+precina\s+encolhen\b/giu, "você só precisa escolher")
     .replace(/\b[aA]e\s+curar\b/gu, "se curar")

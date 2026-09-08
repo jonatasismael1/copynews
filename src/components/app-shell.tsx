@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/auth-provider";
 
 const items = [
-  ["/", "Visão geral", Home],
+  ["/visao-geral", "Visão geral", Home],
   ["/noticias", "Notícias", Newspaper],
   ["/criar", "Criar notícia", PlusCircle],
   ["/publicacoes", "Publicações", FileText],
@@ -32,7 +32,7 @@ const items = [
 ] as const;
 
 const mobileLabels: Record<(typeof items)[number][0], string> = {
-  "/": "Visão",
+  "/visao-geral": "Visão",
   "/noticias": "Notícias",
   "/criar": "Criar",
   "/publicacoes": "Posts",
@@ -100,7 +100,7 @@ export function AppShell() {
             <NavLink
               key={path}
               to={path}
-              end={path === "/"}
+              end={path === "/visao-geral"}
               onClick={() => setOpen(false)}
               className={({ isActive }) =>
                 cn(
@@ -229,7 +229,7 @@ export function AppShell() {
           <NavLink
             key={path}
             to={path}
-            end={path === "/"}
+            end={path === "/visao-geral"}
             className={({ isActive }) =>
               cn(
                 "flex min-h-[60px] min-w-14 flex-col items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-xs font-medium",

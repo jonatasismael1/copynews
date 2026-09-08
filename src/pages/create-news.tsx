@@ -274,6 +274,10 @@ export function CreateNewsPage() {
               )}
             </div>
 
+            <p className="rounded-xl bg-[var(--primary-subtle)] px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+              Depois que a importação for confirmada, a extração continua no servidor mesmo se você sair desta tela ou fechar o aplicativo.
+            </p>
+
             <Button
               className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 h-12 w-auto shadow-xl md:static md:w-full md:shadow-sm"
               size="lg"
@@ -288,7 +292,7 @@ export function CreateNewsPage() {
               {mutation.uploadProgress != null
                 ? `Enviando mídia ${mutation.uploadProgress}%`
                 : mutation.isPending
-                  ? "Processando..."
+                  ? "Enviando para a fila..."
                   : "Importar conteúdo"}
             </Button>
           </form>

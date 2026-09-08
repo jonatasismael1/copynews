@@ -58,6 +58,9 @@ describe("criação automática de notícia", () => {
       screen.queryByLabelText("Observações"),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/MOV · até 200 MB/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/a extração continua no servidor mesmo se você sair/i),
+    ).toBeInTheDocument();
   });
 
   it("cola no próprio campo e preserva o payload enviado ao processamento", async () => {

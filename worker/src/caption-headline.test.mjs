@@ -77,3 +77,35 @@ test("completa prévia cortada somente com fatos presentes na legenda", () => {
     "Catty Lares oficialmente é uma ex-mulher trans e aparece com visual masculino e sendo chamado de Emanuel após se converter em igreja evangélica",
   );
 });
+
+test("remove leitura duplicada no início e preserva a manchete completa", () => {
+  const source = "Um morador autorizou a colocação de um adesivo de JHC. A frase aqui não cola sem autorização chamou atenção. O adesivo foi colocado por cima do material de Renanzinho.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      '"Aqui não cold Sém “Aqui não cola Sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador',
+      source,
+    ),
+    '“Aqui não cola sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador',
+  );
+});
+
+test("remove cabeçalho social corrompido sem cortar a manchete", () => {
+  const source = "A Polícia Federal (PF) deflagrou uma operação contra um grupo suspeito de aplicar fraudes contra a Caixa Econômica Federal em Alagoas.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Fi (C)eraDIOsAMPAIOOFICIAL BR Fi (O)@RADIOSAMPAIOOFICIAL Polícia Federal deflagra operação contra fraude milionária e prende três suspeitos de golpes contra a Caixa em Alagoas",
+      source,
+    ),
+    "Polícia Federal deflagra operação contra fraude milionária e prende três suspeitos de golpes contra a Caixa em Alagoas",
+  );
+});
+
+test("remove repetições contíguas sem alterar o restante do texto", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Cicatriz não Cicatriz não sinal de derrota sinal de derrota comprovante de que comprovante de que você tentou",
+      "Algumas cicatrizes não precisam ser escondidas: são comprovante de que você tentou.",
+    ),
+    "Cicatriz não sinal de derrota comprovante de que você tentou",
+  );
+});

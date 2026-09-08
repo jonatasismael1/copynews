@@ -20,7 +20,7 @@ export default defineConfig({
         background_color: '#f9f7f2',
         display: 'standalone',
         orientation: 'portrait-primary',
-        start_url: '/',
+        start_url: '/criar',
         scope: '/',
         lang: 'pt-BR',
         categories: ['productivity', 'news'],

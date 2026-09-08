@@ -172,6 +172,26 @@ test("extrai o texto, a data e a imagem de uma matéria", () => {
   assert.equal(result.provider, "web-article");
 });
 
+test("usa JSON-LD jornalístico quando a página não expõe metatags completas", () => {
+  const html = `<script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    headline: "Defesa Civil interdita ponte após vistoria",
+    description: "Bloqueio começou nesta manhã.",
+    articleBody: "A Defesa Civil informou que uma nova inspeção será realizada.",
+    image: { url: "https://cdn.test/ponte.jpg" },
+    author: { "@type": "Person", name: "Redação Local" },
+    datePublished: "2026-09-08T09:30:00-03:00",
+  })}</script>`;
+  const result = parseArticleMetadata(html, "https://jornal.test/ponte");
+  assert.equal(result.title, "Defesa Civil interdita ponte após vistoria");
+  assert.equal(result.caption, "Bloqueio começou nesta manhã.");
+  assert.match(result.articleBody, /nova inspeção/);
+  assert.equal(result.author, "Redação Local");
+  assert.equal(result.publishedAt, "2026-09-08T09:30:00-03:00");
+  assert.equal(result.mediaItems[0].url, "https://cdn.test/ponte.jpg");
+});
+
 test("consulta a página pública móvel do Reel em vez do embed vazio", async () => {
   const original = global.fetch;
   const requests = [];

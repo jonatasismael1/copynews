@@ -56,7 +56,9 @@ function similarity(a, b) {
 function valid(text, confidence) {
   if (
     confidence < 35 ||
-    (text.length < 2 && !/^[aeo]$/i.test(text)) ||
+    // Palavras funcionais de uma letra (principalmente "é") fazem parte da
+    // manchete. Descartá-las transformava "é colado" em apenas "colado".
+    (text.length < 2 && !/^\p{L}$/u.test(text)) ||
     /^[@#]/.test(text) ||
     /https?:|www\.|\.com\b/i.test(text)
   )
@@ -147,7 +149,10 @@ function imageHeadline(lines) {
   for (const line of lines) {
     const duplicateIndex = unique.findIndex(
       (candidate) =>
-        similarity(line.text, candidate.text) >= 0.82 &&
+        // PSM 6 e PSM 11 podem ler a mesma faixa com uma pequena diferença.
+        // A sobreposição espacial permite deduplicar mesmo quando uma das
+        // leituras erra uma palavra curta (ex.: "cola" -> "cold").
+        similarity(line.text, candidate.text) >= 0.7 &&
         Math.abs(line.y - candidate.y) <= Math.max(line.height, candidate.height),
     );
     if (duplicateIndex < 0) unique.push(line);

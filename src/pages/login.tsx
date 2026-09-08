@@ -47,7 +47,7 @@ export function LoginPage() {
       password: v.password,
     });
     if (error) toast.error("E-mail ou senha inválidos");
-    else nav("/");
+    else nav("/criar", { replace: true });
   }
   return (
     <main className="grid min-h-dvh lg:grid-cols-[1.05fr_.95fr]">

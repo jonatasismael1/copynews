@@ -111,7 +111,8 @@ export function App() {
       <Route path="/envio/:deliverySlug" element={page(<DistributionDeliveryPage />)} />
       <Route path="/:shareSlug" element={page(<SharedNewsPage />)} />
       <Route element={<Guard />}>
-        <Route index element={page(<DashboardPage />)} />
+        <Route index element={<Navigate to="/criar" replace />} />
+        <Route path="visao-geral" element={page(<DashboardPage />)} />
         <Route path="noticias" element={page(<NewsPage />)} />
         <Route path="noticias/:id" element={page(<NewsDetailPage />)} />
         <Route path="noticias/:id/arte" element={page(<NewsDesignPage />)} />
@@ -121,7 +122,7 @@ export function App() {
         <Route path="usuarios" element={page(<UsersPage />)} />
         <Route path="configuracoes" element={page(<SettingsPage />)} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/criar" replace />} />
     </Routes>
   );
 }
