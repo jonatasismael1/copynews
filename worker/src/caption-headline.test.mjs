@@ -159,3 +159,13 @@ test("remove chamada promocional acrescentada ao fim do título", () => {
     "André Mendonça dá o troco ao jogo sujo do qual é vítima afirma Mario Sabino",
   );
 });
+
+test("remove uma marca curta antes da manchete ancorada pela legenda", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "INT TNT Sports Brasil Samu Lino voando e nao tem como esquecer desse momento absurdo com a Tati",
+      "O dia em que Samu Lino e @tatimantovani nos proporcionaram essa entrevista.",
+    ),
+    "Samu Lino voando e não tem como esquecer desse momento absurdo com a Tati",
+  );
+});

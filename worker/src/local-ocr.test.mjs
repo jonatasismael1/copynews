@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectSourceOcrFrames, selectTemporalHeadline } from "./local-ocr.mjs";
+import { selectCarouselHeadline, selectTemporalHeadline } from "./local-ocr.mjs";
 
 const line = (text, y, confidence = 90, height = 42) => ({
   text,
@@ -120,8 +120,33 @@ test("remove uma chamada promocional pequena abaixo da manchete", () => {
   );
 });
 
-test("usa somente a capa no OCR de carrossel e mantém a janela do vídeo", () => {
-  const paths = ["capa.jpg", "documento-1.jpg", "documento-2.jpg"];
-  assert.deepEqual(selectSourceOcrFrames(paths, false), ["capa.jpg"]);
-  assert.deepEqual(selectSourceOcrFrames(paths, true), paths);
+test("prefere a manchete grande a um bloco social com mais palavras", () => {
+  const social = Array.from({ length: 7 }, (_, index) =>
+    line(`Texto social detalhado número ${index} com várias palavras`, 80 + index * 30, 92, 22),
+  );
+  const headline = [
+    line("Justiça vê irregularidade e manda", 650, 94, 58),
+    line("retirar vídeo impulsionado por Paulo", 720, 94, 58),
+    line("Dantas contra JHC", 790, 94, 58),
+  ];
+  const title = selectTemporalHeadline([[...social, ...headline]])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(title, "Justiça vê irregularidade e manda retirar vídeo impulsionado por Paulo Dantas contra JHC");
+});
+
+test("escolhe a capa jornalística e não o documento em outro slide", () => {
+  const cover = [
+    line("“Só quero cuidar dos meus filhos", 650, 94, 58),
+    line("sem sentir dor”: mulher cobra do Estado", 720, 94, 58),
+    line("cumprimento de decisão judicial", 790, 94, 58),
+  ];
+  const document = Array.from({ length: 8 }, (_, index) =>
+    line(`Juízo de Direito linha processual ${index}`, 100 + index * 36, 92, 24),
+  );
+  const title = selectCarouselHeadline([document, cover])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(title.includes("Só quero cuidar dos meus filhos"), true);
+  assert.equal(title.includes("Juízo de Direito"), false);
 });

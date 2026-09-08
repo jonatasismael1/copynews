@@ -20,7 +20,7 @@ import {
   transcribeAudio,
 } from "./openrouter.mjs";
 import { shouldTranscribe } from "./processing-options.mjs";
-import { readFramesLocally, selectSourceOcrFrames } from "./local-ocr.mjs";
+import { readFramesLocally } from "./local-ocr.mjs";
 import { alignHeadlineWithCaption, deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
@@ -737,13 +737,12 @@ async function processJob(job) {
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         const hasVideo = mediaFiles.some((item) => item.kind === "video");
-        // Em carrosséis, a capa é a peça que contém a manchete. Exigir
-        // repetição entre slides fazia o cabeçalho de documentos anexos
-        // vencer o título da capa e ainda multiplicava o tempo de OCR.
-        const ocrFramePaths = selectSourceOcrFrames(framePaths, hasVideo);
-        results.ocr = await readFramesLocally(ocrFramePaths, {
+        // Em carrosséis, cada slide é independente. Comparamos a hierarquia
+        // visual dos slides em vez de exigir texto repetido entre capa e anexos.
+        results.ocr = await readFramesLocally(framePaths, {
           requirePersistence: hasVideo,
           temporalWindow: hasVideo,
+          carouselWindow: !hasVideo && framePaths.length > 1,
         });
         if (!results.ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
           const frames = await Promise.all(framePaths.map(async (path) => (await fs.readFile(path)).toString("base64")));

@@ -155,6 +155,16 @@ test("título curto também precisa ser realmente reescrito", () => {
   );
 });
 
+test("recupera o primeiro nome a partir da arroba da legenda", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "SAMU LINO CONVERSA COM A TATI APÓS O JOGO",
+      "Samu Lino conversou com @tatimantovani após o jogo.",
+    ),
+    "Samu Lino conversa com a Tati após o jogo",
+  );
+});
+
 test("preserva nomes de estados ao normalizar manchetes em caixa alta", () => {
   assert.equal(
     normalizeHeadlineCase(

@@ -65,7 +65,7 @@ function collapseImmediateRepeatedPhrases(value) {
 const socialNoise = /(?:@|\b(?:facebook|instagram|youtube|tiktok|whatsapp)\b|oficial\b|(?:\.com(?:\.br)?|\.net(?:\.br)?)\b)/iu;
 const ignoredAnchorWords = new Set([
   "a", "as", "o", "os", "de", "da", "das", "do", "dos", "e", "em",
-  "na", "nas", "no", "nos", "para", "por", "que", "sem", "um", "uma",
+  "na", "nas", "no", "nos", "com", "para", "por", "que", "sem", "um", "uma",
 ]);
 
 function stripSocialPrefix(value, caption) {
@@ -86,7 +86,15 @@ function stripSocialPrefix(value, caption) {
   }
   if (anchor <= 0) return value;
   const prefix = value.slice(0, spans[anchor].start);
-  if (!socialNoise.test(prefix)) return value;
+  const prefixWords = normalizedWords(prefix).filter(
+    (word) => word.length >= 3 && !ignoredAnchorWords.has(word),
+  );
+  const compactUnknownBrand =
+    anchor <= 4 &&
+    prefixWords.length >= 2 &&
+    prefixWords.length <= 4 &&
+    prefixWords.every((word) => !captionWords.has(word));
+  if (!socialNoise.test(prefix) && !compactUnknownBrand) return value;
   return value.slice(spans[anchor].start).trim();
 }
 
@@ -253,6 +261,7 @@ export function alignHeadlineWithCaption(title, caption) {
     ),
     caption,
   )
+    .replace(/\bnao\b/giu, "não")
     .replace(/\bAspim\b/giu, "Assim")
     .replace(/\bvocê\s+n[oó]\s+precina\s+encolhen\b/giu, "você só precisa escolher")
     .replace(/\b[aA]e\s+curar\b/gu, "se curar")

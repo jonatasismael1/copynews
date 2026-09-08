@@ -256,6 +256,17 @@ export function normalizeHeadlineCase(value, caption = "") {
       new RegExp(`\\b${normalize(acronym)}\\b`, "giu"),
       acronym,
     );
+  const handles = (caption.match(/@[\p{L}\p{N}_.]+/gu) || []).map((handle) =>
+    normalize(handle.slice(1)),
+  );
+  for (const word of tokens(normalizedTitle).filter((item) => item.length >= 4)) {
+    if (!handles.some((handle) => handle.length > word.length && handle.startsWith(word)))
+      continue;
+    normalizedTitle = normalizedTitle.replace(
+      new RegExp(`\\b${word}\\b`, "giu"),
+      word.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase("pt-BR")),
+    );
+  }
   const capitalizedPhrases =
     caption.match(
       /\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)+/gu,

@@ -37,15 +37,9 @@ async function capture(path) {
   } catch {
     return [await captureMode(path, 11)];
   }
-  const primaryHeadline = imageHeadline(linesFromTsv(primary));
-  const primaryTokens = primaryHeadline.reduce(
-    (sum, line) => sum + tokens(line.text).size,
-    0,
-  );
-  // PSM 6 é mais rápido e consistente nos cards jornalísticos. O modo
-  // esparso fica como fallback apenas quando a primeira leitura é insuficiente;
-  // executar ambos ao mesmo tempo disputava CPU e fazia quadros válidos expirar.
-  if (primaryTokens >= 6) return [primary];
+  // Os dois modos se complementam: o PSM 6 preserva blocos e o PSM 11
+  // recupera palavras isoladas. Executá-los em sequência evita a disputa de
+  // CPU que causava timeout, sem abrir mão da segunda leitura.
   try {
     return [primary, await captureMode(path, 11)];
   } catch {
@@ -164,6 +158,55 @@ function persistentLines(frames) {
     }
   return selected.sort((a, b) => a.y - b.y || a.x - b.x);
 }
+
+function headlineScore(lines) {
+  if (!lines.length) return 0;
+  const tokenCount = lines.reduce(
+    (sum, line) => sum + tokens(line.text).size,
+    0,
+  );
+  const averageHeight =
+    lines.reduce((sum, line) => sum + line.height, 0) / lines.length;
+  const averageConfidence =
+    lines.reduce((sum, line) => sum + line.confidence, 0) / lines.length;
+  return (
+    tokenCount * 18 +
+    averageHeight * Math.min(tokenCount, 8) * 3 +
+    averageConfidence * 0.3 -
+    lines.length * 4
+  );
+}
+
+function trimHeadlinePeriphery(lines) {
+  const richLines = lines.filter((line) => tokens(line.text).size >= 4);
+  if (!richLines.length) return lines;
+  const firstRichLineY = Math.min(...richLines.map((line) => line.y));
+  const lastRichLineY = Math.max(...richLines.map((line) => line.y));
+  const headlineHeight = Math.max(...richLines.map((line) => line.height));
+  return lines.filter((line) => {
+    const connectedBelow = lines.some((candidate) => {
+      if (
+        candidate === line ||
+        candidate.y >= line.y ||
+        tokens(candidate.text).size < 3
+      )
+        return false;
+      const smallerHeight = Math.min(line.height, candidate.height);
+      const largerHeight = Math.max(line.height, candidate.height);
+      return (
+        smallerHeight >= largerHeight * 0.65 &&
+        line.y - candidate.y <= largerHeight * 2.4
+      );
+    });
+    return !(
+      (line.y < firstRichLineY ||
+        (line.y > lastRichLineY && !connectedBelow)) &&
+      tokens(line.text).size <= 4 &&
+      line.height < headlineHeight * 0.8
+    );
+  });
+}
+
 function imageHeadline(lines) {
   if (!lines.length) return [];
   const unique = [];
@@ -197,7 +240,10 @@ function imageHeadline(lines) {
   const sorted = (candidates.length ? candidates : unique)
     .filter((line) => line.confidence >= 60)
     .sort((a, b) => a.y - b.y || a.x - b.x);
-  if (!sorted.length) return unique.sort((a, b) => a.y - b.y || a.x - b.x).slice(0, 6);
+  if (!sorted.length)
+    return trimHeadlinePeriphery(
+      unique.sort((a, b) => a.y - b.y || a.x - b.x).slice(0, 6),
+    );
   const clusters = [];
   for (const current of sorted) {
     const cluster = clusters.at(-1);
@@ -212,12 +258,16 @@ function imageHeadline(lines) {
       clusters.push([current]);
     }
   }
-  const score = (cluster) =>
-    cluster.reduce(
-      (sum, line) => sum + tokens(line.text).size * 18 + line.confidence * 0.2,
-      0,
-    );
-  return clusters.sort((a, b) => score(b) - score(a))[0].slice(0, 6);
+  return trimHeadlinePeriphery(
+    clusters.sort((a, b) => headlineScore(b) - headlineScore(a))[0].slice(0, 6),
+  );
+}
+
+export function selectCarouselHeadline(frames) {
+  return frames
+    .map((frame) => imageHeadline(frame))
+    .filter((lines) => lines.length)
+    .sort((a, b) => headlineScore(b) - headlineScore(a))[0] || [];
 }
 
 export function selectTemporalHeadline(frames) {
@@ -257,35 +307,7 @@ export function selectTemporalHeadline(frames) {
         )
       );
     });
-    const richLines = lines.filter((line) => tokens(line.text).size >= 5);
-    if (richLines.length) {
-      const firstRichLineY = Math.min(...richLines.map((line) => line.y));
-      const lastRichLineY = Math.max(...richLines.map((line) => line.y));
-      const headlineHeight = Math.max(...richLines.map((line) => line.height));
-      lines = lines.filter((line) => {
-        const connectedBelow = headlineLines.some((candidate) => {
-          if (candidate === line || candidate.y >= line.y || tokens(candidate.text).size < 3)
-            return false;
-          const smallerHeight = Math.min(line.height, candidate.height);
-          const largerHeight = Math.max(line.height, candidate.height);
-          return (
-            smallerHeight >= largerHeight * 0.65 &&
-            line.y - candidate.y <= largerHeight * 2.4
-          );
-        });
-        return (
-        // Assinaturas, chamadas promocionais e nomes de perfil costumam ficar
-        // fora do bloco principal, com poucas palavras e corpo menor. Mantém
-        // editorias que tenham o mesmo peso visual da manchete.
-        !(
-          (line.y < firstRichLineY || (line.y > lastRichLineY && !connectedBelow)) &&
-          tokens(line.text).size <= 4 &&
-          line.height < headlineHeight * 0.8
-        ) &&
-        (tokens(line.text).size >= 3 || line.y > firstRichLineY)
-        );
-      });
-    }
+    lines = trimHeadlinePeriphery(lines);
     const tokenCount = lines.reduce((sum, line) => sum + tokens(line.text).size, 0);
     const confidence = lines.reduce((sum, line) => sum + line.confidence, 0);
     return {
@@ -297,13 +319,13 @@ export function selectTemporalHeadline(frames) {
   return best?.lines.length ? best.lines : persistentLines(usableFrames);
 }
 
-export function selectSourceOcrFrames(paths, hasVideo) {
-  return hasVideo ? paths : paths.slice(0, 1);
-}
-
 export async function readFramesLocally(
   paths,
-  { requirePersistence = paths.length > 1, temporalWindow = false } = {},
+  {
+    requirePersistence = paths.length > 1,
+    temporalWindow = false,
+    carouselWindow = false,
+  } = {},
 ) {
   const frames = [];
   // O VPS consegue executar os dois modos do Tesseract para um quadro em
@@ -318,6 +340,8 @@ export async function readFramesLocally(
   }
   const chosen = temporalWindow
     ? selectTemporalHeadline(frames)
+    : carouselWindow
+      ? selectCarouselHeadline(frames)
     : requirePersistence
       ? persistentLines(frames)
     : imageHeadline(frames[0] || []);
