@@ -102,6 +102,18 @@ function repairCaptionSpelling(value, caption) {
       canonical.set(item.normalized, item.text);
   }
   let result = value;
+  const preserveSourceCase = (source, target) => {
+    const letters = source.match(/\p{L}/gu) || [];
+    if (letters.length > 1 && source === source.toLocaleUpperCase("pt-BR"))
+      return target.toLocaleUpperCase("pt-BR");
+    if (source === source.toLocaleLowerCase("pt-BR"))
+      return target.toLocaleLowerCase("pt-BR");
+    if (/^\p{Lu}/u.test(source))
+      return target
+        .toLocaleLowerCase("pt-BR")
+        .replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase("pt-BR"));
+    return target;
+  };
   for (const item of [...sourceSpans].reverse()) {
     const replacement = canonical.get(item.normalized);
     if (!replacement || replacement === item.text) continue;
@@ -113,7 +125,7 @@ function repairCaptionSpelling(value, caption) {
       ? replacement.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase("pt-BR"))
       : ignoredAnchorWords.has(item.normalized)
         ? replacement.toLocaleLowerCase("pt-BR")
-        : replacement;
+        : preserveSourceCase(item.text, replacement);
     result = `${result.slice(0, item.start)}${corrected}${result.slice(item.end)}`;
   }
   return result;

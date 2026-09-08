@@ -90,7 +90,7 @@ test("remove leitura duplicada no início e preserva a manchete completa", () =>
 });
 
 test("remove cabeçalho social corrompido sem cortar a manchete", () => {
-  const source = "A Polícia Federal (PF) deflagrou uma operação contra um grupo suspeito de aplicar fraudes contra a Caixa Econômica Federal em Alagoas.";
+  const source = "A Polícia Federal (PF) deflagrou a Operação Faces Expostas contra um grupo suspeito de aplicar fraudes contra a Caixa Econômica Federal em Alagoas.";
   assert.equal(
     alignHeadlineWithCaption(
       "Fi (C)eraDIOsAMPAIOOFICIAL BR Fi (O)@RADIOSAMPAIOOFICIAL Polícia Federal deflagra operação contra fraude milionária e prende três suspeitos de golpes contra a Caixa em Alagoas",

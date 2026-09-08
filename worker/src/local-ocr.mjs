@@ -54,11 +54,12 @@ function similarity(a, b) {
   return common / Math.min(left.size, right.size);
 }
 function valid(text, confidence) {
+  const singleFunctionWord = /^(?:a|e|é|o)$/iu.test(text);
   if (
-    confidence < 35 ||
+    confidence < (singleFunctionWord ? 12 : 35) ||
     // Palavras funcionais de uma letra (principalmente "é") fazem parte da
     // manchete. Descartá-las transformava "é colado" em apenas "colado".
-    (text.length < 2 && !/^\p{L}$/u.test(text)) ||
+    (text.length < 2 && !singleFunctionWord) ||
     /^[@#]/.test(text) ||
     /https?:|www\.|\.com\b/i.test(text)
   )
