@@ -237,7 +237,7 @@ test("corrige copula sem acento em chamada de condenação", () => {
       "União Polêmico e condenado novamente por atacar candidato JHC multa de 15 mil",
       "O União Polêmico foi condenado novamente por atacar o candidato JHC e recebeu multa de 15 mil.",
     ),
-    "União Polêmico é condenado novamente por atacar candidato JHC multa de 15 mil",
+    "União Polêmico é condenado novamente por atacar candidato JHC; multa de 15 mil",
   );
 });
 

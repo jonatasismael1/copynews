@@ -376,6 +376,7 @@ export function alignHeadlineWithCaption(title, caption) {
     /^(.{2,60}?)\s+e\s+(condenad[oa])\b/iu,
     (_match, subject, participle) => `${subject} é ${participle}`,
   );
+  repairedTitle = repairedTitle.replace(/\s+multa\s+de\s+/iu, "; multa de ");
   if (
     /você só precisa escolher$/iu.test(repairedTitle) &&
     /\bse curar\b/iu.test(String(caption || ""))

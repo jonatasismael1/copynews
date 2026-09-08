@@ -195,6 +195,36 @@ test("restaura nomes próprios da legenda mesmo em OCR já parcialmente normaliz
   );
 });
 
+test("normaliza uma citação em caixa alta mesmo com complemento misto", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      '"NÃO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS" Ouvinte desabafa e mostra abandono em Murici',
+      'Um ouvinte de Murici disse: "NÃO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS".',
+    ),
+    '"Não cuida nem da cidade dele, imagina dos outros" ouvinte desabafa e mostra abandono em Murici',
+  );
+});
+
+test("não confunde a preposição para com o estado do Pará e preserva moeda", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "MULHER COBRA CIRURGIA PARA TRATAMENTO DE R$ 319 MIL",
+      "A mulher cobra cirurgia para tratamento de R$ 319 mil.",
+    ),
+    "Mulher cobra cirurgia para tratamento de R$ 319 mil",
+  );
+});
+
+test("normaliza nome e cidade em caixa alta confirmados pela legenda", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "PREFEITO VAVAL WANDERLEY CONVERSA SOBRE MOMENTO MEMORÁVEL EM CACIMBINHAS",
+      "Prefeito VAVAL WANDERLEY conversa sobre momento memorável em CACIMBINHAS.",
+    ),
+    "Prefeito Vaval Wanderley conversa sobre momento memorável em Cacimbinhas",
+  );
+});
+
 test("legenda curta também precisa ser realmente reescrita", () => {
   const sources = classify({
     originalTitle: "Defesa Civil interdita ponte em Pilar",

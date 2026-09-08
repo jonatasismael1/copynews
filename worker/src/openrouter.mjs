@@ -222,6 +222,8 @@ function isInsufficientRewrite(generated, original, openingSize, threshold) {
 }
 
 function isMostlyUppercase(value) {
+  if (/\b(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,}\s+){3}[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,}\b/u.test(value))
+    return true;
   const letters = value.match(/\p{L}/gu) || [];
   if (letters.length < 5) return false;
   const uppercase = letters.filter(
@@ -229,8 +231,14 @@ function isMostlyUppercase(value) {
       letter === letter.toLocaleUpperCase("pt-BR") &&
       letter !== letter.toLocaleLowerCase("pt-BR"),
   );
-  return uppercase.length / letters.length >= 0.8;
+  return uppercase.length / letters.length >= 0.65;
 }
+
+const properCase = (value) => String(value || "")
+  .toLocaleLowerCase("pt-BR")
+  .replace(/(^|[-'’])(\p{L})/gu, (_match, prefix, letter) =>
+    `${prefix}${letter.toLocaleUpperCase("pt-BR")}`,
+  );
 
 export function normalizeHeadlineCase(value, caption = "") {
   const candidate = text(value);
@@ -286,11 +294,19 @@ export function normalizeHeadlineCase(value, caption = "") {
     );
   const locationNames = [...caption.matchAll(
     /\b(?:em|de|do|da|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,})/gu,
-  )].map((match) => match[1]);
+  )].map((match) => isMostlyUppercase(match[1]) ? properCase(match[1]) : match[1]);
   for (const place of locationNames)
     normalizedTitle = normalizedTitle.replace(
       new RegExp(`\\b${normalize(place)}\\b`, "giu"),
       place,
+    );
+  const namedRoles = [...caption.matchAll(
+    /\b(?:prefeit[oa]|governador(?:a)?|senador(?:a)?|deputad[oa])\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)(?:\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+))?/giu,
+  )].map((match) => [match[1], match[2]].filter(Boolean).map(properCase).join(" "));
+  for (const person of namedRoles)
+    normalizedTitle = normalizedTitle.replace(
+      new RegExp(`\\b${normalize(person).replace(/\s+/g, "\\s+")}\\b`, "giu"),
+      person,
     );
   const stateNames = [
     "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
@@ -301,11 +317,13 @@ export function normalizeHeadlineCase(value, caption = "") {
     "São Paulo", "Sergipe", "Tocantins",
   ];
   for (const state of stateNames)
+    if (state === "Pará" && !/\bPará\b/u.test(caption)) continue;
+    else
     normalizedTitle = normalizedTitle.replace(
       new RegExp(`\\b${normalize(state).replace(/\\s+/g, "\\s+")}\\b`, "giu"),
       state,
     );
-  return normalizedTitle;
+  return normalizedTitle.replace(/\br\$/giu, "R$");
 }
 
 function parseStructured(schema, raw) {
