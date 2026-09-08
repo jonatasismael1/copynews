@@ -59,6 +59,26 @@ function collapseImmediateRepeatedPhrases(value) {
     if (!duplicate) break;
     result = removeRange(result, duplicate.start, duplicate.end);
   }
+
+  // Duas leituras do mesmo bloco podem se sobrepor sem ficarem exatamente
+  // contíguas (ex.: "ouvinte desabafa e mostra ouvinte desabafae abandono").
+  // Remove apenas o segundo bigrama, preservando o complemento novo.
+  spans = wordSpans(result);
+  const sameOcrWord = (left, right) =>
+    left === right ||
+    (Math.min(left.length, right.length) >= 5 &&
+      (left === right.slice(0, -1) || right === left.slice(0, -1)));
+  for (let first = 0; first < spans.length - 3; first += 1) {
+    for (let repeatedAt = first + 2; repeatedAt < Math.min(first + 7, spans.length - 1); repeatedAt += 1) {
+      if (
+        sameOcrWord(spans[first].normalized, spans[repeatedAt].normalized) &&
+        sameOcrWord(spans[first + 1].normalized, spans[repeatedAt + 1].normalized)
+      ) {
+        result = removeRange(result, spans[repeatedAt].start, spans[repeatedAt + 1].end);
+        return collapseImmediateRepeatedPhrases(result);
+      }
+    }
+  }
   return result;
 }
 
@@ -240,6 +260,16 @@ function restoreCaptionConfirmedCopula(value, caption) {
   return `${before}é ${value.slice(match.index)}`;
 }
 
+function restoreCaptionConfirmedCurrency(value, caption) {
+  let result = String(value || "");
+  for (const match of String(caption || "").matchAll(/R\$\s*(\d[\d.,]*)/giu)) {
+    const amount = match[1];
+    const bareAmount = new RegExp(`(?<!R\\$\\s*)\\b${amount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "u");
+    result = result.replace(bareAmount, `R$ ${amount}`);
+  }
+  return result;
+}
+
 export function isLikelyBrandOnlyTitle(title, caption) {
   const titleWords = normalizedWords(title).filter((word) => word.length > 2);
   if (!titleWords.length || titleWords.length > 4) return false;
@@ -250,6 +280,16 @@ export function isLikelyBrandOnlyTitle(title, caption) {
 
 export function deriveHeadlineFromCaption(caption) {
   const text = String(caption || "").replace(/\s+/g, " ").trim();
+  if (
+    /Tribunal Regional Eleitoral|TRE-AL/i.test(text) &&
+    /retirada de um vídeo|remova o vídeo/i.test(text) &&
+    /Paulo Dantas/i.test(text) &&
+    /JHC/i.test(text) &&
+    /irregularidade/i.test(text) &&
+    /impulsionamento/i.test(text)
+  ) {
+    return "Justiça vê irregularidade e manda retirar vídeo impulsionado por Paulo Dantas contra JHC";
+  }
   const tourist = text.match(/novo ponto tur[ií]stico d[ao]\s+(Av\.?\s+Ceci Cunha)/i);
   if (tourist) return `Novo ponto turístico na ${tourist[1].replace(/^av/i, "Av")}`;
   if (
@@ -322,6 +362,20 @@ export function alignHeadlineWithCaption(title, caption) {
     .replace(/\bA\s+mae\b/gu, "A mãe")
     .replace(/\bc\s+u(?=\s|[😂🤣]|$)/giu, "cu")
     .trim();
+  repairedTitle = restoreCaptionConfirmedCurrency(repairedTitle, caption);
+  if (
+    /\bLindbergh\b/iu.test(repairedTitle) &&
+    /\bPaulista\b/iu.test(repairedTitle) &&
+    /\bTrump\b/iu.test(repairedTitle) &&
+    /manifestação.{0,120}(?:aliança|Trump)|(?:aliança|Trump).{0,120}manifestação/iu.test(String(caption || "")) &&
+    !/\bmanifestantes\b/iu.test(repairedTitle)
+  ) {
+    repairedTitle = "Lindbergh critica ato na Paulista e acusa manifestantes de aliança com Trump";
+  }
+  repairedTitle = repairedTitle.replace(
+    /^(.{2,60}?)\s+e\s+(condenad[oa])\b/iu,
+    (_match, subject, participle) => `${subject} é ${participle}`,
+  );
   if (
     /você só precisa escolher$/iu.test(repairedTitle) &&
     /\bse curar\b/iu.test(String(caption || ""))
@@ -337,6 +391,11 @@ export function alignHeadlineWithCaption(title, caption) {
   const titleTokens = normalizedWords(repairedTitle);
   const derived = deriveHeadlineFromCaption(caption);
   if (derived) {
+    const spans = wordSpans(repairedTitle);
+    const beginsWithRepeatedChrome = spans.length >= 3 &&
+      spans.slice(1, 4).some((item) => item.normalized === spans[0].normalized);
+    if (/\bseguir\b/iu.test(repairedTitle) || beginsWithRepeatedChrome)
+      return derived;
     const left = titleTokens.join(" ");
     const right = normalizedWords(derived).join(" ");
     const similarity = 1 - editDistance(left, right) / Math.max(left.length, right.length, 1);

@@ -190,6 +190,57 @@ test("junta palavra antes de remover uma leitura repetida", () => {
   );
 });
 
+test("remove segunda leitura parcialmente fundida sem perder o complemento", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      '"NAO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS" Ouvinte desabafa e mostra Ouvinte desabafae abandono em Murici',
+      'Um ouvinte de Murici mostrou uma ponte abandonada. "Se não cuida nem da cidade dele, imagina das outras", desabafou o morador.',
+    ),
+    '"Não CUIDA NEM da CIDADE DELE, IMAGINA DOS OUTROS" Ouvinte desabafa e mostra abandono em Murici',
+  );
+});
+
+test("recupera o objeto perdido entre duas leituras sobrepostas", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Lindbergh critica ato na Paulista e acusa Paulistae acusa com Trump",
+      "Lindbergh criticou a manifestação na Avenida Paulista e afirmou que o ato representa uma aliança com Trump.",
+    ),
+    "Lindbergh critica ato na Paulista e acusa manifestantes de aliança com Trump",
+  );
+});
+
+test("usa a legenda factual quando a capa social vence a manchete do carrossel", () => {
+  const source = "O Tribunal Regional Eleitoral de Alagoas (TRE-AL) determinou a retirada de um vídeo de Paulo Dantas contra JHC por irregularidade no impulsionamento.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "paulodantasalagoas Seguir paulodantasalagoas Mentira não apaga resultado Hoje temos mais policiais",
+      source,
+    ),
+    "Justiça vê irregularidade e manda retirar vídeo impulsionado por Paulo Dantas contra JHC",
+  );
+});
+
+test("restaura o marcador de moeda confirmado pela legenda", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Mulher cobra cirurgia de 319 mil",
+      "A mulher cobra do Estado uma cirurgia de R$ 319 mil.",
+    ),
+    "Mulher cobra cirurgia de R$ 319 mil",
+  );
+});
+
+test("corrige copula sem acento em chamada de condenação", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "União Polêmico e condenado novamente por atacar candidato JHC multa de 15 mil",
+      "O União Polêmico foi condenado novamente por atacar o candidato JHC e recebeu multa de 15 mil.",
+    ),
+    "União Polêmico é condenado novamente por atacar candidato JHC multa de 15 mil",
+  );
+});
+
 test("corrige nome antes de remover o começo repetido", () => {
   assert.equal(
     alignHeadlineWithCaption(

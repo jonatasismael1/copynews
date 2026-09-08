@@ -175,6 +175,26 @@ test("preserva nomes de estados ao normalizar manchetes em caixa alta", () => {
   );
 });
 
+test("não transforma palavras de uma citação em caixa alta em siglas", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      '"NAO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS" OUVINTE MOSTRA ABANDONO EM MURICI',
+      'O morador de Murici afirmou: "NÃO CUIDA NEM DA CIDADE DELE, IMAGINA DOS OUTROS".',
+    ),
+    '"Nao cuida nem da cidade dele, imagina dos outros" ouvinte mostra abandono em Murici',
+  );
+});
+
+test("restaura nomes próprios da legenda mesmo em OCR já parcialmente normalizado", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      "Prefeito Vaval wanderley conversa sobre momento memorável em cacimbinhas",
+      "O prefeito Vaval Wanderley falou sobre um momento memorável em Cacimbinhas.",
+    ),
+    "Prefeito Vaval Wanderley conversa sobre momento memorável em Cacimbinhas",
+  );
+});
+
 test("legenda curta também precisa ser realmente reescrita", () => {
   const sources = classify({
     originalTitle: "Defesa Civil interdita ponte em Pilar",

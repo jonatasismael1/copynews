@@ -234,22 +234,27 @@ function isMostlyUppercase(value) {
 
 export function normalizeHeadlineCase(value, caption = "") {
   const candidate = text(value);
-  if (!isMostlyUppercase(candidate)) return candidate;
-  let normalizedTitle = candidate.toLocaleLowerCase("pt-BR");
-  normalizedTitle = normalizedTitle.replace(/^\p{L}/u, (letter) =>
-    letter.toLocaleUpperCase("pt-BR"),
-  );
+  const mostlyUppercase = isMostlyUppercase(candidate);
+  let normalizedTitle = mostlyUppercase
+    ? candidate.toLocaleLowerCase("pt-BR")
+    : candidate;
+  if (mostlyUppercase)
+    normalizedTitle = normalizedTitle.replace(/^([^\p{L}]*)(\p{L})/u, (_match, prefix, letter) =>
+      `${prefix}${letter.toLocaleUpperCase("pt-BR")}`,
+    );
   const acronyms = new Set([
     "AL",
     "BR",
     "HGE",
+    "JHC",
     "PF",
     "PM",
     "STF",
     "SUS",
+    "T82",
     "TRE",
     "UTI",
-    ...(caption.match(/\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,6}\b/g) || []),
+    ...(caption.match(/(?<=\()[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,8}(?=\))/g) || []),
   ]);
   for (const acronym of acronyms)
     normalizedTitle = normalizedTitle.replace(
@@ -270,7 +275,7 @@ export function normalizeHeadlineCase(value, caption = "") {
   const capitalizedPhrases =
     caption.match(
       /\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]+)+/gu,
-    ) || [];
+    )?.filter((phrase) => !isMostlyUppercase(phrase)) || [];
   for (const phrase of capitalizedPhrases)
     normalizedTitle = normalizedTitle.replace(
       new RegExp(
@@ -278,6 +283,14 @@ export function normalizeHeadlineCase(value, caption = "") {
         "giu",
       ),
       phrase,
+    );
+  const locationNames = [...caption.matchAll(
+    /\b(?:em|de|do|da|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,})/gu,
+  )].map((match) => match[1]);
+  for (const place of locationNames)
+    normalizedTitle = normalizedTitle.replace(
+      new RegExp(`\\b${normalize(place)}\\b`, "giu"),
+      place,
     );
   const stateNames = [
     "Acre", "Alagoas", "Amapá", "Amazonas", "Bahia", "Ceará",
