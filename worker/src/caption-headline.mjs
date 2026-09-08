@@ -90,6 +90,27 @@ function stripSocialPrefix(value, caption) {
   return value.slice(spans[anchor].start).trim();
 }
 
+function splitCaptionFusions(value, caption) {
+  const captionSpans = wordSpans(caption);
+  let result = String(value || "");
+  for (const source of [...wordSpans(result)].reverse()) {
+    if (source.normalized.length < 5) continue;
+    const pair = captionSpans.findIndex((item, index) => {
+      const next = captionSpans[index + 1];
+      return next && `${item.normalized}${next.normalized}` === source.normalized;
+    });
+    if (pair < 0) continue;
+    const first = captionSpans[pair].text;
+    const second = captionSpans[pair + 1].text;
+    const correctedFirst = /^\p{Lu}/u.test(source.text)
+      ? first.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase("pt-BR"))
+      : first.toLocaleLowerCase("pt-BR");
+    const replacement = `${correctedFirst} ${second.toLocaleLowerCase("pt-BR")}`;
+    result = `${result.slice(0, source.start)}${replacement}${result.slice(source.end)}`;
+  }
+  return result;
+}
+
 function repairCaptionSpelling(value, caption) {
   const sourceSpans = wordSpans(value);
   const captionSpans = wordSpans(caption);
@@ -129,6 +150,16 @@ function repairCaptionSpelling(value, caption) {
     result = `${result.slice(0, item.start)}${corrected}${result.slice(item.end)}`;
   }
   return result;
+}
+
+function restoreCaptionConfirmedCopula(value, caption) {
+  if (!/(?:foi|é|est[aá])\s+(?:colocad|colad)[oa]s?\s+por cima/iu.test(String(caption || "")))
+    return value;
+  const match = /\bcolad[oa]s?\s+por cima\b/iu.exec(value);
+  if (!match) return value;
+  const before = value.slice(0, match.index);
+  if (/(?:^|\s)(?:é|foi|est[aá])\s*$/iu.test(before)) return value;
+  return `${before}é ${value.slice(match.index)}`;
 }
 
 export function isLikelyBrandOnlyTitle(title, caption) {
@@ -191,8 +222,14 @@ function editDistance(left, right) {
 }
 
 export function alignHeadlineWithCaption(title, caption) {
-  let repairedTitle = repairCaptionSpelling(
-    stripSocialPrefix(collapseImmediateRepeatedPhrases(title), caption),
+  let repairedTitle = restoreCaptionConfirmedCopula(
+    repairCaptionSpelling(
+      splitCaptionFusions(
+        stripSocialPrefix(collapseImmediateRepeatedPhrases(title), caption),
+        caption,
+      ),
+      caption,
+    ),
     caption,
   )
     .replace(/\bAspim\b/giu, "Assim")
@@ -234,7 +271,15 @@ export function alignHeadlineWithCaption(title, caption) {
       if (!best || similarity > best.similarity) best = { phrase, similarity };
     }
   }
-  return best?.similarity >= 0.84 ? best.phrase : repairedTitle;
+  if (best?.similarity < 0.84) return repairedTitle;
+  const beginsUppercase = /^[^\p{L}]*\p{Lu}/u.test(repairedTitle);
+  return beginsUppercase
+    ? best.phrase.replace(
+        /^([^\p{L}]*)(\p{Ll})/u,
+        (_match, prefix, letter) =>
+          `${prefix}${letter.toLocaleUpperCase("pt-BR")}`,
+      )
+    : best.phrase;
 }
 
 export function recoverBrandOnlyHeadline(title, caption) {

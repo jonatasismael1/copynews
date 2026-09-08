@@ -109,3 +109,23 @@ test("remove repetições contíguas sem alterar o restante do texto", () => {
     "Cicatriz não sinal de derrota comprovante de que você tentou",
   );
 });
+
+test("separa palavras fundidas quando a sequência existe na legenda", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Aqui nao colasem autorização",
+      "A frase aqui não cola sem autorização chamou atenção.",
+    ),
+    "Aqui não cola sem autorização",
+  );
+});
+
+test("recupera o verbo curto omitido quando a legenda confirma a voz passiva", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      "“Aqui não cola sem autorização”: Adesivo de JHC colado por cima de Renanzinho após autorização do morador",
+      "A nova propaganda foi colocada por cima de um adesivo de Renanzinho.",
+    ),
+    "“Aqui não cola sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador",
+  );
+});
