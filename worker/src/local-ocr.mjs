@@ -245,17 +245,15 @@ export async function readFramesLocally(
   { requirePersistence = paths.length > 1, temporalWindow = false } = {},
 ) {
   const frames = [];
-  for (let index = 0; index < paths.length; index += 2) {
-    const batch = await Promise.all(
-      paths.slice(index, index + 2).map(async (path) => {
-        try {
-          return (await capture(path)).flatMap(linesFromTsv);
-        } catch {
-          return [];
-        }
-      }),
-    );
-    frames.push(...batch);
+  // O VPS consegue executar os dois modos do Tesseract para um quadro em
+  // paralelo. Abrir dois quadros de uma vez criava quatro processos pesados,
+  // provocava timeout e descartava justamente os quadros iniciais estáveis.
+  for (const path of paths) {
+    try {
+      frames.push((await capture(path)).flatMap(linesFromTsv));
+    } catch {
+      frames.push([]);
+    }
   }
   const chosen = temporalWindow
     ? selectTemporalHeadline(frames)
