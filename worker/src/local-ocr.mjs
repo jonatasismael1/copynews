@@ -216,6 +216,10 @@ export function selectTemporalHeadline(frames) {
     );
   const candidates = usableFrames.map((frame, frameIndex) => {
     let lines = imageHeadline(frame).filter((line) =>
+      // Uma leitura curta do PSM 11 pode ser apenas um fragmento da manchete
+      // completa reconhecida pelo PSM 6. Remova somente a própria linha curta
+      // persistente (marca/editoria), nunca uma linha longa que a contenha.
+      tokens(line.text).size > 2 ||
       !repeatedShortLines.some((repeated) => similarity(line.text, repeated.text) >= 0.82),
     );
     const richLines = lines.filter((line) => tokens(line.text).size >= 6);

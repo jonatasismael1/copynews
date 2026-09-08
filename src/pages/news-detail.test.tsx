@@ -58,6 +58,9 @@ const news = {
       progress: 100,
       current_step: "completed",
       step_results: {},
+      created_at: "2026-07-23T12:00:00.000Z",
+      started_at: "2026-07-23T12:00:05.000Z" as string | null,
+      finished_at: "2026-07-23T12:00:39.000Z" as string | null,
     },
   ],
   news_versions: [],
@@ -166,6 +169,7 @@ describe("detalhes da notícia no mobile", () => {
       news.original_title,
     );
     expect(within(mobileSummary).getByText("23/07/2026")).toBeInTheDocument();
+    expect(screen.getAllByText(/Concluída em 39s/)).toHaveLength(2);
     expect(within(mobileSummary).getAllByText(news.original_title)).toHaveLength(1);
 
     expect(screen.queryByRole("button", { name: "Reescrever" })).not.toBeInTheDocument();
@@ -195,6 +199,9 @@ describe("detalhes da notícia no mobile", () => {
         progress: 76,
         current_step: "extract_ocr",
         step_results: {},
+        created_at: "2026-07-23T12:00:00.000Z",
+        started_at: "2026-07-23T12:00:05.000Z",
+        finished_at: null,
       },
     ];
 

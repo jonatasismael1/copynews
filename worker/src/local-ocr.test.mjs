@@ -62,3 +62,25 @@ test("deduplica duas leituras sobrepostas do mesmo título", () => {
     .join(" ");
   assert.equal(title, '“Aqui não cola sem autorização”: Adesivo de JHC é colado por cima de Renanzinho após autorização do morador');
 });
+
+test("não confunde fragmento curto persistente com a manchete completa", () => {
+  const fixedHeadline = [
+    line("TNT Sports Brasil", 80, 92, 24),
+    line("Samu Lino", 130, 91, 28),
+    line("Samu Lino voando e não tem", 130, 94, 34),
+    line("como esquecer desse momento", 174, 94, 34),
+    line("absurdo com a Tati", 218, 94, 34),
+  ];
+  const frames = [
+    fixedHeadline,
+    fixedHeadline,
+    fixedHeadline,
+    fixedHeadline,
+    [...fixedHeadline, line("Lança um espanhol do nada", 820, 97, 42)],
+  ];
+
+  const title = selectTemporalHeadline(frames).map((item) => item.text).join(" ");
+  assert.equal(title.includes("Samu Lino voando e não tem"), true);
+  assert.equal(title.includes("como esquecer desse momento"), true);
+  assert.equal(title.includes("Lança um espanhol"), false);
+});

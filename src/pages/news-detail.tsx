@@ -78,6 +78,17 @@ function isValidExternalUrl(value?: string | null) {
   }
 }
 
+function processingElapsed(createdAt?: string | null, finishedAt?: string | null) {
+  if (!createdAt || !finishedAt) return null;
+  const elapsed = new Date(finishedAt).getTime() - new Date(createdAt).getTime();
+  if (!Number.isFinite(elapsed) || elapsed < 0) return null;
+  const seconds = Math.max(1, Math.round(elapsed / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}min ${remainder}s` : `${minutes}min`;
+}
+
 export function NewsDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -242,6 +253,7 @@ export function NewsDetailPage() {
     );
   if (!data) return <p>Notícia não encontrada.</p>;
   const job = data.processing_jobs?.[0];
+  const elapsed = processingElapsed(job?.created_at, job?.finished_at);
   const statuses = profile?.role === "writer" ? writerStatuses : allStatuses;
   const hasPublication = (data.publications?.length ?? 0) > 0;
   const canManageRecord =
@@ -642,7 +654,13 @@ export function NewsDetailPage() {
                 "Origem não identificada"}
             </p>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {new Date(data.created_at).toLocaleDateString("pt-BR")}
+              <span>{new Date(data.created_at).toLocaleDateString("pt-BR")}</span>
+              {elapsed && (
+                <>
+                  <span aria-hidden="true"> · </span>
+                  <span>Concluída em {elapsed}</span>
+                </>
+              )}
             </p>
           </div>
           <Button
@@ -687,6 +705,11 @@ export function NewsDetailPage() {
             <Badge>{statusLabels[status]}</Badge>
             {data.categories && (
               <Badge variant="outline">{data.categories.name}</Badge>
+            )}
+            {elapsed && (
+              <span className="text-[10px] text-muted-foreground">
+                Concluída em {elapsed}
+              </span>
             )}
           </div>
           <h1 className="mt-3 font-display text-2xl font-bold sm:text-3xl">
