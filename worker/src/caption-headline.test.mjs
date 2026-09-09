@@ -303,7 +303,7 @@ test("preserva título correto de incêndio sem expandir pela legenda", () => {
 
 test("preserva título correto de homicídio usado como controle", () => {
   const title = "Câmeras registram chegada de suspeitos antes de homicídio em Arapiraca";
-  const source = "Câmeras registram a chegada de suspeitos envolvidos no homicídio de João Vitor, em Arapiraca.";
+  const source = `${title}\n\nCâmeras de videomonitoramento registraram a movimentação dos suspeitos envolvidos no homicídio de João Vitor, em Arapiraca.`;
   assert.equal(alignHeadlineWithCaption(title, source), title);
   assert.equal(alignHeadlineWithCaption(`${title}\n\nCâmeras`, source), title);
 });

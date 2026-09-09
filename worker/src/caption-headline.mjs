@@ -338,7 +338,7 @@ function completeCaptionConfirmedProperSuffix(value, caption) {
         continue;
       const sourceEnd = captionSpans[start + size - 1].end;
       const between = String(caption || "").slice(sourceEnd, next.start);
-      if (/[,.;:!?]/u.test(between)) continue;
+      if (/[,.;:!?\r\n]/u.test(between)) continue;
       return `${String(value).trim()} ${next.text}`;
     }
   }
