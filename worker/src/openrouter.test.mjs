@@ -235,6 +235,16 @@ test("usa componentes da arroba e local final para restaurar nomes", () => {
   );
 });
 
+test("não trata apelido depois de da como nome de lugar", () => {
+  assert.equal(
+    normalizeHeadlineCase(
+      'Vamos passar a bota na corrupção", diz menina da bota ao falar sobre candidatura',
+      "A influenciadora conhecida como Menina da Bota falou sobre candidatura.",
+    ),
+    'Vamos passar a bota na corrupção", diz menina da bota ao falar sobre candidatura',
+  );
+});
+
 test("legenda curta também precisa ser realmente reescrita", () => {
   const sources = classify({
     originalTitle: "Defesa Civil interdita ponte em Pilar",
