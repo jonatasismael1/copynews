@@ -38,7 +38,23 @@ function sameOcrWord(left, right) {
 }
 
 function collapseImmediateRepeatedPhrases(value) {
-  let result = String(value || "").replace(/\s+/g, " ").trim();
+  let result = String(value || "").trim();
+  // Alguns quadros devolvem a manchete completa e repetem apenas o começo em
+  // uma última linha. A quebra de linha permite remover até uma palavra sem
+  // confundir títulos legítimos que começam e terminam com o mesmo termo.
+  let lineSpans = wordSpans(result);
+  for (let size = Math.min(4, Math.floor((lineSpans.length - 1) / 2)); size >= 1; size -= 1) {
+    const suffixStart = lineSpans.length - size;
+    const repeatedPrefix = lineSpans
+      .slice(0, size)
+      .every((item, index) => sameOcrWord(item.normalized, lineSpans[suffixStart + index].normalized));
+    if (!repeatedPrefix) continue;
+    const separator = result.slice(lineSpans[suffixStart - 1].end, lineSpans[suffixStart].start);
+    if (size === 1 && !/[\r\n]/u.test(separator)) continue;
+    result = removeRange(result, lineSpans[suffixStart].start, lineSpans.at(-1).end);
+    break;
+  }
+  result = result.replace(/\s+/g, " ").trim();
   // Primeiro resolve o caso mais danoso: uma leitura curta e defeituosa do
   // começo seguida pela leitura completa da mesma região do quadro.
   let spans = wordSpans(result);
