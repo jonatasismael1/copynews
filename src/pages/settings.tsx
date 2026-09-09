@@ -9,6 +9,8 @@ import {
   ChartNoAxesCombined,
   KeyRound,
   Link2,
+  Monitor,
+  Moon,
   Palette,
   Plus,
   RefreshCw,
@@ -16,6 +18,7 @@ import {
   Server,
   ShieldCheck,
   Smartphone,
+  Sun,
   Unplug,
   Video,
 } from "lucide-react";
@@ -31,9 +34,11 @@ import { ProfileAvatar } from "@/components/profile-avatar";
 import { squareAvatarDataUrl } from "@/lib/avatar";
 import { PwaInstallButton } from "@/components/pwa-install";
 import { useConnectedAccounts } from "@/hooks/use-data";
+import { useTheme, type ThemePreference } from "@/providers/theme-provider";
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [settingsTab, setSettingsTab] = useState<"general" | "backend">(
@@ -399,6 +404,47 @@ export function SettingsPage() {
 
       {settingsTab === "general" && (
         <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette size={19} />
+                Aparência
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Escolha o visual do Copy News neste aparelho.
+              </p>
+              <div
+                className="grid gap-3 sm:grid-cols-3"
+                role="radiogroup"
+                aria-label="Tema do aplicativo"
+              >
+                {([
+                  ["light", "Claro", Sun],
+                  ["dark", "Escuro", Moon],
+                  ["system", "Do aparelho", Monitor],
+                ] as const).map(([value, label, Icon]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={theme === value}
+                    onClick={() => setTheme(value as ThemePreference)}
+                    className={`flex min-h-14 items-center gap-3 rounded-xl border px-4 text-left text-sm font-semibold transition-colors ${
+                      theme === value
+                        ? "border-primary bg-[var(--primary-subtle)] text-primary ring-1 ring-primary/20"
+                        : "bg-background hover:bg-muted"
+                    }`}
+                  >
+                    <Icon size={20} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>

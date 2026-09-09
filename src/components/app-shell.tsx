@@ -63,7 +63,7 @@ export function AppShell() {
     };
   }, [open]);
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <div className="app-canvas min-h-dvh text-foreground">
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-[min(20rem,88vw)] border-r border-white/10 bg-sidebar p-4 text-white shadow-2xl transition-transform duration-200 lg:w-64 lg:translate-x-0 lg:shadow-none",
@@ -73,7 +73,7 @@ export function AppShell() {
       >
         <div className="flex h-14 items-center justify-between px-2">
           <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-[10px] bg-primary text-primary-foreground">
+            <div className="grid size-9 place-items-center rounded-[10px] border border-emerald-300/20 bg-gradient-to-br from-emerald-400 to-emerald-700 text-white shadow-[0_8px_24px_rgb(16_185_129/22%)]">
               <BarChart3 size={20} />
             </div>
             <div>
@@ -172,7 +172,7 @@ export function AppShell() {
       >
         <header
           className={cn(
-            "sticky top-0 z-30 h-14 items-center justify-between border-b bg-card/95 px-2 backdrop-blur-xl sm:px-6",
+            "sticky top-0 z-30 h-14 items-center justify-between border-b border-primary/10 bg-card/90 px-2 backdrop-blur-xl sm:px-6",
             isCreatePage || isDesignEditor ? "hidden" : "flex",
           )}
         >
@@ -233,7 +233,9 @@ export function AppShell() {
             className={({ isActive }) =>
               cn(
                 "flex min-h-[60px] min-w-14 flex-col items-center justify-center gap-1 rounded-[10px] px-1 py-1.5 text-xs font-medium",
-                isActive ? "text-primary" : "text-muted-foreground",
+                isActive
+                  ? "bg-[var(--primary-subtle)] text-primary"
+                  : "text-muted-foreground",
               )
             }
           >
