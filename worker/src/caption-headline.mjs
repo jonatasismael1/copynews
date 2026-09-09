@@ -378,6 +378,8 @@ export function alignHeadlineWithCaption(title, caption) {
     (_match, subject, participle) => `${subject} é ${participle}`,
   );
   repairedTitle = repairedTitle.replace(/\s+multa\s+de\s+/iu, "; multa de ");
+  if (!/^["“]/u.test(repairedTitle) && /^[^"]+",\s*(?:diz|afirma)\b/iu.test(repairedTitle))
+    repairedTitle = `“${repairedTitle.replace('"', '”')}`;
   if (
     /você só precisa escolher$/iu.test(repairedTitle) &&
     /\bse curar\b/iu.test(String(caption || ""))

@@ -180,6 +180,16 @@ test("remove fragmento ilegível no fim quando a legenda confirma a manchete", (
   );
 });
 
+test("restaura a abertura de uma citação atribuída", () => {
+  assert.equal(
+    alignHeadlineWithCaption(
+      'Vamos passar a bota na corrupção", diz menina da bota ao falar sobre candidatura',
+      "A Menina da Bota disse que vai passar a bota na corrupção ao falar sobre candidatura.",
+    ),
+    '“Vamos passar a bota na corrupção”, diz menina da bota ao falar sobre candidatura',
+  );
+});
+
 test("junta palavra antes de remover uma leitura repetida", () => {
   assert.equal(
     alignHeadlineWithCaption(
