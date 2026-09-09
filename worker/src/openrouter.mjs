@@ -299,7 +299,7 @@ export function normalizeHeadlineCase(value, caption = "") {
       phrase,
     );
   const locationNames = [...caption.matchAll(
-    /\b(?:em|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,})/gu,
+    /\b(?:em|de|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,})/gu,
   )].map((match) => isMostlyUppercase(match[1]) ? properCase(match[1]) : match[1]);
   for (const place of locationNames)
     normalizedTitle = normalizedTitle.replace(
