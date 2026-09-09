@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { alignHeadlineWithCaption, deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
+import { normalizeHeadlineCase } from "./openrouter.mjs";
 
 const caption = "Um trágico acidente tirou a vida de Valdeci Domingos Gomes, na Avenida Fernando Corrêa da Costa, em Cuiabá. Ele atravessava a via quando foi atingido por uma motocicleta Honda XRE. @caboeteiros24h #caboeteiros #viral";
 
@@ -269,4 +270,39 @@ test("corrige nome antes de remover o começo repetido", () => {
     ),
     "André Mendonça dá o troco ao jogo sujo do qual é vítima afirma Mario Sabino",
   );
+});
+
+test("reconstrói duas leituras temporais sobrepostas usando a legenda", () => {
+  const source = "Um homem sofreu uma crise de asma e precisou de atendimento médico na tarde desta terça-feira (8), no Centro de Maceió. O Serviço de Atendimento Móvel de Urgência (Samu) foi acionado para prestar socorro, com apoio da Polícia Militar de Alagoas (PM-AL).";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Homem passa mal no Hom passa mal no entro de Maceió e recebe socorro do e recebe soco Samu e da PM",
+      source,
+    ),
+    "Homem passa mal no Centro de Maceió e recebe socorro do Samu e da PM",
+  );
+});
+
+test("remove sobreposição parcial e completa local confirmado pela legenda", () => {
+  const source = "Uma motocicleta que havia sido roubada foi localizada na noite desta terça-feira (8), na Barra de Santo Antônio. O veículo estava escondido em uma área de canavial.";
+  const aligned = alignHeadlineWithCaption(
+    "MOTOCICLETA ROUBADA ENCONTRADA E UBADA ENCONTRA EM CANAVIAL NA BARRA DE SANTO ae TAN AY",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Motocicleta roubada é encontrada em canavial na Barra de Santo Antônio",
+  );
+});
+
+test("preserva título correto de incêndio sem expandir pela legenda", () => {
+  const title = "Homem socorrido após incêndio atingir casa no bairro Ponta Grossa, em Maceió";
+  const source = "Um homem foi socorrido após um incêndio atingir uma residência no bairro Ponta Grossa, em Maceió.";
+  assert.equal(alignHeadlineWithCaption(title, source), title);
+});
+
+test("preserva título correto de homicídio usado como controle", () => {
+  const title = "Câmeras registram chegada de suspeitos antes de homicídio em Arapiraca";
+  const source = "Câmeras registram a chegada de suspeitos envolvidos no homicídio de João Vitor, em Arapiraca.";
+  assert.equal(alignHeadlineWithCaption(title, source), title);
 });

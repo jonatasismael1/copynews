@@ -21,6 +21,22 @@ function removeRange(value, start, end) {
     .trim();
 }
 
+function sameOcrWord(left, right) {
+  if (left === right) return true;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length > right.length ? left : right;
+  if (
+    shorter.length >= 3 &&
+    (longer.startsWith(shorter) || longer.endsWith(shorter)) &&
+    shorter.length / longer.length >= 0.55
+  )
+    return true;
+  return (
+    shorter.length >= 5 &&
+    (shorter === longer.slice(0, -1) || longer === shorter.slice(0, -1))
+  );
+}
+
 function collapseImmediateRepeatedPhrases(value) {
   let result = String(value || "").replace(/\s+/g, " ").trim();
   // Primeiro resolve o caso mais danoso: uma leitura curta e defeituosa do
@@ -28,8 +44,10 @@ function collapseImmediateRepeatedPhrases(value) {
   let spans = wordSpans(result);
   for (let repeatedAt = 2; repeatedAt < Math.min(spans.length - 1, 12); repeatedAt += 1) {
     if (
-      spans[0].normalized === spans[repeatedAt].normalized &&
-      spans[1].normalized === spans[repeatedAt + 1].normalized
+      sameOcrWord(spans[0].normalized, spans[repeatedAt].normalized) &&
+      sameOcrWord(spans[1].normalized, spans[repeatedAt + 1].normalized) &&
+      spans[repeatedAt].normalized.length + spans[repeatedAt + 1].normalized.length >=
+        spans[0].normalized.length + spans[1].normalized.length
     ) {
       let start = spans[repeatedAt].start;
       while (start > 0 && /["“'‘]/.test(result[start - 1])) start -= 1;
@@ -64,17 +82,26 @@ function collapseImmediateRepeatedPhrases(value) {
   // contíguas (ex.: "ouvinte desabafa e mostra ouvinte desabafae abandono").
   // Remove apenas o segundo bigrama, preservando o complemento novo.
   spans = wordSpans(result);
-  const sameOcrWord = (left, right) =>
-    left === right ||
-    (Math.min(left.length, right.length) >= 5 &&
-      (left === right.slice(0, -1) || right === left.slice(0, -1)));
   for (let first = 0; first < spans.length - 3; first += 1) {
     for (let repeatedAt = first + 2; repeatedAt < Math.min(first + 7, spans.length - 1); repeatedAt += 1) {
       if (
         sameOcrWord(spans[first].normalized, spans[repeatedAt].normalized) &&
         sameOcrWord(spans[first + 1].normalized, spans[repeatedAt + 1].normalized)
       ) {
-        result = removeRange(result, spans[repeatedAt].start, spans[repeatedAt + 1].end);
+        let duplicateEnd = repeatedAt + 1;
+        for (
+          let offset = 2;
+          offset < repeatedAt - first && repeatedAt + offset < spans.length;
+          offset += 1
+        ) {
+          if (!sameOcrWord(
+            spans[first + offset].normalized,
+            spans[repeatedAt + offset].normalized,
+          ))
+            break;
+          duplicateEnd = repeatedAt + offset;
+        }
+        result = removeRange(result, spans[repeatedAt].start, spans[duplicateEnd].end);
         return collapseImmediateRepeatedPhrases(result);
       }
     }
@@ -165,6 +192,11 @@ function stripUnknownTrailingFragment(value, caption) {
   let matchingMeaningfulWords = 0;
   for (let index = 0; index < spans.length; index += 1) {
     const word = spans[index].normalized;
+    const confirmedShortAcronym =
+      word.length >= 2 &&
+      spans[index].text === spans[index].text.toLocaleUpperCase("pt-BR") &&
+      captionWords.has(word);
+    if (confirmedShortAcronym) lastCaptionMatch = index;
     if (word.length < 3 || ignoredAnchorWords.has(word)) continue;
     if (captionWords.has(word)) {
       lastCaptionMatch = index;
@@ -219,6 +251,7 @@ function repairCaptionSpelling(value, caption) {
   for (const item of [...sourceSpans].reverse()) {
     if (item.normalized.length <= 1) continue;
     let replacement = canonical.get(item.normalized);
+    let forceCaptionCase = false;
     if (!replacement && item.normalized.length >= 5) {
       const fuzzy = captionSpans.find((candidate) => {
         if (candidate.normalized.length !== item.normalized.length) return false;
@@ -235,12 +268,25 @@ function repairCaptionSpelling(value, caption) {
       });
       replacement = fuzzy?.text;
     }
+    if (!replacement && item.normalized.length >= 4) {
+      const missingInitial = captionSpans.filter(
+        (candidate) =>
+          candidate.normalized.length === item.normalized.length + 1 &&
+          candidate.normalized.endsWith(item.normalized),
+      );
+      if (missingInitial.length === 1) {
+        replacement = missingInitial[0].text;
+        forceCaptionCase = /^\p{Lu}/u.test(replacement);
+      }
+    }
     if (!replacement || replacement === item.text) continue;
     const before = result.slice(0, item.start);
     const atSentenceStart =
       !/[\p{L}\p{N}]/u.test(before) ||
       /(?:[.!?]\s*["”'’]?|["”'’]?\s*:)\s*$/u.test(before);
-    const corrected = atSentenceStart
+    const corrected = forceCaptionCase
+      ? replacement
+      : atSentenceStart
       ? replacement.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase("pt-BR"))
       : ignoredAnchorWords.has(item.normalized)
         ? replacement.toLocaleLowerCase("pt-BR")
@@ -248,6 +294,39 @@ function repairCaptionSpelling(value, caption) {
     result = `${result.slice(0, item.start)}${corrected}${result.slice(item.end)}`;
   }
   return result;
+}
+
+function repairCaptionConfirmedGrammar(value, caption) {
+  let result = String(value || "");
+  if (/motocicleta.{0,80}roubad[oa]/iu.test(String(caption || ""))) {
+    result = result.replace(
+      /\b(roubad[oa]s?)\s+(encontrad[oa]s?)\s+(?:e\s+)?(?=em\b)/iu,
+      "$1 é $2 ",
+    );
+  }
+  result = result.replace(/\b(do|da|de)\s+e\s+(?=[\p{Lu}])/gu, "$1 ");
+  return result.replace(/\s+/g, " ").trim();
+}
+
+function completeCaptionConfirmedProperSuffix(value, caption) {
+  const titleSpans = wordSpans(value);
+  const captionSpans = wordSpans(caption);
+  if (titleSpans.length < 4 || captionSpans.length < 5) return value;
+  for (let size = Math.min(4, titleSpans.length); size >= 2; size -= 1) {
+    const suffix = titleSpans.slice(-size).map((item) => item.normalized);
+    for (let start = 0; start + size < captionSpans.length; start += 1) {
+      const candidate = captionSpans.slice(start, start + size).map((item) => item.normalized);
+      if (candidate.join(" ") !== suffix.join(" ")) continue;
+      const next = captionSpans[start + size];
+      if (!/^\p{Lu}/u.test(next.text) || ignoredAnchorWords.has(next.normalized))
+        continue;
+      const sourceEnd = captionSpans[start + size - 1].end;
+      const between = String(caption || "").slice(sourceEnd, next.start);
+      if (/[,.;:!?]/u.test(between)) continue;
+      return `${String(value).trim()} ${next.text}`;
+    }
+  }
+  return value;
 }
 
 function restoreCaptionConfirmedCopula(value, caption) {
@@ -389,6 +468,10 @@ export function alignHeadlineWithCaption(title, caption) {
   const titleBeforeSuffixCleanup = repairedTitle;
   repairedTitle = stripUnknownTrailingFragment(
     stripEditorialFooter(repairedTitle),
+    caption,
+  );
+  repairedTitle = completeCaptionConfirmedProperSuffix(
+    repairCaptionConfirmedGrammar(repairedTitle, caption),
     caption,
   );
   const removedNoisySuffix = repairedTitle !== titleBeforeSuffixCleanup;
