@@ -18,7 +18,7 @@ from .post_classification import apply_classification, classify_post_for_profile
 log = logging.getLogger(__name__)
 settings = get_settings()
 collection_lock = asyncio.Lock()
-_apify_state = {"month": "", "active_slot": 1, "exhausted": set()}
+_apify_state = {"month": "", "active_slot": 1, "exhausted_until": {}}
 
 
 class ApifyCreditsExhausted(RuntimeError):
@@ -33,14 +33,23 @@ def _apify_tokens() -> list[tuple[int, str]]:
 
 
 def _reset_apify_month() -> None:
-    month = datetime.now(ZoneInfo(settings.app_timezone)).strftime("%Y-%m")
+    now = datetime.now(ZoneInfo(settings.app_timezone))
+    month = now.strftime("%Y-%m")
     if _apify_state["month"] != month:
-        _apify_state.update({"month": month, "active_slot": 1, "exhausted": set()})
+        _apify_state.update({"month": month, "active_slot": 1, "exhausted_until": {}})
+    _apify_state["exhausted_until"] = {
+        slot: until for slot, until in _apify_state["exhausted_until"].items() if until > now
+    }
 
 
 def apify_health() -> dict:
     _reset_apify_month()
-    return {"configured_tokens": len(_apify_tokens()), "active_slot": _apify_state["active_slot"], "exhausted_slots": sorted(_apify_state["exhausted"]), "resets_monthly": True}
+    return {
+        "configured_tokens": len(_apify_tokens()),
+        "active_slot": _apify_state["active_slot"],
+        "cooldown_slots": sorted(_apify_state["exhausted_until"]),
+        "credit_retry_minutes": settings.apify_credit_retry_minutes,
+    }
 
 
 def _credits_exhausted(response: httpx.Response) -> bool:
@@ -50,6 +59,12 @@ def _credits_exhausted(response: httpx.Response) -> bool:
         return False
     text = response.text.lower()[:2000]
     return any(term in text for term in ("not enough usage", "insufficient", "credit", "monthly usage", "usage limit", "spending limit"))
+
+
+def _raise_for_apify_status(response: httpx.Response) -> None:
+    if _credits_exhausted(response):
+        raise ApifyCreditsExhausted("Créditos da Apify esgotados")
+    response.raise_for_status()
 
 
 def _integer(item: dict, *keys: str) -> int | None:
@@ -131,21 +146,22 @@ async def _run_actor_with_token(usernames: list[str], token: str) -> tuple[str, 
     timeout = httpx.Timeout(settings.request_timeout_seconds, connect=30)
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(endpoint, params={"waitForFinish": 60}, headers=headers, json=body)
-        if _credits_exhausted(response):
-            raise ApifyCreditsExhausted("Créditos da Apify esgotados")
-        response.raise_for_status()
+        _raise_for_apify_status(response)
         run = response.json()["data"]
         deadline = asyncio.get_running_loop().time() + settings.request_timeout_seconds
         while run.get("status") in {"READY", "RUNNING"} and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(5)
             status_response = await client.get(f"https://api.apify.com/v2/actor-runs/{run['id']}", headers=headers)
-            status_response.raise_for_status()
+            _raise_for_apify_status(status_response)
             run = status_response.json()["data"]
         if run.get("status") != "SUCCEEDED":
+            run_message = str(run.get("statusMessage") or run.get("statusMessageUpdatedAt") or "")
+            if any(term in run_message.lower() for term in ("credit", "usage limit", "spending limit", "insufficient")):
+                raise ApifyCreditsExhausted("Créditos da Apify esgotados")
             raise RuntimeError(f"Apify terminou com status {run.get('status')}")
         dataset_id = run.get("defaultDatasetId")
         items_response = await client.get(f"https://api.apify.com/v2/datasets/{dataset_id}/items", headers=headers, params={"clean": "true", "format": "json"})
-        items_response.raise_for_status()
+        _raise_for_apify_status(items_response)
         items = items_response.json()
         if items and all(item.get("noResults") is True for item in items if isinstance(item, dict)):
             raise RuntimeError("Apify retornou noResults; verifique o limite/plano da conta")
@@ -155,7 +171,7 @@ async def _run_actor_with_token(usernames: list[str], token: str) -> tuple[str, 
 async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
     _reset_apify_month()
     tokens = _apify_tokens()
-    available = [(slot, token) for slot, token in tokens if slot not in _apify_state["exhausted"]]
+    available = [(slot, token) for slot, token in tokens if slot not in _apify_state["exhausted_until"]]
     available.sort(key=lambda item: item[0] != _apify_state["active_slot"])
     for slot, token in available:
         try:
@@ -164,11 +180,14 @@ async def _run_actor(usernames: list[str]) -> tuple[str, list[dict]]:
             log.info("apify collection succeeded token_slot=%s profiles=%s", slot, len(usernames))
             return result
         except ApifyCreditsExhausted:
-            _apify_state["exhausted"].add(slot)
-            log.warning("apify credits exhausted token_slot=%s", slot)
-    next_reset = datetime.now(ZoneInfo(settings.app_timezone)).replace(day=1) + timedelta(days=32)
-    next_reset = next_reset.replace(day=1).strftime("%d/%m/%Y")
-    raise ApifyCreditsExhausted(f"Créditos das contas Apify esgotados. A coleta volta automaticamente em {next_reset}")
+            retry_at = datetime.now(ZoneInfo(settings.app_timezone)) + timedelta(
+                minutes=max(1, settings.apify_credit_retry_minutes)
+            )
+            _apify_state["exhausted_until"][slot] = retry_at
+            log.warning("apify credits exhausted token_slot=%s retry_at=%s", slot, retry_at.isoformat())
+    raise ApifyCreditsExhausted(
+        f"Créditos dos tokens Apify indisponíveis. Os tokens serão testados novamente na próxima coleta após {max(1, settings.apify_credit_retry_minutes)} minutos"
+    )
 
 
 def _persist(session: Session, profiles: list[TrackedProfile], items: list[dict], collected_at: datetime, target_date: date | None = None) -> dict:

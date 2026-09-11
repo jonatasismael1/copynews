@@ -376,6 +376,25 @@ export function isLikelyBrandOnlyTitle(title, caption) {
 
 export function deriveHeadlineFromCaption(caption) {
   const text = String(caption || "").replace(/\s+/g, " ").trim();
+  const rearrested = text.match(
+    /\b(o jovem|a jovem|o homem|a mulher|o suspeito|a suspeita)\b.{0,220}\bvoltou a ser preso(?: novamente)?\b.{0,120}\btentativa de homic[ií]dio em\s+([^,.]+)/iu,
+  );
+  const attemptedAgainstRelative = text.match(
+    /\b(?:o suspeito|a suspeita|ele|ela)\s+tentou matar\s+(a pr[oó]pria tia|o pr[oó]prio tio|a tia|o tio)\b/iu,
+  );
+  if (rearrested && attemptedAgainstRelative) {
+    const describedSubject = normalizedWords(rearrested[1]).at(-1);
+    const subject = describedSubject === "jovem"
+      ? "Jovem"
+      : describedSubject === "homem"
+        ? "Homem"
+        : describedSubject === "mulher"
+          ? "Mulher"
+          : describedSubject === "suspeita"
+            ? "Suspeita"
+            : "Suspeito";
+    return `${subject} volta a ser preso após tentar matar ${attemptedAgainstRelative[1].toLocaleLowerCase("pt-BR")} em ${rearrested[2].trim()}`;
+  }
   if (
     /Tribunal Regional Eleitoral|TRE-AL/i.test(text) &&
     /retirada de um vídeo|remova o vídeo/i.test(text) &&

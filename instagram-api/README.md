@@ -26,4 +26,4 @@ No Portainer, crie uma Stack apontando para o repositório e use `instagram-api/
 
 Os endpoints de coleta retornam HTTP 202 antes do scraping. Acompanhe `last_sync_status` em `/profiles`. A documentação interativa fica em `/docs` e os logs em `docker compose logs -f instagram-api`.
 
-O único provedor é o Actor `apidojo/instagram-scraper`, executado pela API oficial do Apify. Configure `APIFY_TOKEN` somente no ambiente do servidor. A coleta dos perfis ativos é feita em lote quatro vezes por dia no fuso `America/Maceio`.
+O único provedor é o Actor `apidojo/instagram-scraper`, executado pela API oficial do Apify. Configure `APIFY_TOKEN` e, para failover, `APIFY_TOKEN_2` somente no ambiente do servidor. Respostas de crédito em qualquer etapa alternam o token; slots sem saldo entram em cooldown e voltam a ser testados em uma coleta posterior. A coleta dos perfis ativos é feita em lote no fuso `America/Maceio`.

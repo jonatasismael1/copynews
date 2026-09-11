@@ -307,3 +307,14 @@ test("preserva título correto de homicídio usado como controle", () => {
   assert.equal(alignHeadlineWithCaption(title, source), title);
   assert.equal(alignHeadlineWithCaption(`${title}\n\nCâmeras`, source), title);
 });
+
+test("reconstrói título muito fragmentado com fatos confirmados pela legenda", () => {
+  const source = "Após ser colocado em liberdade depois de passar por audiência de custódia, o jovem de 23 anos, que confessou ter executado Fagner Jean dos Santos, voltou a ser preso novamente, desta vez por tentativa de homicídio em Santana do Ipanema, Sertão de Alagoas. De acordo com informações apuradas, o suspeito tentou matar a própria tia com uma chave de fenda.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Após ser colocado em liberdade por a Apos ser colocado o per gt icidi em volta a e Pes tia em Santana do Ipanema Be tentar matar atiaem do Ipanema",
+      source,
+    ),
+    "Jovem volta a ser preso após tentar matar a própria tia em Santana do Ipanema",
+  );
+});

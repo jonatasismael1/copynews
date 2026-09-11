@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     tracking_days: int = 30
     report_days: int = 7
     apify_daily_lookback_days: int = 1
+    apify_credit_retry_minutes: int = 60
     request_timeout_seconds: float = 360
     evolution_api_url: str = ""
     evolution_api_key: str = ""

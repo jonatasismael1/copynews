@@ -3,7 +3,9 @@ from types import SimpleNamespace
 
 from src.collector import parse_item
 from src.notifications import safe_error
-from src.collector import _credits_exhausted
+from src.collector import ApifyCreditsExhausted, _credits_exhausted, _raise_for_apify_status, _run_actor
+import src.collector as collector
+import asyncio
 import httpx
 from src.reports import _label, _volume_observation, build_messages, comparison
 from src.post_classification import apply_classification, classify_post_for_profile, empty_profile_summary, validate_profile_summary
@@ -98,3 +100,32 @@ def test_apify_credit_detection_is_specific():
     assert _credits_exhausted(httpx.Response(403, request=request, text="Monthly usage limit reached"))
     assert not _credits_exhausted(httpx.Response(429, request=request, text="Too many requests"))
     assert not _credits_exhausted(httpx.Response(500, request=request, text="internal error"))
+
+
+def test_apify_credit_detection_applies_to_every_request():
+    request = httpx.Request("GET", "https://api.apify.com/v2/datasets/x/items")
+    response = httpx.Response(402, request=request, text="payment required")
+    try:
+        _raise_for_apify_status(response)
+    except ApifyCreditsExhausted:
+        pass
+    else:
+        raise AssertionError("a resposta de crédito deveria acionar o próximo token")
+
+
+def test_apify_failover_uses_second_token(monkeypatch):
+    monkeypatch.setattr(collector, "_reset_apify_month", lambda: None)
+    monkeypatch.setattr(collector, "_apify_tokens", lambda: [(1, "primary"), (2, "secondary")])
+    collector._apify_state.update({"active_slot": 1, "exhausted_until": {}})
+    calls = []
+
+    async def fake_run(_usernames, token):
+        calls.append(token)
+        if token == "primary":
+            raise ApifyCreditsExhausted("sem crédito")
+        return "run-2", [{"id": "post-1"}]
+
+    monkeypatch.setattr(collector, "_run_actor_with_token", fake_run)
+    assert asyncio.run(_run_actor(["perfil"]))[0] == "run-2"
+    assert calls == ["primary", "secondary"]
+    assert collector._apify_state["active_slot"] == 2
