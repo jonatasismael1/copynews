@@ -318,3 +318,36 @@ test("reconstrói título muito fragmentado com fatos confirmados pela legenda",
     "Jovem volta a ser preso após tentar matar a própria tia em Santana do Ipanema",
   );
 });
+
+test("remove palavra longa repetida e restaura fragmentos confirmados pela legenda", () => {
+  const source = "Esse é um dos mitos que mais escuto no consultório. Anticoncepcional não precisa de pausa para o corpo descansar.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "eu pudesse apagar ima MENTIRA obre TICONCEPCIONA TICONCEPC seria essa",
+      source,
+    ),
+    "Se eu pudesse apagar uma MENTIRA sobre ANTICONCEPCIONAL seria essa",
+  );
+});
+
+test("recupera o sujeito perdido de uma manchete sobre captura de animal", () => {
+  const source = "Uma cobra foi avistada e capturada na região do Bosque das Arapiracas. A ação chamou atenção pelo tamanho do animal.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "TURADA NO BOSQUE DAS OBRA CAPTURADA NO BOSQUE DAS ARAPIRACAS; AMANHO IMPRESSIONA",
+      source,
+    ),
+    "Cobra capturada no Bosque das Arapiracas; tamanho impressiona",
+  );
+});
+
+test("reconstrói chamada rural com municípios preservados pelo OCR", () => {
+  const source = "O povo sertanejo pede socorro. A verdadeira realidade da zona rural é a falta de água nas torneiras.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Essa de toda zona rural dejOlho zona ruralide Olho D'Agua; Olivença; Monteiropolis,",
+      source,
+    ),
+    "Essa é a realidade da zona rural de Olho d'Água, Olivença e Monteirópolis",
+  );
+});

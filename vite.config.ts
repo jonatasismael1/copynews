@@ -36,12 +36,40 @@ export default defineConfig({
         ],
       },
       workbox: {
+        globPatterns: [
+          'index.html',
+          'manifest.webmanifest',
+          'pwa-*.png',
+          'assets/index-*.js',
+          'assets/index-*.css',
+          'assets/rolldown-runtime-*.js',
+          'assets/react-vendor-*.js',
+          'assets/data-vendor-*.js',
+          'assets/ui-vendor-*.js',
+          'assets/form-vendor-*.js',
+          'assets/create-news-*.js',
+          'assets/use-data-*.js',
+          'assets/schemas-*.js',
+          'assets/card-*.js',
+        ],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [
           /^\/auth\/instagram\/callback(?:[/?]|$)/,
           /^\/\.netlify\/functions\//,
         ],
         cleanupOutdatedCaches: true,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) =>
+              url.pathname.startsWith('/assets/') &&
+              ['script', 'style', 'font'].includes(request.destination),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'copy-news-static-v1',
+              expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
+            },
+          },
+        ],
       },
     }),
   ],

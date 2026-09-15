@@ -4,6 +4,7 @@ const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"au
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json"}});
 const env=(name:string)=>Deno.env.get(name)?.trim().replace(/^['"]|['"]$/g,"")||"";
 const safe=(error:unknown)=>error instanceof Error?error.message.slice(0,180):"Indisponível";
+const internalWorkerUrl=(value:string)=>{try{const hostname=new URL(value).hostname;return hostname.includes("_")||hostname==="localhost"||hostname.endsWith(".internal");}catch{return false;}};
 
 async function probe(url:string,headers:Record<string,string>={}){
   if(!url)return {status:"not_configured"};
@@ -26,7 +27,8 @@ Deno.serve(async(req)=>{
     const {data:member}=await admin.from("profiles").select("role,is_active,organization_id").eq("id",user.id).single();
     if(!member?.is_active||member.role!=="admin")throw new Error("Forbidden");
     const since=new Date(Date.now()-24*3600_000).toISOString();
-    const [jobs,previews,runs,reports,accounts,alerts,storage,worker,instagram,evolution,recentJobs,retention,backup,corrections]=await Promise.all([
+    const workerUrl=env("WORKER_HEALTH_URL");
+    const [jobs,previews,runs,reports,accounts,alerts,storage,workerNetworkProbe,instagram,evolution,recentJobs,retention,backup,corrections]=await Promise.all([
       admin.from("processing_jobs").select("status",{count:"exact"}).in("status",["queued","running","retrying"]),
       admin.from("distribution_direct_previews").select("status",{count:"exact"}).in("status",["queued","processing"]),
       admin.from("instagram_collection_runs").select("status,error,started_at,finished_at,notification_status").order("started_at",{ascending:false}).limit(1).maybeSingle(),
@@ -34,7 +36,7 @@ Deno.serve(async(req)=>{
       admin.from("connected_accounts").select("status,needs_attention,token_expires_at"),
       admin.from("distribution_operational_alerts").select("id",{count:"exact",head:true}).eq("organization_id",member.organization_id).eq("status","open"),
       admin.schema("storage").from("objects").select("metadata").gte("created_at",since).limit(5000),
-      probe(env("WORKER_HEALTH_URL")),
+      internalWorkerUrl(workerUrl)?Promise.resolve(null):probe(workerUrl),
       probe(`${env("INSTAGRAM_ANALYTICS_API_URL").replace(/\/$/,"")}/health`),
       probe(`${env("EVOLUTION_API_URL").replace(/\/$/,"")}/instance/connectionState/${env("EVOLUTION_INSTANCE")}`,{"apikey":env("EVOLUTION_API_KEY")}),
       admin.from("processing_jobs").select("status,started_at,finished_at,news_items(ocr_confidence)").gte("created_at",since),
@@ -47,6 +49,7 @@ Deno.serve(async(req)=>{
     const durations=completed.map(item=>new Date(item.finished_at!).getTime()-new Date(item.started_at!).getTime()).filter(value=>value>=0);
     const failed=(recentJobs.data||[]).filter(item=>item.status==="failed").length;
     const lowConfidence=(recentJobs.data||[]).filter(item=>Number((item.news_items as {ocr_confidence?:number|null}|null)?.ocr_confidence??1)<0.72).length;
+    const worker=internalWorkerUrl(workerUrl)?{status:"unverified",mode:"queue_observer",reason:"internal_endpoint"}:workerNetworkProbe||{status:"not_configured"};
     const overall=[worker,instagram,evolution].some(item=>item.status==="error")?"critical":failed||lowConfidence?"warning":"ok";
     const queues={editorial:jobs.count||0,distribution:previews.count||0,open_alerts:alerts.count||0};
     const storageSummary={new_files_24h:storage.data?.length||0,new_bytes_24h:storageBytes};

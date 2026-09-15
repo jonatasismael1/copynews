@@ -731,9 +731,20 @@ async function processJob(job) {
         const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
         for (const [index, item] of mediaFiles.entries()) {
           const output = join(framesDir, `frame-${index}-%02d.jpg`);
+          let videoFilter = "trim=start=0:end=6,fps=5/6,scale=1200:-1";
+          if (item.kind !== "image") {
+            const duration = Number((await runCapture("ffprobe", [
+              "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", item.path,
+            ])).trim());
+            if (Number.isFinite(duration) && duration > 0) {
+              const start = Math.min(0.35, duration / 10);
+              const interval = Math.max(0.8, (duration - start) / Math.max(framesPerMedia, 1));
+              videoFilter = `trim=start=${start.toFixed(2)},setpts=PTS-STARTPTS,select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,${interval.toFixed(2)})',scale=1200:-1`;
+            }
+          }
           await run("ffmpeg", item.kind === "image"
             ? ["-y", "-i", item.path, "-vf", "scale=1440:-1", "-frames:v", "1", "-q:v", "3", output]
-            : ["-y", "-i", item.path, "-vf", "trim=start=0:end=6,fps=5/6,scale=1200:-1", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
+            : ["-y", "-i", item.path, "-vf", videoFilter, "-vsync", "vfr", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         const hasVideo = mediaFiles.some((item) => item.kind === "video");

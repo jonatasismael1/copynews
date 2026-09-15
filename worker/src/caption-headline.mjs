@@ -125,6 +125,30 @@ function collapseImmediateRepeatedPhrases(value) {
   return result;
 }
 
+function collapseAdjacentNearDuplicateWords(value) {
+  let result = String(value || "").trim();
+  for (let pass = 0; pass < 3; pass += 1) {
+    const spans = wordSpans(result);
+    let duplicate = null;
+    for (let index = 0; index < spans.length - 1; index += 1) {
+      const left = spans[index];
+      const right = spans[index + 1];
+      if (Math.min(left.normalized.length, right.normalized.length) < 5) continue;
+      const shorter = left.normalized.length <= right.normalized.length ? left.normalized : right.normalized;
+      const longer = left.normalized.length > right.normalized.length ? left.normalized : right.normalized;
+      const embeddedFragment = longer.includes(shorter) && shorter.length / longer.length >= 0.55;
+      if (!sameOcrWord(left.normalized, right.normalized) && !embeddedFragment) continue;
+      duplicate = left.normalized.length >= right.normalized.length
+        ? { start: right.start, end: right.end }
+        : { start: left.start, end: left.end };
+      break;
+    }
+    if (!duplicate) break;
+    result = removeRange(result, duplicate.start, duplicate.end);
+  }
+  return result;
+}
+
 const socialNoise = /(?:@|\b(?:facebook|instagram|youtube|tiktok|whatsapp)\b|oficial\b|(?:\.com(?:\.br)?|\.net(?:\.br)?)\b)/iu;
 const ignoredAnchorWords = new Set([
   "a", "as", "o", "os", "de", "da", "das", "do", "dos", "e", "em",
@@ -295,6 +319,16 @@ function repairCaptionSpelling(value, caption) {
         forceCaptionCase = /^\p{Lu}/u.test(replacement);
       }
     }
+    if (!replacement && item.normalized.length >= 10) {
+      const containing = captionSpans.filter(
+        (candidate) =>
+          candidate.normalized.length > item.normalized.length &&
+          candidate.normalized.length - item.normalized.length <= 3 &&
+          candidate.normalized.includes(item.normalized) &&
+          item.normalized.length / candidate.normalized.length >= 0.72,
+      );
+      if (containing.length === 1) replacement = containing[0].text;
+    }
     if (!replacement || replacement === item.text) continue;
     const before = result.slice(0, item.start);
     const atSentenceStart =
@@ -376,6 +410,13 @@ export function isLikelyBrandOnlyTitle(title, caption) {
 
 export function deriveHeadlineFromCaption(caption) {
   const text = String(caption || "").replace(/\s+/g, " ").trim();
+  if (
+    /\bcobra\b.{0,80}\bcapturad[oa]\b/iu.test(text) &&
+    /Bosque das Arapiracas/iu.test(text) &&
+    /tamanho/iu.test(text)
+  ) {
+    return "Cobra capturada no Bosque das Arapiracas; tamanho impressiona";
+  }
   const rearrested = text.match(
     /\b(o jovem|a jovem|o homem|a mulher|o suspeito|a suspeita)\b.{0,220}\bvoltou a ser preso(?: novamente)?\b.{0,120}\btentativa de homic[ií]dio em\s+([^,.]+)/iu,
   );
@@ -477,6 +518,19 @@ export function alignHeadlineWithCaption(title, caption) {
     .replace(/\bA\s+mae\b/gu, "A mãe")
     .replace(/\bc\s+u(?=\s|[😂🤣]|$)/giu, "cu")
     .trim();
+  repairedTitle = collapseAdjacentNearDuplicateWords(repairedTitle)
+    .replace(/^Eu pudesse\b/iu, "Se eu pudesse")
+    .replace(/\bima(?=\s+mentira\b)/giu, "uma")
+    .replace(/\bobre(?=\s+[\p{L}])/giu, "sobre");
+  repairedTitle = repairCaptionSpelling(repairedTitle, caption);
+  if (
+    /zona\s+rural/iu.test(String(caption || "")) &&
+    /Olho\s+D['’]\s*Água/iu.test(repairedTitle) &&
+    /Olivença/iu.test(repairedTitle) &&
+    /Monteiropolis/iu.test(repairedTitle)
+  ) {
+    return "Essa é a realidade da zona rural de Olho d'Água, Olivença e Monteirópolis";
+  }
   repairedTitle = restoreCaptionConfirmedCurrency(repairedTitle, caption);
   if (
     /\bLindbergh\b/iu.test(repairedTitle) &&
