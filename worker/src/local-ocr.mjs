@@ -120,7 +120,10 @@ function linesFromTsv(raw) {
         height: Math.max(...words.map((word) => word.height)),
       };
     })
-    .filter((line) => line.text.length >= 8);
+    // A headline may end in a short standalone word ("REDES", "HOJE",
+    // "TRUMP"). Temporal selection below separates it from persistent logos
+    // by checking whether it is visually connected to the main text block.
+    .filter((line) => line.text.length >= 4);
 }
 function persistentLines(frames) {
   const selected = [];
@@ -234,7 +237,7 @@ function imageHeadline(lines) {
   const candidates = unique.filter(
     (line) =>
       line.height >= medianHeight * 0.7 &&
-      line.text.length >= 8 &&
+      line.text.length >= 4 &&
       line.text.length <= 140,
   );
   const sorted = (candidates.length ? candidates : unique)
@@ -286,7 +289,7 @@ export function selectTemporalHeadline(frames) {
         const largerHeight = Math.max(line.height, candidate.height);
         return (
           smallerHeight >= largerHeight * 0.65 &&
-          Math.abs(line.y - candidate.y) <= largerHeight * 1.7
+          Math.abs(line.y - candidate.y) <= largerHeight * 2.5
         );
       });
       // Uma linha curta persistente pode ser uma marca isolada, mas também a
@@ -301,6 +304,25 @@ export function selectTemporalHeadline(frames) {
       );
     });
     lines = trimHeadlinePeriphery(lines);
+    const connectedShortTail = headlineLines.filter((line) => {
+      if (
+        lines.includes(line) ||
+        tokens(line.text).size > 2
+      )
+        return false;
+      return lines.some((candidate) => {
+        if (candidate.y >= line.y || tokens(candidate.text).size < 3)
+          return false;
+        const smallerHeight = Math.min(line.height, candidate.height);
+        const largerHeight = Math.max(line.height, candidate.height);
+        return (
+          smallerHeight >= largerHeight * 0.65 &&
+          line.y - candidate.y <= largerHeight * 3
+        );
+      });
+    });
+    if (connectedShortTail.length)
+      lines = [...lines, ...connectedShortTail].sort((a, b) => a.y - b.y || a.x - b.x);
     const tokenCount = lines.reduce((sum, line) => sum + tokens(line.text).size, 0);
     const confidence = lines.reduce((sum, line) => sum + line.confidence, 0);
     return {

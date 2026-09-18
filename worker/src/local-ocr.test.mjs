@@ -140,3 +140,19 @@ test("lê apenas a capa do carrossel e preserva todos os quadros do vídeo", () 
   assert.deepEqual(selectSourceOcrFrames(paths, false), ["capa.jpg"]);
   assert.deepEqual(selectSourceOcrFrames(paths, true), paths);
 });
+
+test("preserva palavra curta na última linha da manchete e remove marca distante", () => {
+  const frame = [
+    line("Carreata de Júlio Cezar na zona rural de", 1160, 96, 46),
+    line("Palmeira dos Índios gera repercussão nas", 1217, 96, 46),
+    line("REDES", 1286, 87, 48),
+    line("GR1 TV", 1430, 94, 20),
+  ];
+  const title = selectTemporalHeadline([frame, frame, frame, frame, frame])
+    .map((item) => item.text)
+    .join(" ");
+  assert.equal(
+    title,
+    "Carreata de Júlio Cezar na zona rural de Palmeira dos Índios gera repercussão nas REDES",
+  );
+});

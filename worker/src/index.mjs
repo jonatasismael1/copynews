@@ -22,6 +22,7 @@ import {
 import { shouldTranscribe } from "./processing-options.mjs";
 import { readFramesLocally, selectSourceOcrFrames } from "./local-ocr.mjs";
 import { alignHeadlineWithCaption, deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
+import { temporalSamplePlan } from "./frame-sampling.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
@@ -737,14 +738,18 @@ async function processJob(job) {
               "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", item.path,
             ])).trim());
             if (Number.isFinite(duration) && duration > 0) {
-              const start = Math.min(0.35, duration / 10);
-              const interval = Math.max(0.8, (duration - start) / Math.max(framesPerMedia, 1));
-              videoFilter = `trim=start=${start.toFixed(2)},setpts=PTS-STARTPTS,select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,${interval.toFixed(2)})',scale=1200:-1`;
+              const plan = temporalSamplePlan(duration, framesPerMedia);
+              videoFilter = plan.interval
+                ? `trim=start=${plan.start.toFixed(2)},setpts=PTS-STARTPTS,select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,${plan.interval.toFixed(2)})',scale=1200:-1`
+                : `trim=start=${plan.start.toFixed(2)},setpts=PTS-STARTPTS,scale=1200:-1`;
             }
           }
+          const frameLimit = item.kind === "image"
+            ? 1
+            : Math.min(5, Math.max(1, Math.round(Number(framesPerMedia) || 1)));
           await run("ffmpeg", item.kind === "image"
             ? ["-y", "-i", item.path, "-vf", "scale=1440:-1", "-frames:v", "1", "-q:v", "3", output]
-            : ["-y", "-i", item.path, "-vf", videoFilter, "-vsync", "vfr", "-frames:v", String(Math.min(5, framesPerMedia)), "-q:v", "3", output]);
+            : ["-y", "-i", item.path, "-vf", videoFilter, "-vsync", "vfr", "-frames:v", String(frameLimit), "-q:v", "3", output]);
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         const hasVideo = mediaFiles.some((item) => item.kind === "video");

@@ -253,6 +253,7 @@ export function normalizeHeadlineCase(value, caption = "") {
   const acronyms = new Set([
     "AL",
     "BR",
+    "CRB",
     "HGE",
     "JHC",
     "PF",
@@ -299,13 +300,17 @@ export function normalizeHeadlineCase(value, caption = "") {
       phrase,
     );
   const locationNames = [...caption.matchAll(
-    /\b(?:em|de|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,})/gu,
+    /\b(?:em|de|no|na)\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,}(?:\s+(?:(?:d[aeo]s?|e)\s+)?[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}'’-]{2,}){0,3})/gu,
   )].map((match) => isMostlyUppercase(match[1]) ? properCase(match[1]) : match[1]);
-  for (const place of locationNames)
+  for (const place of locationNames) {
+    const literalPlace = place
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "\\s+");
     normalizedTitle = normalizedTitle.replace(
-      new RegExp(`\\b${normalize(place)}\\b`, "giu"),
+      new RegExp(`\\b${literalPlace}\\b`, "giu"),
       place,
     );
+  }
   const trailingPlace = /\b(em|no|na)\s+([\p{L}'’-]{3,})([.!?]?)$/iu.exec(normalizedTitle);
   if (
     trailingPlace &&

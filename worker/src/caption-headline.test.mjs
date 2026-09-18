@@ -351,3 +351,87 @@ test("reconstrói chamada rural com municípios preservados pelo OCR", () => {
     "Essa é a realidade da zona rural de Olho d'Água, Olivença e Monteirópolis",
   );
 });
+
+test("preserva sufixo visual curto ausente da legenda", () => {
+  const source = "Em campanha pela zona rural de Palmeira dos Índios, Júlio Cezar se revoltou com moradores por não abrirem as portas de suas casas para ele.";
+  assert.equal(
+    alignHeadlineWithCaption(
+      "Júlio Cezar se revolta com população da zona rural por não abrirem as portas para recebê-lo",
+      source,
+    ),
+    "Júlio Cezar se revolta com população da zona rural por não abrirem as portas para recebê-lo",
+  );
+});
+
+test("preserva e corrige linha curta final confirmada pelo contexto", () => {
+  const source = "Gkay chamou a atenção dos seguidores em um vídeo. A influenciadora explicou que a tremedeira era efeito colateral do tratamento contra a depressão.";
+  const aligned = alignHeadlineWithCaption(
+    "GKAY FALA DE TRATAMENTO CONTRA DEPRESSÃO APÓS VIDEO CHAMAR ATENÇÃO DE FAS",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Gkay fala de tratamento contra depressão após vídeo chamar atenção de fãs",
+  );
+});
+
+test("remove prefixo longo de ruído quando a manchete restante é confirmada", () => {
+  const source = "CONFUSÃO APÓS CRB X SPORT: POLÍCIA INTERVÉM NAS ARQUIBANCADAS DO REI PELÉ. A partida terminou em momentos de tensão.";
+  const aligned = alignHeadlineWithCaption(
+    "TRE a VIGO pero E et E E Bias Gia Gwe CONFUSÃO APÓS CRB SPORT: POLÍCIA INTERVÉM NAS ARQUIBANCADAS DO REI PELÉ.",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Confusão após CRB x sport polícia intervém nas arquibancadas do rei pelé.",
+  );
+});
+
+test("remove primeira leitura corrompida de um prefixo repetido", () => {
+  const source = "BADERNA NO REI PELÉ! Após a derrota do Sport para o CRB, torcedores tentaram invadir o setor e foram reprimidos pela Polícia Militar.";
+  const aligned = alignHeadlineWithCaption(
+    "BADERNA: toda DO SPORT BADERNA: TORCIDA DO SPORT TENTA INVADIR SETOR DO CRB E E REPRIMIDA PELA PM NO REI PELE APOS DERROTA",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Baderna: torcida do sport tenta invadir setor do CRB é reprimida pela PM no rei pelé após derrota",
+  );
+});
+
+test("completa somente a palavra visual ausente depois de preposição pendente", () => {
+  const source = "A carreata na zona rural de Palmeira dos Índios gerou comentários nas redes sociais e nos grupos de WhatsApp.";
+  const aligned = alignHeadlineWithCaption(
+    "CARREATA DE JÚLIO CEZAR NA ZONA RURAL DE PALMEIRA DOS ÍNDIOS GERA REPERCUSSÃO NAS",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Carreata de júlio cezar na zona rural de Palmeira dos Índios gera repercussão nas redes",
+  );
+});
+
+test("corrige primeira letra e confusão consonantal com evidência da legenda", () => {
+  const source = "O candidato Júlio Cezar realizou uma carreata na zona rural de Palmeira dos Índios.";
+  const aligned = alignHeadlineWithCaption(
+    "PARREATA DE JÚLIO CEZAR NA ZONA RURAL DE PALMEIRA DOS ÍNDIOS GERA REPERGUSSÃO NAS REDES",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Carreata de Júlio Cezar na zona rural de Palmeira dos Índios gera repercussão nas redes",
+  );
+});
+
+test("remove aspas visual isolada sem afetar a expressão entre aspas", () => {
+  const source =
+    "Dra. Cíntia Maia questiona a cobrança por tratamento de esgoto fantasma em Pão de Açúcar.";
+  const aligned = alignHeadlineWithCaption(
+    'DRA. CÍNTIA MAIA QUESTIONA COBRANÇA POR TRATAMENTO DE ESGOTO “FANTASMA” EM PÃO DE AÇÚCAR”',
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Dra. Cíntia Maia questiona a cobrança por tratamento de esgoto fantasma em Pão de Açúcar",
+  );
+});

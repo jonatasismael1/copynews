@@ -72,6 +72,35 @@ function collapseImmediateRepeatedPhrases(value) {
     }
   }
 
+  // A first reading can corrupt one word in a duplicated prefix
+  // ("BADERNA: toda do Sport BADERNA: torcida do Sport..."). Keep the
+  // second reading only when the anchor repeats early and most of the small
+  // block repeats with it.
+  spans = wordSpans(result);
+  for (let repeatedAt = 2; repeatedAt < Math.min(spans.length - 5, 8); repeatedAt += 1) {
+    if (
+      spans[0].normalized.length < 5 ||
+      spans[repeatedAt].normalized.length < spans[0].normalized.length ||
+      !sameOcrWord(spans[0].normalized, spans[repeatedAt].normalized)
+    )
+      continue;
+    const prefix = spans.slice(1, repeatedAt).filter((item) => item.normalized.length >= 2);
+    const replay = spans.slice(repeatedAt + 1, repeatedAt + 1 + prefix.length);
+    const overlap = prefix.filter((item) =>
+      replay.some((candidate) => sameOcrWord(item.normalized, candidate.normalized)),
+    ).length;
+    if (
+      prefix.length < 2 ||
+      overlap < Math.ceil(prefix.length * 0.6) ||
+      spans.length - repeatedAt < prefix.length + 5
+    )
+      continue;
+    let start = spans[repeatedAt].start;
+    while (start > 0 && /["“'‘]/u.test(result[start - 1])) start -= 1;
+    result = result.slice(start).trim();
+    break;
+  }
+
   // Depois remove repetições contíguas exatas, comuns quando dois modos do
   // Tesseract devolvem a mesma linha ("sinal de derrota sinal de derrota").
   for (let pass = 0; pass < 4; pass += 1) {
@@ -181,7 +210,19 @@ function stripSocialPrefix(value, caption) {
     prefixWords.length >= 2 &&
     prefixWords.length <= 4 &&
     prefixWords.every((word) => !captionWords.has(word));
-  if (!socialNoise.test(prefix) && !compactUnknownBrand) return value;
+  const suffixMeaningful = spans.slice(anchor).filter(meaningful);
+  const confirmedSuffix = suffixMeaningful.filter((item) =>
+    captionWords.has(item.normalized),
+  ).length;
+  const longUnknownOcrNoise =
+    anchor <= 12 &&
+    prefixWords.length >= 5 &&
+    prefixWords.length <= 10 &&
+    prefixWords.every((word) => !captionWords.has(word)) &&
+    suffixMeaningful.length >= 6 &&
+    confirmedSuffix >= Math.ceil(suffixMeaningful.length * 0.7);
+  if (!socialNoise.test(prefix) && !compactUnknownBrand && !longUnknownOcrNoise)
+    return value;
   return value.slice(spans[anchor].start).trim();
 }
 
@@ -253,8 +294,13 @@ function stripUnknownTrailingFragment(value, caption) {
   if (meaningfulTrailing.some((item) => captionWords.has(item.normalized))) return value;
 
   const trailingText = trailing.map((item) => item.normalized).join(" ");
+  const portugueseClitics = new Set(["lo", "la", "los", "las", "lhe", "lhes"]);
   const looksTruncated =
-    trailing.some((item) => item.normalized.length <= 2) ||
+    trailing.some((item) =>
+      item.normalized.length <= 2 &&
+      !ignoredAnchorWords.has(item.normalized) &&
+      !portugueseClitics.has(item.normalized),
+    ) ||
     /(?:^|\s)ista ao vivo$/u.test(trailingText);
   if (!looksTruncated) return value;
 
@@ -308,6 +354,14 @@ function repairCaptionSpelling(value, caption) {
       });
       replacement = fuzzy?.text;
     }
+    if (!replacement && item.normalized.length >= 7) {
+      const initialMismatch = captionSpans.filter(
+        (candidate) =>
+          candidate.normalized.length === item.normalized.length &&
+          candidate.normalized.slice(1) === item.normalized.slice(1),
+      );
+      if (initialMismatch.length === 1) replacement = initialMismatch[0].text;
+    }
     if (!replacement && item.normalized.length >= 4) {
       const missingInitial = captionSpans.filter(
         (candidate) =>
@@ -354,8 +408,30 @@ function repairCaptionConfirmedGrammar(value, caption) {
       "$1 é $2 ",
     );
   }
+  if (/\breprimid[oa]s?\b/iu.test(String(caption || ""))) {
+    result = result.replace(
+      /\be\s+(?:e\s+)?(reprimid[oa]s?)\b/giu,
+      "é $1",
+    );
+  }
+  if (/\b(?:fãs|seguidores)\b/iu.test(String(caption || "")))
+    result = result.replace(/\bde\s+fas\b/giu, "de fãs");
   result = result.replace(/\b(do|da|de)\s+e\s+(?=[\p{Lu}])/gu, "$1 ");
   return result.replace(/\s+/g, " ").trim();
+}
+
+function removeUnpairedQuotationMark(value) {
+  const text = String(value || "");
+  const marks = [...text.matchAll(/["“”‘’]/gu)].filter((match) => {
+    const before = match.index ? text[match.index - 1] : "";
+    const after = text[(match.index || 0) + match[0].length] || "";
+    return !(before && after && /\p{L}/u.test(before) && /\p{L}/u.test(after));
+  });
+  if (marks.length % 2 === 0) return text;
+  const last = marks.at(-1);
+  return `${text.slice(0, last.index)}${text.slice(last.index + last[0].length)}`
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function completeCaptionConfirmedProperSuffix(value, caption) {
@@ -521,8 +597,14 @@ export function alignHeadlineWithCaption(title, caption) {
   repairedTitle = collapseAdjacentNearDuplicateWords(repairedTitle)
     .replace(/^Eu pudesse\b/iu, "Se eu pudesse")
     .replace(/\bima(?=\s+mentira\b)/giu, "uma")
-    .replace(/\bobre(?=\s+[\p{L}])/giu, "sobre");
+    .replace(/\bobre(?=\s+[\p{L}])/giu, "sobre")
+    .replace(/\breperguss[aã]o\b/giu, "repercussão");
   repairedTitle = repairCaptionSpelling(repairedTitle, caption);
+  if (
+    /\brepercuss[aã]o\s+nas$/iu.test(repairedTitle) &&
+    /\bnas\s+redes\b/iu.test(String(caption || ""))
+  )
+    repairedTitle += " redes";
   if (
     /zona\s+rural/iu.test(String(caption || "")) &&
     /Olho\s+D['’]\s*Água/iu.test(repairedTitle) &&
@@ -563,6 +645,7 @@ export function alignHeadlineWithCaption(title, caption) {
     repairCaptionConfirmedGrammar(repairedTitle, caption),
     caption,
   );
+  repairedTitle = removeUnpairedQuotationMark(repairedTitle);
   const removedNoisySuffix = repairedTitle !== titleBeforeSuffixCleanup;
   const titleTokens = normalizedWords(repairedTitle);
   const derived = deriveHeadlineFromCaption(caption);
