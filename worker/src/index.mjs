@@ -731,7 +731,9 @@ async function processJob(job) {
         await fs.mkdir(framesDir, { recursive: true });
         const framesPerMedia = Math.max(1, Math.floor(8 / mediaFiles.length));
         for (const [index, item] of mediaFiles.entries()) {
-          const output = join(framesDir, `frame-${index}-%02d.jpg`);
+          const output = item.kind === "image"
+            ? join(framesDir, `frame-${index}-source${extname(item.path) || ".img"}`)
+            : join(framesDir, `frame-${index}-%02d.jpg`);
           let videoFilter = "trim=start=0:end=6,fps=5/6,scale=1200:-1";
           if (item.kind !== "image") {
             const duration = Number((await runCapture("ffprobe", [
@@ -747,9 +749,9 @@ async function processJob(job) {
           const frameLimit = item.kind === "image"
             ? 1
             : Math.min(5, Math.max(1, Math.round(Number(framesPerMedia) || 1)));
-          await run("ffmpeg", item.kind === "image"
-            ? ["-y", "-i", item.path, "-vf", "scale=1440:-1", "-frames:v", "1", "-q:v", "3", output]
-            : ["-y", "-i", item.path, "-vf", videoFilter, "-vsync", "vfr", "-frames:v", String(frameLimit), "-q:v", "3", output]);
+          if (item.kind === "image") await fs.copyFile(item.path, output);
+          else
+            await run("ffmpeg", ["-y", "-i", item.path, "-vf", videoFilter, "-vsync", "vfr", "-frames:v", String(frameLimit), "-q:v", "3", output]);
         }
         const framePaths = (await fs.readdir(framesDir)).sort().slice(0, 8).map((name) => join(framesDir, name));
         const hasVideo = mediaFiles.some((item) => item.kind === "video");

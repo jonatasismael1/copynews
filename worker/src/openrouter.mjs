@@ -260,8 +260,10 @@ export function normalizeHeadlineCase(value, caption = "") {
     "PM",
     "STF",
     "SUS",
+    "SW4",
     "T82",
     "TRE",
+    "TV",
     "UTI",
     ...(caption.match(/(?<=\()[A-ZÁÉÍÓÚÂÊÔÃÕÇ]{2,8}(?=\))/g) || []),
   ]);

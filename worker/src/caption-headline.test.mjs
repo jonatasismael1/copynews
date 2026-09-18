@@ -435,3 +435,42 @@ test("remove aspas visual isolada sem afetar a expressão entre aspas", () => {
     "Dra. Cíntia Maia questiona a cobrança por tratamento de esgoto fantasma em Pão de Açúcar",
   );
 });
+
+test("remove chamada editorial e ruído antes de manchete confirmada", () => {
+  const source =
+    "Uma Toyota SW4 capotou com quatro pessoas no sentido Marechal Deodoro. Um passageiro relatou que teve um celular furtado após o acidente.";
+  const aligned = alignHeadlineWithCaption(
+    "CON FIRA A MATÉRIA CONFIRA A MATERIA A o NE SW4 CAPOTA COM QUATRO OCUPANTES EM MARECHAL DEODORO E VÍTIMA DENUNCIA FURTOS APOS O ACIDENTE",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "SW4 capota com quatro ocupantes em Marechal Deodoro e vítima denuncia furtos após o acidente",
+  );
+});
+
+test("remove palavra espúria antes de manchete entre aspas e restaura crase", () => {
+  const source =
+    "Artistas da música, do cinema e da televisão declararam apoio à reeleição do presidente Lula. A publicação traz a mensagem “Bora Lula”.";
+  const aligned = alignHeadlineWithCaption(
+    "DADA ‘BORA LULA’: ARTISTAS DA TV MUSICA E CINEMA DECLARAM APOIO REELEIÇÃO DO ATUAL PRESIDENTE",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "‘Bora Lula’: artistas da TV música e cinema declaram apoio à reeleição do atual presidente",
+  );
+});
+
+test("corrige palavra incompleta e remove letra solta depois de trecho duplicado", () => {
+  const source =
+    "Um incêndio atingiu um apartamento de um edifício localizado na Orla de Ponta Verde.";
+  const aligned = alignHeadlineWithCaption(
+    "Incêndio atinge penúltimo andar em edifício no bairro da Ponta Verd A da Ponta Verde",
+    source,
+  );
+  assert.equal(
+    normalizeHeadlineCase(aligned, source),
+    "Incêndio atinge penúltimo andar em edifício no bairro da Ponta Verde",
+  );
+});

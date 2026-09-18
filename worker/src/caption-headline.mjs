@@ -178,6 +178,51 @@ function collapseAdjacentNearDuplicateWords(value) {
   return result;
 }
 
+function stripLeadingEditorialPrefix(value, caption) {
+  let result = String(value || "").trim();
+  let removedMarker = false;
+  // Cards jornalísticos costumam separar uma chamada de navegação da
+  // manchete. O OCR pode ler essa chamada duas vezes e acrescentar pequenos
+  // fragmentos da fotografia entre ela e o título real.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const marker = /(?:\bcon\s*fira|\bconfira)\s+a\s+mat[eé]ria\b[)\]}:]*/iu.exec(result);
+    if (!marker || normalizedWords(result.slice(0, marker.index)).length > 3)
+      break;
+    result = result.slice(marker.index + marker[0].length).trim();
+    removedMarker = true;
+  }
+
+  if (!removedMarker) return result;
+
+  const spans = wordSpans(result);
+  const captionWords = new Set(normalizedWords(caption));
+  const meaningful = (item) =>
+    item.normalized.length >= 3 && !ignoredAnchorWords.has(item.normalized);
+  const anchor = spans.slice(0, 6).findIndex((item, index) => {
+    if (!meaningful(item) || !captionWords.has(item.normalized)) return false;
+    return spans
+      .slice(index + 1, index + 5)
+      .filter(meaningful)
+      .some((candidate) => captionWords.has(candidate.normalized));
+  });
+  return anchor > 0 ? result.slice(spans[anchor].start).trim() : result;
+}
+
+function stripUnknownWordBeforeQuotedHeadline(value, caption) {
+  const text = String(value || "").trim();
+  const prefix = /^([\p{L}\p{N}]{3,20})\s+(?=["“‘'][\p{L}\p{N}])/u.exec(text);
+  if (!prefix) return text;
+  const captionWords = new Set(normalizedWords(caption));
+  const prefixWord = normalizedWords(prefix[1])[0] || "";
+  if (!prefixWord || captionWords.has(prefixWord)) return text;
+  const remainder = text.slice(prefix[0].length).trim();
+  const confirmedQuotedWords = wordSpans(remainder)
+    .slice(0, 3)
+    .filter((item) => item.normalized.length >= 3)
+    .filter((item) => captionWords.has(item.normalized));
+  return confirmedQuotedWords.length >= 2 ? remainder : text;
+}
+
 const socialNoise = /(?:@|\b(?:facebook|instagram|youtube|tiktok|whatsapp)\b|oficial\b|(?:\.com(?:\.br)?|\.net(?:\.br)?)\b)/iu;
 const ignoredAnchorWords = new Set([
   "a", "as", "o", "os", "de", "da", "das", "do", "dos", "e", "em",
@@ -284,10 +329,9 @@ function stripUnknownTrailingFragment(value, caption) {
       matchingMeaningfulWords += 1;
     }
   }
-  if (matchingMeaningfulWords < 5 || lastCaptionMatch < 0) return value;
-
+  if (lastCaptionMatch < 0) return value;
   const trailing = spans.slice(lastCaptionMatch + 1);
-  if (trailing.length < 2 || trailing.length > 5) return value;
+  if (!trailing.length || trailing.length > 5) return value;
   const meaningfulTrailing = trailing.filter(
     (item) => item.normalized.length >= 3 && !ignoredAnchorWords.has(item.normalized),
   );
@@ -295,7 +339,20 @@ function stripUnknownTrailingFragment(value, caption) {
 
   const trailingText = trailing.map((item) => item.normalized).join(" ");
   const portugueseClitics = new Set(["lo", "la", "los", "las", "lhe", "lhes"]);
+  const previousWord = spans[lastCaptionMatch]?.normalized || "";
+  const captionSequence = normalizedWords(caption).join(" ");
+  const isolatedUppercaseTail =
+    trailing.length === 1 &&
+    trailing[0].normalized.length === 1 &&
+    trailing[0].text === trailing[0].text.toLocaleUpperCase("pt-BR") &&
+    !captionSequence.includes(`${previousWord} ${trailing[0].normalized}`);
+  if (
+    matchingMeaningfulWords < 5 &&
+    !(matchingMeaningfulWords >= 4 && isolatedUppercaseTail)
+  )
+    return value;
   const looksTruncated =
+    isolatedUppercaseTail ||
     trailing.some((item) =>
       item.normalized.length <= 2 &&
       !ignoredAnchorWords.has(item.normalized) &&
@@ -373,6 +430,17 @@ function repairCaptionSpelling(value, caption) {
         forceCaptionCase = /^\p{Lu}/u.test(replacement);
       }
     }
+    if (!replacement && item.normalized.length >= 4) {
+      const itemIndex = sourceSpans.findIndex((candidate) => candidate.start === item.start);
+      const nextSource = sourceSpans[itemIndex + 1];
+      const missingFinal = captionSpans.filter(
+        (candidate) =>
+          nextSource?.normalized.length === 1 &&
+          candidate.normalized.length === item.normalized.length + 1 &&
+          candidate.normalized.startsWith(item.normalized),
+      );
+      if (missingFinal.length === 1) replacement = missingFinal[0].text;
+    }
     if (!replacement && item.normalized.length >= 10) {
       const containing = captionSpans.filter(
         (candidate) =>
@@ -396,6 +464,34 @@ function repairCaptionSpelling(value, caption) {
         ? replacement.toLocaleLowerCase("pt-BR")
         : preserveSourceCase(item.text, replacement);
     result = `${result.slice(0, item.start)}${corrected}${result.slice(item.end)}`;
+  }
+  return result;
+}
+
+function restoreCaptionConfirmedConnector(value, caption) {
+  let result = String(value || "");
+  const titleSpans = wordSpans(result);
+  const captionSpans = wordSpans(caption);
+  for (let index = titleSpans.length - 2; index >= 0; index -= 1) {
+    const left = titleSpans[index];
+    const right = titleSpans[index + 1];
+    if (
+      left.normalized.length < 4 ||
+      right.normalized.length < 4 ||
+      !/^\s+$/u.test(result.slice(left.end, right.start))
+    )
+      continue;
+    const candidates = captionSpans.filter((item, captionIndex) => {
+      const connector = captionSpans[captionIndex + 1];
+      const after = captionSpans[captionIndex + 2];
+      return item.normalized === left.normalized &&
+        after?.normalized === right.normalized &&
+        /^(?:à|às|ao|aos)$/iu.test(connector?.text || "");
+    });
+    if (candidates.length !== 1) continue;
+    const captionIndex = captionSpans.indexOf(candidates[0]);
+    const connector = captionSpans[captionIndex + 1].text.toLocaleLowerCase("pt-BR");
+    result = `${result.slice(0, right.start)}${connector} ${result.slice(right.start)}`;
   }
   return result;
 }
@@ -577,7 +673,14 @@ export function alignHeadlineWithCaption(title, caption) {
       repairCaptionSpelling(
         splitCaptionFusions(
           stripSocialPrefix(
-            collapseImmediateRepeatedPhrases(decodeMixedAlphaNumerics(title)),
+            collapseImmediateRepeatedPhrases(
+              decodeMixedAlphaNumerics(
+                stripUnknownWordBeforeQuotedHeadline(
+                  stripLeadingEditorialPrefix(title, caption),
+                  caption,
+                ),
+              ),
+            ),
             caption,
           ),
           caption,
@@ -600,6 +703,7 @@ export function alignHeadlineWithCaption(title, caption) {
     .replace(/\bobre(?=\s+[\p{L}])/giu, "sobre")
     .replace(/\breperguss[aã]o\b/giu, "repercussão");
   repairedTitle = repairCaptionSpelling(repairedTitle, caption);
+  repairedTitle = restoreCaptionConfirmedConnector(repairedTitle, caption);
   if (
     /\brepercuss[aã]o\s+nas$/iu.test(repairedTitle) &&
     /\bnas\s+redes\b/iu.test(String(caption || ""))
