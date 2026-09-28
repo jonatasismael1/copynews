@@ -4,7 +4,7 @@ import { join, extname } from "node:path";
 import { spawn } from "node:child_process";
 import { extractMetadata } from "./adapters.mjs";
 import { normalizeHeadlineCase, readFrames } from "./openrouter.mjs";
-import { readFramesLocally } from "./local-ocr.mjs";
+import { readFramesLocally, selectSourceOcrFrames } from "./local-ocr.mjs";
 import { ocrRefinementReasons, selectVisionHeadline, shouldRefineOcrWithVision } from "./ocr-quality.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -536,24 +536,28 @@ export function createDistributionProcessor({ db, workerId, log }) {
         .sort()
         .slice(0, 8)
         .map((name) => join(framesDir, name));
+      const ocrFramePaths = selectSourceOcrFrames(
+        framePaths,
+        mediaKind === "video",
+      );
       let ocr = null;
       let titleState = "absent";
       const caption = String(metadata?.caption || "").trim();
       await transition("ocr", 72);
       try {
-        ocr = await readFramesLocally(framePaths, {
+        ocr = await readFramesLocally(ocrFramePaths, {
           requirePersistence: mediaKind === "video",
           temporalWindow: mediaKind === "video",
         });
         const refinementReasons = ocrRefinementReasons(ocr, caption);
         if (
-          framePaths.length &&
+          ocrFramePaths.length &&
           process.env.OPENROUTER_API_KEY &&
           (!ocr || shouldRefineOcrWithVision(ocr, caption))
         ) {
           const localOcr = ocr;
           const frames = await Promise.all(
-            framePaths.map(async (path) =>
+            ocrFramePaths.map(async (path) =>
               (await fs.readFile(path)).toString("base64"),
             ),
           );
