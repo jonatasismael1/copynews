@@ -23,6 +23,7 @@ import { shouldTranscribe } from "./processing-options.mjs";
 import { readFramesLocally, selectSourceOcrFrames } from "./local-ocr.mjs";
 import { alignHeadlineWithCaption, deriveHeadlineFromCaption, isLikelyBrandOnlyTitle, recoverBrandOnlyHeadline } from "./caption-headline.mjs";
 import { temporalSamplePlan } from "./frame-sampling.mjs";
+import { ocrRefinementReasons, selectVisionHeadline, shouldRefineOcrWithVision } from "./ocr-quality.mjs";
 import { createDistributionProcessor } from "./distribution.mjs";
 import {
   buildVideoRenderArgs,
@@ -762,9 +763,38 @@ async function processJob(job) {
           requirePersistence: hasVideo,
           temporalWindow: hasVideo,
         });
-        if (!results.ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
-          const frames = await Promise.all(framePaths.map(async (path) => (await fs.readFile(path)).toString("base64")));
-          results.ocr = await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini");
+        const caption = results.clean_original_caption || results.original_caption || "";
+        const refinementReasons = ocrRefinementReasons(results.ocr, caption);
+        if (
+          ocrFramePaths.length &&
+          process.env.OPENROUTER_API_KEY &&
+          (!results.ocr || shouldRefineOcrWithVision(results.ocr, caption))
+        ) {
+          const localOcr = results.ocr;
+          try {
+            const frames = await Promise.all(ocrFramePaths.map(async (path) => (await fs.readFile(path)).toString("base64")));
+            const visionOcr = await readFrames(frames, process.env.OPENROUTER_API_KEY, process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini");
+            const visionTitle = selectVisionHeadline(visionOcr);
+            if (visionTitle) {
+              results.ocr = {
+                ...visionOcr,
+                title: visionTitle,
+                text: visionTitle,
+                visionText: visionOcr.text || "",
+                provider: localOcr
+                  ? "tesseract-local+openrouter-vision"
+                  : visionOcr.provider || "openrouter-vision",
+                localText: localOcr?.text || "",
+                refinementReasons,
+              };
+            }
+          } catch (error) {
+            log("ocr.vision_refinement_failed", {
+              jobId: job.id,
+              reasons: refinementReasons,
+              message: error.message,
+            });
+          }
         }
         results.ocr ||= { text: "", confidence: 0, provider: "none" };
       }
@@ -780,7 +810,7 @@ async function processJob(job) {
         );
       }
       await updateNews(job.news_items.id, {
-        raw_ocr_text: results.ocr.text || "",
+        raw_ocr_text: results.ocr.localText || results.ocr.text || "",
         ocr_text: results.ocr.text || "",
         ocr_confidence: results.ocr.confidence,
         original_title: results.original_title || null,

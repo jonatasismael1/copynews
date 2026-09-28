@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { extractMetadata } from "./adapters.mjs";
 import { normalizeHeadlineCase, readFrames } from "./openrouter.mjs";
 import { readFramesLocally } from "./local-ocr.mjs";
+import { ocrRefinementReasons, selectVisionHeadline, shouldRefineOcrWithVision } from "./ocr-quality.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const safeError = (error) =>
@@ -537,23 +538,43 @@ export function createDistributionProcessor({ db, workerId, log }) {
         .map((name) => join(framesDir, name));
       let ocr = null;
       let titleState = "absent";
+      const caption = String(metadata?.caption || "").trim();
       await transition("ocr", 72);
       try {
         ocr = await readFramesLocally(framePaths, {
           requirePersistence: mediaKind === "video",
           temporalWindow: mediaKind === "video",
         });
-        if (!ocr && framePaths.length && process.env.OPENROUTER_API_KEY) {
+        const refinementReasons = ocrRefinementReasons(ocr, caption);
+        if (
+          framePaths.length &&
+          process.env.OPENROUTER_API_KEY &&
+          (!ocr || shouldRefineOcrWithVision(ocr, caption))
+        ) {
+          const localOcr = ocr;
           const frames = await Promise.all(
             framePaths.map(async (path) =>
               (await fs.readFile(path)).toString("base64"),
             ),
           );
-          ocr = await readFrames(
+          const visionOcr = await readFrames(
             frames,
             process.env.OPENROUTER_API_KEY,
             process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4.1-mini",
           );
+          const visionTitle = selectVisionHeadline(visionOcr);
+          if (visionTitle)
+            ocr = {
+              ...visionOcr,
+              title: visionTitle,
+              text: visionTitle,
+              visionText: visionOcr.text || "",
+              provider: localOcr
+                ? "tesseract-local+openrouter-vision"
+                : visionOcr.provider || "openrouter-vision",
+              localText: localOcr?.text || "",
+              refinementReasons,
+            };
         }
         titleState = ocr?.title ? "found" : "absent";
       } catch {
@@ -561,7 +582,6 @@ export function createDistributionProcessor({ db, workerId, log }) {
       }
       const metadataTitle = String(metadata?.title || "").trim();
       const visualTitle = String(ocr?.title || metadataTitle).trim();
-      const caption = String(metadata?.caption || "").trim();
       const captionState = caption
         ? "found"
         : metadata?.provider === "none"
