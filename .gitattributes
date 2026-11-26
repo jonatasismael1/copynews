@@ -1,2 +1,2 @@
 
-cloudflare-static/public/** -text
+cloudflare-static/public/** -text -whitespace
