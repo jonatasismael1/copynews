@@ -2,6 +2,8 @@ name: Quality gate
 
 on:
   push:
+    paths-ignore:
+      - 'cloudflare-static/**'
   pull_request:
   workflow_dispatch:
 
