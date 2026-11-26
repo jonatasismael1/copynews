@@ -1,0 +1,14 @@
+FROM node@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS test
+WORKDIR /app
+COPY netlify/functions ./netlify/functions
+COPY infra/vps ./infra/vps
+RUN node --test infra/vps/server.test.mjs
+FROM node@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+WORKDIR /app
+COPY --from=test --chown=1000:1000 /app/netlify ./netlify
+COPY --from=test --chown=1000:1000 /app/infra/vps/server.mjs /app/infra/vps/start.mjs ./infra/vps/
+ARG SOURCE_COMMIT=prepared
+ENV DBE_SOURCE_COMMIT=$SOURCE_COMMIT NODE_ENV=production
+USER 1000:1000
+EXPOSE 8080
+CMD ["node","infra/vps/start.mjs"]

@@ -1,0 +1,12 @@
+{
+    "name":  "copynews-cloudflare-static",
+    "version":  "1.0.0",
+    "private":  true,
+    "type":  "module",
+    "scripts":  {
+                    "check":  "node scripts/check.mjs \u0026\u0026 node --test worker.test.mjs"
+                },
+    "devDependencies":  {
+                            "wrangler":  "4.168.0"
+                        }
+}

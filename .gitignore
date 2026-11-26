@@ -11,3 +11,6 @@ coverage/
 *.log
 worker/tmp/
 artifacts/
+/cloudflare-static/node_modules/
+/cloudflare-static/.wrangler/
+/cloudflare-static/bootstrap.local.jsonc

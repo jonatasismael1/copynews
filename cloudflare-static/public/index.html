@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#1f7358" />
+    <meta name="description" content="Copy News — produção editorial inteligente" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Copy News" />
+    <link rel="icon" href="/pwa-192.png" />
+    <link rel="apple-touch-icon" href="/pwa-192.png" />
+    <link rel="dns-prefetch" href="//supabase1.dbe.digital" />
+    <link rel="preconnect" href="https://supabase1.dbe.digital" crossorigin />
+    <title>Copy News</title>
+    <script>
+      try {
+        const theme = localStorage.getItem("copy-news-theme") || "system";
+        const dark = theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch {}
+    </script>
+    <script type="module" crossorigin src="/assets/index-CUmKOO11.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-QTnfLwEv.js">
+    <link rel="modulepreload" crossorigin href="/assets/react-vendor-B2JvfJin.js">
+    <link rel="modulepreload" crossorigin href="/assets/data-vendor-rKHdjJ5a.js">
+    <link rel="modulepreload" crossorigin href="/assets/ui-vendor-7HNMDWT7.js">
+    <link rel="modulepreload" crossorigin href="/assets/form-vendor-CmvuXMcg.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CiEgwd5H.css">
+  <link rel="manifest" href="/manifest.webmanifest"></head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
