@@ -13,3 +13,8 @@ Deploy das APIs: dbe-copynews-api-deploy.timer lê main com deploy key exclusiva
 Atualizações do frontend precisam preservar a configuração pública Supabase correta. A pasta cloudflare-static/public contém o artefato original validado por hash, com aliases de caixa preservados. Não publicar dist local sem validação; não incluir .env, tokens ou service-role key no Git.
 
 Rollback: desabilitar a promoção afetada, restaurar imagem anterior de API ou reverter o commit Cloudflare e conferir o SHA. Para retorno integral, restaurar o deploy Netlify 6aba8cdf6571f10008ca07b7 pela API; o worker existente não precisa ser reiniciado. Backups de configuração/variáveis ficam somente em DPAPI no Windows, com verificação de descriptografia, e exigem o mesmo usuário/chave.
+
+
+## 26/11/2026 — login Meta retirado por solicitação do usuário
+
+Login oficial Instagram/Meta e callback estão desativados (410 sem chamadas externas); a seção de conexão foi removida. Captura pública/IA/worker e proxy de mídia autenticado foram preservados. Nenhuma conta, tabela ou dado foi apagado. Arquivos anteriores permanecem no histórico Git para eventual retomada. Não reativar o OAuth ao fazer rollback sem uma nova decisão explícita. A URL Meta antiga não é mais uma dependência de funcionamento.

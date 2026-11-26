@@ -9,3 +9,8 @@ Workers Builds publica esta pasta em main: npm ci --ignore-scripts && npm run ch
 Somente rotas de API/callback invocam o Worker; os assets têm atendimento direto. As rotas dinâmicas compartilham a franquia Worker Free, sem plano pago novo. O redirect_uri Meta antigo deve continuar acessível por redirecionamento estático enquanto o cadastro externo e a Edge Function não forem alterados coordenadamente. Não retirar a origem por iniciativa própria.
 
 Rollback: reverter commit e conferir build/SHA; restaurar a imagem anterior das APIs ou o deploy Netlify original, conforme o componente afetado. Preservar bancos, volumes, secrets e worker existente.
+
+
+## 26/11/2026 — login Meta retirado por solicitação do usuário
+
+Login oficial Instagram/Meta e callback estão desativados (410 sem chamadas externas); a seção de conexão foi removida. Captura pública/IA/worker e proxy de mídia autenticado foram preservados. Nenhuma conta, tabela ou dado foi apagado. Arquivos anteriores permanecem no histórico Git para eventual retomada. Não reativar o OAuth ao fazer rollback sem uma nova decisão explícita. A URL Meta antiga não é mais uma dependência de funcionamento.

@@ -1,12 +1,10 @@
-import { FormEvent, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { FormEvent, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Camera,
   Database,
   History,
   Images,
-  ChartNoAxesCombined,
   KeyRound,
   Link2,
   Monitor,
@@ -19,7 +17,6 @@ import {
   ShieldCheck,
   Smartphone,
   Sun,
-  Unplug,
   Video,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -33,13 +30,11 @@ import { useAuth } from "@/providers/auth-provider";
 import { ProfileAvatar } from "@/components/profile-avatar";
 import { squareAvatarDataUrl } from "@/lib/avatar";
 import { PwaInstallButton } from "@/components/pwa-install";
-import { useConnectedAccounts } from "@/hooks/use-data";
 import { useTheme, type ThemePreference } from "@/providers/theme-provider";
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [settingsTab, setSettingsTab] = useState<"general" | "backend">(
     "general",
@@ -57,17 +52,8 @@ export function SettingsPage() {
   const [savingEditorLinks, setSavingEditorLinks] = useState(false);
   const [profilePhone, setProfilePhone] = useState(profile?.phone || "");
   const [savingPhone, setSavingPhone] = useState(false);
-  const [instagramPageId, setInstagramPageId] = useState("");
-  const [connectingInstagram, setConnectingInstagram] = useState(false);
-  const [syncingInstagram, setSyncingInstagram] = useState<string | null>(null);
   const canManageLookups =
     profile?.role === "admin" || profile?.role === "editor";
-  const { data: connectedAccounts = [], refetch: refetchAccounts } =
-    useConnectedAccounts(true);
-  const ownConnectedAccount = connectedAccounts.find(
-    (account) =>
-      account.user_id === profile?.id && account.status === "connected",
-  );
   const { data: systemHealth, refetch: refreshHealth, isFetching: healthLoading } = useQuery({
     queryKey: ["system-health"],
     enabled: profile?.role === "admin" && settingsTab === "backend",
@@ -100,58 +86,6 @@ export function SettingsPage() {
     [Palette, "Fuso operacional", TIMEZONE],
     [History, "Histórico de contas", "Publicações e métricas de até 90 dias"],
   ] as const;
-
-  useEffect(() => {
-    const connection = searchParams.get("instagram");
-    if (!connection) return;
-    const reason = searchParams.get("reason");
-    const connectedAccountId = searchParams.get("account_id");
-    setSearchParams({}, { replace: true });
-    if (connection !== "connected") {
-      toast.error(
-        reason === "missing_code"
-          ? "O Instagram não retornou o código de autorização. Tente novamente."
-          : reason === "instagram_role_required"
-            ? "Esta conta ainda não tem acesso ao app. Adicione-a como Instagram Tester no painel da Meta, aceite o convite nessa conta e tente novamente."
-            : "Não foi possível conectar o Instagram. Tente novamente.",
-      );
-      return;
-    }
-    queueMicrotask(() => setConnectingInstagram(true));
-    void (async () => {
-      try {
-        await refetchAccounts();
-        const { error } = await supabase.functions.invoke(
-          "sync-instagram-publications",
-          {
-            body: connectedAccountId
-              ? {
-                  account_id: connectedAccountId,
-                  sync_all: profile?.role === "admin",
-                }
-              : { sync_all: profile?.role === "admin" },
-          },
-        );
-        if (error) throw error;
-        queryClient.invalidateQueries({ queryKey: ["publications"] });
-        queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-        toast.success("Instagram conectado e publicações sincronizadas");
-      } catch {
-        toast.error(
-          "A conta foi conectada, mas a primeira sincronização não foi concluída.",
-        );
-      } finally {
-        setConnectingInstagram(false);
-      }
-    })();
-  }, [
-    profile?.id,
-    profile?.role,
-    queryClient,
-    refetchAccounts,
-    searchParams,
-    setSearchParams,
-  ]);
 
   async function updatePassword(event: FormEvent) {
     event.preventDefault();
@@ -222,69 +156,6 @@ export function SettingsPage() {
     if (error) return toast.error(error.message);
     await refreshProfile();
     toast.success("Telefone salvo e sincronizado com o módulo Enviar");
-  }
-
-  async function connectInstagram(event: FormEvent) {
-    event.preventDefault();
-    const pages = lookups?.pages ?? [];
-    const pageId = instagramPageId || (pages.length === 1 ? pages[0].id : "");
-    if (!pageId) return toast.error("Selecione a página do Copy News");
-    setConnectingInstagram(true);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
-      setConnectingInstagram(false);
-      return toast.error("Sua sessão expirou. Entre novamente.");
-    }
-    try {
-      const response = await fetch("/.netlify/functions/instagram-auth-start", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ page_id: pageId }),
-      });
-      const result = await response.json();
-      if (!response.ok || !result.authorization_url)
-        throw new Error(result.error);
-      window.location.assign(result.authorization_url);
-    } catch {
-      setConnectingInstagram(false);
-      toast.error("Não foi possível iniciar o login do Instagram");
-    }
-  }
-
-  async function disconnectInstagram(accountId: string) {
-    if (!window.confirm("Desconectar esta conta do Instagram?")) return;
-    const { error } = await supabase.functions.invoke("instagram-account", {
-      body: { action: "disconnect", account_id: accountId },
-    });
-    if (error) return toast.error("Não foi possível desconectar a conta");
-    await refetchAccounts();
-    toast.success("Conta desconectada");
-  }
-
-  async function syncInstagram(accountId: string) {
-    setSyncingInstagram(accountId);
-    const { data, error } = await supabase.functions.invoke(
-      "sync-instagram-publications",
-      {
-        body:
-          profile?.role === "admin"
-            ? { account_id: accountId, sync_all: true }
-            : { account_id: accountId },
-      },
-    );
-    setSyncingInstagram(null);
-    if (error) return toast.error("Não foi possível sincronizar o Instagram");
-    await refetchAccounts();
-    queryClient.invalidateQueries({ queryKey: ["publications"] });
-    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    toast.success(
-      `${Number(data?.imported || 0)} ${Number(data?.imported || 0) === 1 ? "publicação atualizada" : "publicações atualizadas"}`,
-    );
   }
 
   async function createPage(event: FormEvent) {
@@ -587,143 +458,6 @@ export function SettingsPage() {
 
       {settingsTab === "backend" && (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ChartNoAxesCombined size={19} />
-                Instagram profissional e métricas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4 text-sm text-muted-foreground">
-                Conecte uma conta Business ou Creator.
-              </p>
-              <form
-                className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end"
-                onSubmit={connectInstagram}
-              >
-                <Field label="Página do Copy News">
-                  <select
-                    required
-                    className="h-11 w-full rounded-xl border bg-background px-3 text-sm"
-                    value={
-                      instagramPageId ||
-                      ((lookups?.pages ?? []).length === 1
-                        ? (lookups?.pages ?? [])[0].id
-                        : "")
-                    }
-                    onChange={(event) => setInstagramPageId(event.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    {(lookups?.pages ?? []).map((page) => (
-                      <option key={page.id} value={page.id}>
-                        {page.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Button disabled={connectingInstagram}>
-                  <ChartNoAxesCombined />
-                  {connectingInstagram
-                    ? "Conectando..."
-                    : ownConnectedAccount
-                      ? "Conectar outra conta"
-                      : "Entrar com Instagram"}
-                </Button>
-              </form>
-              <div className="mt-5 divide-y border-t">
-                {connectedAccounts.length ? (
-                  connectedAccounts.map((account) => (
-                    <div
-                      key={account.id}
-                      className="flex flex-wrap items-center gap-3 py-3"
-                    >
-                      <ProfileAvatar
-                        src={account.profile_picture_url}
-                        name={account.username || account.account_name}
-                        className="size-11"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">
-                          Instagram •{" "}
-                          {account.account_name || account.provider_account_id}
-                        </p>
-                        {profile?.role === "admin" && (
-                          <p className="text-xs text-muted-foreground">
-                            Usuário:{" "}
-                            {(account.profiles as { name?: string } | null)
-                              ?.name || "Não identificado"}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          {account.last_sync_at
-                            ? `Última atualização: ${new Date(account.last_sync_at).toLocaleString("pt-BR")}`
-                            : "Ainda sem atualização de métricas"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {account.token_expires_at
-                            ? `Conexão válida até ${new Date(account.token_expires_at).toLocaleDateString("pt-BR")}`
-                            : "Validade não informada pela Meta"}
-                          {account.data_source
-                            ? ` • Fonte: ${account.data_source}`
-                            : ""}
-                        </p>
-                        {account.needs_attention && (
-                          <p className="text-xs font-medium text-destructive">
-                            A conexão precisa ser renovada.
-                          </p>
-                        )}
-                      </div>
-                      <Badge
-                        variant={
-                          account.status === "connected" ? "success" : "danger"
-                        }
-                      >
-                        {account.status === "connected"
-                          ? "Conectada"
-                          : "Desconectada"}
-                      </Badge>
-                      {account.status === "connected" && (
-                        <>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={syncingInstagram === account.id}
-                            onClick={() => syncInstagram(account.id)}
-                          >
-                            <RefreshCw
-                              className={
-                                syncingInstagram === account.id
-                                  ? "animate-spin"
-                                  : ""
-                              }
-                            />
-                            Atualizar agora
-                          </Button>
-                          {account.user_id === profile?.id && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => disconnectInstagram(account.id)}
-                            >
-                              <Unplug /> Desconectar
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <p className="py-5 text-sm text-muted-foreground">
-                    Nenhuma conta profissional conectada.
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Estado dos serviços</CardTitle>

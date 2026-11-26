@@ -1,8 +1,8 @@
 import http from'node:http';import{Readable}from'node:stream';
-const names=['instagram-auth-start','instagram-callback','instagram-media-proxy'];let active=0;
+const names=['instagram-media-proxy'];const retired=new Set(['instagram-auth-start','instagram-callback']);let active=0;
 export async function dispatch(req){
- const url=new URL(req.url);if(url.pathname==='/healthz')return Response.json({status:'ok',functions:names.length,source:process.env.DBE_SOURCE_COMMIT||'prepared'});
- const name=url.pathname.replace(/^\/\.netlify\/functions\//,'');if(!names.includes(name))return new Response(null,{status:404});
+ const url=new URL(req.url);if(url.pathname==='/healthz')return Response.json({status:'ok',functions:names.length,instagram_login_enabled:false,source:process.env.DBE_SOURCE_COMMIT||'prepared'});
+ const name=url.pathname.replace(/^\/\.netlify\/functions\//,'');if(retired.has(name))return Response.json({error:'instagram_login_retired'},{status:410,headers:{'Cache-Control':'no-store'}});if(!names.includes(name))return new Response(null,{status:404});
  const mod=await import('../../netlify/functions/'+name+'.mjs');
  const reply=await mod.handler({httpMethod:req.method,rawUrl:req.url,headers:Object.fromEntries(req.headers),queryStringParameters:Object.fromEntries(url.searchParams),body:['GET','HEAD'].includes(req.method)?null:await req.text(),isBase64Encoded:false});
  return new Response(reply.isBase64Encoded?Buffer.from(reply.body||'','base64'):reply.body||null,{status:reply.statusCode,headers:reply.headers});

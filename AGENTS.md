@@ -1,5 +1,13 @@
 # Regras críticas de produção
 
+## Publicação atual — 26/11/2026
+
+- Produção: Cloudflare em copynews.dbe.digital, APIs Contabo e Supabase existente. Netlify foi preservada para rollback/compatibilidade; não retomar builds ou deploy produtivo Netlify por inferência.
+- Workers Builds publica somente cloudflare-static em main. Ao alterar src, construir com as variáveis públicas corretas, validar o bundle e sincronizar os assets revisados nessa pasta antes do commit.
+- Login oficial Instagram/Meta foi retirado expressamente pelo usuário. Endpoints de início/callback retornam 410; não reativar em rollback rotineiro. Preservar o proxy autenticado de mídia, captura pública, IA e o worker existente.
+- Backend usa o timer de deploy Contabo com health do SHA exato, uma função ativa e instagram_login_enabled=false. Mudanças do controlador privilegiado exigem revisão separada.
+- Workers.dev é URL alternativa para clientes com delegação antiga em cache. Middleware HTTPS compartilha a franquia dinâmica Worker Free; não ativar planos pagos automaticamente.
+
 ## Netlify
 
 - Nunca publicar `dist` diretamente com `netlify deploy --dir=dist --prod --no-build`.

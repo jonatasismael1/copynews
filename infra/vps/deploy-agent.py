@@ -32,7 +32,7 @@ def main():
    for cid in run(['docker','ps','-q','--filter','label=com.docker.swarm.service.name='+SERVICE]).splitlines():
     try:candidate=json.loads(run(['docker','exec',cid,'node','-e',"fetch('http://127.0.0.1:8080/healthz').then(r=>r.text()).then(console.log)"]))
     except Exception:continue
-    if candidate.get('source')==sha and candidate.get('functions')==3:health=candidate;break
+    if candidate.get('source')==sha and candidate.get('functions')==1 and candidate.get('instagram_login_enabled')is False:health=candidate;break
    if health:break
    time.sleep(2)
   assert health,'Expected release never became healthy; preserve the previous image'
@@ -40,7 +40,7 @@ def main():
   if old:subprocess.run(['docker','service','update','--no-resolve-image','--image',old,SERVICE],capture_output=True,timeout=180)
   failed.write_text(json.dumps({'commit':sha,'timestamp':time.time()}));raise
  marker.write_text(json.dumps({'commit':sha,'image':tag,'utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'health':health}))
- print(json.dumps({'deployed':sha,'functions':3}))
+ print(json.dumps({'deployed':sha,'functions':1}))
 if __name__=='__main__':
  try:main()
  except BlockingIOError:pass
